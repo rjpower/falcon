@@ -38,8 +38,8 @@ setup(
 
   description='Python bindings for leveldb database library',
 
+  package_dir={'': 'src'},
   packages=['tempest'],
-  package_dir={'tempest': 'src/tempest'},
 
   ext_modules=[
     Extension('_tempest',
@@ -48,7 +48,7 @@ setup(
               'src/c/reval.cc',
               'src/c/rcompile.cc',
       ],
-      libraries=['stdc++'],
+      extra_compile_args=['-O0', '-ggdb2']
     )
   ]
 )
