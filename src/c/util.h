@@ -1,266 +1,177 @@
 #ifndef TEMPEST_UTIL_H
 #define TEMPEST_UTIL_H
 
+#include <errno.h>
+#include <string.h>
+#include <stdarg.h>
 #include <signal.h>
-#include "opcode.h"
 
-static inline void breakpoint() {
-  struct sigaction oldAct;
-  struct sigaction newAct;
-  newAct.sa_handler = SIG_IGN;
-  sigaction(SIGTRAP, &newAct, &oldAct);
-  raise (SIGTRAP);
-  sigaction(SIGTRAP, &oldAct, NULL);
+#include <map>
+#include <string>
+#include <vector>
+
+extern "C" {
+void breakpoint();
+const char* opcode_to_name(int opcode);
 }
 
-static const char* opcode_to_name(int opcode) {
-  switch (opcode) {
-  case 0:
-    return "STOP_CODE";
-  case 1:
-    return "POP_TOP";
-  case 2:
-    return "ROT_TWO";
-  case 3:
-    return "ROT_THREE";
-  case 4:
-    return "DUP_TOP";
-  case 5:
-    return "ROT_FOUR";
-  case 9:
-    return "NOP";
-  case 10:
-    return "UNARY_POSITIVE";
-  case 11:
-    return "UNARY_NEGATIVE";
-  case 12:
-    return "UNARY_NOT";
-  case 13:
-    return "UNARY_CONVERT";
-  case 15:
-    return "UNARY_INVERT";
-  case 19:
-    return "BINARY_POWER";
-  case 20:
-    return "BINARY_MULTIPLY";
-  case 21:
-    return "BINARY_DIVIDE";
-  case 22:
-    return "BINARY_MODULO";
-  case 23:
-    return "BINARY_ADD";
-  case 24:
-    return "BINARY_SUBTRACT";
-  case 25:
-    return "BINARY_SUBSCR";
-  case 26:
-    return "BINARY_FLOOR_DIVIDE";
-  case 27:
-    return "BINARY_TRUE_DIVIDE";
-  case 28:
-    return "INPLACE_FLOOR_DIVIDE";
-  case 29:
-    return "INPLACE_TRUE_DIVIDE";
-  case 30:
-    return "SLICE";
-  case 31:
-    return "SLICE";
-  case 32:
-    return "SLICE";
-  case 33:
-    return "SLICE";
-  case 40:
-    return "STORE_SLICE";
-  case 41:
-    return "STORE_SLICE";
-  case 42:
-    return "STORE_SLICE";
-  case 43:
-    return "STORE_SLICE";
-  case 50:
-    return "DELETE_SLICE";
-  case 51:
-    return "DELETE_SLICE";
-  case 52:
-    return "DELETE_SLICE";
-  case 53:
-    return "DELETE_SLICE";
-  case 54:
-    return "STORE_MAP";
-  case 55:
-    return "INPLACE_ADD";
-  case 56:
-    return "INPLACE_SUBTRACT";
-  case 57:
-    return "INPLACE_MULTIPLY";
-  case 58:
-    return "INPLACE_DIVIDE";
-  case 59:
-    return "INPLACE_MODULO";
-  case 60:
-    return "STORE_SUBSCR";
-  case 61:
-    return "DELETE_SUBSCR";
-  case 62:
-    return "BINARY_LSHIFT";
-  case 63:
-    return "BINARY_RSHIFT";
-  case 64:
-    return "BINARY_AND";
-  case 65:
-    return "BINARY_XOR";
-  case 66:
-    return "BINARY_OR";
-  case 67:
-    return "INPLACE_POWER";
-  case 68:
-    return "GET_ITER";
-  case 70:
-    return "PRINT_EXPR";
-  case 71:
-    return "PRINT_ITEM";
-  case 72:
-    return "PRINT_NEWLINE";
-  case 73:
-    return "PRINT_ITEM_TO";
-  case 74:
-    return "PRINT_NEWLINE_TO";
-  case 75:
-    return "INPLACE_LSHIFT";
-  case 76:
-    return "INPLACE_RSHIFT";
-  case 77:
-    return "INPLACE_AND";
-  case 78:
-    return "INPLACE_XOR";
-  case 79:
-    return "INPLACE_OR";
-  case 80:
-    return "BREAK_LOOP";
-  case 81:
-    return "WITH_CLEANUP";
-  case 82:
-    return "LOAD_LOCALS";
-  case 83:
-    return "RETURN_VALUE";
-  case 84:
-    return "IMPORT_STAR";
-  case 85:
-    return "EXEC_STMT";
-  case 86:
-    return "YIELD_VALUE";
-  case 87:
-    return "POP_BLOCK";
-  case 88:
-    return "END_FINALLY";
-  case 89:
-    return "BUILD_CLASS";
-  case 90:
-    return "STORE_NAME";
-  case 91:
-    return "DELETE_NAME";
-  case 92:
-    return "UNPACK_SEQUENCE";
-  case 93:
-    return "FOR_ITER";
-  case 94:
-    return "LIST_APPEND";
-  case 95:
-    return "STORE_ATTR";
-  case 96:
-    return "DELETE_ATTR";
-  case 97:
-    return "STORE_GLOBAL";
-  case 98:
-    return "DELETE_GLOBAL";
-  case 99:
-    return "DUP_TOPX";
-  case 100:
-    return "LOAD_CONST";
-  case 101:
-    return "LOAD_NAME";
-  case 102:
-    return "BUILD_TUPLE";
-  case 103:
-    return "BUILD_LIST";
-  case 104:
-    return "BUILD_SET";
-  case 105:
-    return "BUILD_MAP";
-  case 106:
-    return "LOAD_ATTR";
-  case 107:
-    return "COMPARE_OP";
-  case 108:
-    return "IMPORT_NAME";
-  case 109:
-    return "IMPORT_FROM";
-  case 110:
-    return "JUMP_FORWARD";
-  case 111:
-    return "JUMP_IF_FALSE_OR_POP";
-  case 112:
-    return "JUMP_IF_TRUE_OR_POP";
-  case 113:
-    return "JUMP_ABSOLUTE";
-  case 114:
-    return "POP_JUMP_IF_FALSE";
-  case 115:
-    return "POP_JUMP_IF_TRUE";
-  case 116:
-    return "LOAD_GLOBAL";
-  case 119:
-    return "CONTINUE_LOOP";
-  case 120:
-    return "SETUP_LOOP";
-  case 121:
-    return "SETUP_EXCEPT";
-  case 122:
-    return "SETUP_FINALLY";
-  case 124:
-    return "LOAD_FAST";
-  case 125:
-    return "STORE_FAST";
-  case 126:
-    return "DELETE_FAST";
-  case 130:
-    return "RAISE_VARARGS";
-  case 131:
-    return "CALL_FUNCTION";
-  case 132:
-    return "MAKE_FUNCTION";
-  case 133:
-    return "BUILD_SLICE";
-  case 134:
-    return "MAKE_CLOSURE";
-  case 135:
-    return "LOAD_CLOSURE";
-  case 136:
-    return "LOAD_DEREF";
-  case 137:
-    return "STORE_DEREF";
-  case 140:
-    return "CALL_FUNCTION_VAR";
-  case 141:
-    return "CALL_FUNCTION_KW";
-  case 142:
-    return "CALL_FUNCTION_VAR_KW";
-  case 143:
-    return "SETUP_WITH";
-  case 145:
-    return "EXTENDED_ARG";
-  case 146:
-    return "SET_ADD";
-  case 147:
-    return "MAP_ADD";
-  case 148:
-    return "INCREF";
-  case 149:
-      return "DECREF";
-  default:
-    return "BAD_OPCODE";
+static inline uint64_t rdtsc() {
+  uint32_t hi, lo;
+  __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+  return (((uint64_t) hi) << 32) | ((uint64_t) lo);
+}
+
+class StringPiece {
+public:
+  StringPiece();
+  StringPiece(const StringPiece& s);
+  StringPiece(const std::string& s);
+  StringPiece(const std::string& s, int len);
+  StringPiece(const char* c);
+  StringPiece(const char* c, int len);
+
+  // Remove whitespace from either side
+  void strip();
+
+  std::string AsString() const;
+  std::string str() const {
+    return AsString();
   }
-  return "BAD_OPCODE";
+
+  int size() const {
+    return len_;
+  }
+
+  const char* data() const {
+    return data_;
+  }
+
+  static std::vector<StringPiece> split(StringPiece sp, StringPiece delim);
+private:
+  const char* data_;
+  int len_;
+};
+
+bool operator==(const StringPiece& a, const char* b);
+bool operator==(const StringPiece& a, const StringPiece& b);
+
+const char* strnstr(const char* haystack, const char* needle, int len);
+
+std::string StringPrintf(StringPiece fmt, ...);
+std::string VStringPrintf(StringPiece fmt, va_list args);
+
+std::string ToString(int32_t);
+std::string ToString(int64_t);
+std::string ToString(double);
+std::string ToString(std::string);
+std::string ToString(StringPiece);
+
+template<class T>
+std::string ToString(const std::vector<T>& v) {
+  return JoinString(v.begin(), v.end(), ",");
 }
+
+template<class A, class B>
+std::string ToString(const std::pair<A, B>& v) {
+  return ToString(v.first) + " : " + ToString(v.second);
+}
+
+template<class Iterator>
+std::string JoinString(Iterator start, Iterator end, std::string delim = " ") {
+  std::string out;
+  while (start != end) {
+    out += ToString(*start);
+    ++start;
+    if (start != end) {
+      out += delim;
+    }
+  }
+  return out;
+}
+
+struct TimerRegistry {
+  typedef std::map<std::string, double*> TimerMap;
+  static TimerMap timers;
+  static double& get(const std::string& name) {
+    if (timers.find(name) == timers.end()) {
+      timers[name] = new double(0);
+    }
+    return *timers[name];
+  }
+
+  static std::string str() {
+    std::string out;
+    for (TimerMap::iterator i = timers.begin(); i != timers.end(); ++i) {
+      out += StringPrintf("%s : %.2f, ", i->first.c_str(), *i->second);
+    }
+    return out;
+  }
+};
+
+double Now();
+std::string Hostname();
+timeval timevalFromDouble(double t);
+timespec timespecFromDouble(double t);
+
+struct TimerBlock {
+  double& t_;
+  double start_;
+  TimerBlock(double& t) :
+      t_(t), start_(Now()) {
+  }
+  ~TimerBlock() {
+    t_ += Now() - start_;
+  }
+};
+
+void Sleep(double sleepTime);
+
+enum LogLevel {
+  kLogDebug = 0, kLogInfo = 1, kLogWarn = 2, kLogError = 3, kLogFatal = 4,
+};
+
+extern LogLevel currentLogLevel;
+double get_processor_frequency();
+
+#define EVERY_N(interval, operation)\
+{ static int COUNT = 0;\
+  if (COUNT++ % interval == 0) {\
+    operation;\
+  }\
+}
+
+#define START_PERIODIC(interval)\
+{ static int64_t last = 0;\
+  static int64_t cycles = (int64_t)(interval * get_processor_frequency());\
+  static int COUNT = 0; \
+  ++COUNT; \
+  int64_t now = rdtsc(); \
+  if (now - last > cycles) {\
+    last = now;\
+    COUNT = 0;
+
+#define END_PERIODIC() } }
+
+#define PERIODIC(interval, op)\
+    START_PERIODIC(interval)\
+    op;\
+    END_PERIODIC()
+
+void logAtLevel(LogLevel level, const char* file, int line, const char* fmt, ...);
+
+#define Log_Debug(fmt, ...) logAtLevel(kLogDebug, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define Log_Info(fmt, ...) logAtLevel(kLogInfo, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define Log_Warn(fmt, ...) logAtLevel(kLogWarn, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define Log_Error(fmt, ...) logAtLevel(kLogError, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define Log_Fatal(fmt, ...) logAtLevel(kLogFatal, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+
+#define Log_Perror(fmt, ...)\
+  Log_Warn("%s :: (System error: %s)", StringPrintf(fmt, ##__VA_ARGS__).c_str(), strerror(errno));
+
+#define Log_PAssert(expr, fmt, ...)\
+  if (!(expr)) { Log_Fatal("%s :: (System error: %s)", StringPrintf(fmt, ##__VA_ARGS__).c_str(), strerror(errno)); }
+
+#define Log_Assert(expr, fmt, ...)\
+  if(!(expr)) { Log_Fatal(fmt, ##__VA_ARGS__); }
 
 #endif

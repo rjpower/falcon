@@ -1,15 +1,28 @@
 #!/usr/bin/env python
 
 import tempest
+import time
 import unittest
 
 def add(a, b):
   return a + b
 
 def loop(count):
-  for i in range(count):
-    pass
-  return count
+  x = 0
+  for i in xrange(count):
+    x *= 0
+  return x
+
+def time_compare(function, args):
+  st = time.time()
+  function(*args)
+  py_time = time.time() - st
+  
+  st = time.time()
+  tempest.run_function(function, args)
+  t_time = time.time() - st
+  
+  print 'Python: %.3f, Tempest: %.3f' % (py_time, t_time)
 
 class TestSimpleFunctions(unittest.TestCase):
   def test_add1(self):
@@ -22,7 +35,11 @@ class TestSimpleFunctions(unittest.TestCase):
     self.assertEqual(tempest.run_function(add, (10**50,200)), 10**50+200)
     
   def test_loop1(self):
-    self.assertEqual(tempest.run_function(loop, (100,)), 100)
+    self.assertEqual(tempest.run_function(loop, (100,)), loop(100))
+    
+  def test_loopbig(self):
+    #time_compare(loop, (1000*1000*100,))
+    tempest.run_function(loop, (1000*1000*100,))
     
 if __name__ == '__main__':
   unittest.main()

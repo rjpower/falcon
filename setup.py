@@ -47,8 +47,10 @@ setup(
       sources=[
               'src/c/reval.cc',
               'src/c/rcompile.cc',
+              'src/c/util.cc',
       ],
-      extra_compile_args=['-O0', '-ggdb2']
+      extra_compile_args=['-O3', '-fno-gcse', '-fno-crossjumping', '-ggdb2'],
+      extra_link_args=['-lrt'],
     )
   ]
 )

@@ -147,7 +147,7 @@ struct RegisterStack {
   }
 
   int push_register(int reg) {
-    // fprintf(stderr, "Pushing register %d, pos %d\n", reg, stack_pos + 1);
+    // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
     assert(stack_pos < REG_MAX_STACK);
     regs[++stack_pos] = reg;
     return reg;
@@ -157,7 +157,7 @@ struct RegisterStack {
     assert(stack_pos >= 0);
     int reg = regs[stack_pos--];
     assert(reg >= -1);
-    // fprintf(stderr, "Popped register %d, pos: %d\n", reg, stack_pos + 1);
+    // Log_Info("Popped register %d, pos: %d", reg, stack_pos + 1);
     return reg;
   }
 
@@ -167,11 +167,11 @@ struct RegisterStack {
 
   void print() {
     int i;
-    fprintf(stderr, "[");
+    Log_Info("[");
     for (i = 0; i <= stack_pos; ++i) {
-      fprintf(stderr, "%d, ", regs[i]);
+      Log_Info("%d, ", regs[i]);
     }
-    fprintf(stderr, "]\n");
+    Log_Info("]");
   }
 
 };
@@ -677,7 +677,7 @@ static BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int o
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-//            fprintf(stderr, "Unknown opcode %s, arg = %d\n", opcode_to_name(opcode), oparg);
+//            Log_Info("Unknown opcode %s, arg = %d", opcode_to_name(opcode), oparg);
       return NULL;
       break;
     }
@@ -755,7 +755,7 @@ void remove_dead_code(CompilerState* state) {
 
 void bb_fuse_pass(BasicBlock* bb) {
   if (bb->visited || bb->dead || bb->exits.size() != 1) {
-    fprintf(stderr, "Leaving %d alone.\n", bb->idx);
+    Log_Info("Leaving %d alone.", bb->idx);
     return;
   }
 
@@ -765,7 +765,7 @@ void bb_fuse_pass(BasicBlock* bb) {
       break;
     }
 
-//        fprintf(stderr, "Merging %d into %d\n", next->idx, bb->idx);
+//        Log_Info("Merging %d into %d", next->idx, bb->idx);
     bb->code.insert(bb->code.end(), next->code.begin(), next->code.end());
 
     next->dead = next->visited = 1;
@@ -796,23 +796,23 @@ void bb_combine_refs(BasicBlock* bb) {
 }
 
 void print_compiler_op(BasicBlock *bb, CompilerOp* op) {
-  fprintf(stderr, "%d :: %s (ARG: %d, ", bb->idx, opcode_to_name(op->code), op->arg);
+  Log_Info("%d :: %s (ARG: %d, ", bb->idx, opcode_to_name(op->code), op->arg);
   for (size_t i = 0; i < op->regs.size(); ++i) {
-    fprintf(stderr, "%d, ", op->regs[i]);
+    Log_Info("%d, ", op->regs[i]);
   }
-  fprintf(stderr, ")");
+  Log_Info(")");
   if (op->dead) {
-    fprintf(stderr, " DEAD ");
+    Log_Info(" DEAD ");
   }
 
   if (op == bb->code[bb->code.size() - 1]) {
-    fprintf(stderr, "-> [");
+    Log_Info("-> [");
     for (size_t i = 0; i < bb->exits.size(); ++i) {
-      fprintf(stderr, "%d,", bb->exits[i]->idx);
+      Log_Info("%d,", bb->exits[i]->idx);
     }
-    fprintf(stderr, "]");
+    Log_Info("]");
   }
-  fprintf(stderr, "\n");
+  Log_Info("");
 }
 
 typedef void (*OptPass)(CompilerState*);
@@ -827,14 +827,14 @@ void opt_combine_refs(CompilerState* state) {
 }
 
 void _apply_opt_pass(CompilerState* state, OptPass pass, const char* name) {
-  //    fprintf(stderr, "Before %s:\n", name);
+  //    Log_Info("Before %s:", name);
   //    apply_op_pass(state, &print_compiler_op);
 
   pass(state);
 
   remove_dead_code(state);
 
-//    fprintf(stderr, "After %s:\n", name);
+//    Log_Info("After %s:", name);
 //    apply_op_pass(state, &print_compiler_op);
 
 }
@@ -850,7 +850,7 @@ struct RCompilerUtil {
   }
 
   static void write_op(char* dst, CompilerOp* op) {
-    RMachineOp* dst_op = (RMachineOp*)dst;
+    RMachineOp* dst_op = (RMachineOp*) dst;
     dst_op->header.code = op->code;
     dst_op->header.arg = op->arg;
 
@@ -868,6 +868,9 @@ struct RCompilerUtil {
       assert(op->regs.size() < 3);
       dst_op->branch.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
       dst_op->branch.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
+
+      // Label be set after the first pass has determined the offset
+      // of each instruction.
       dst_op->branch.label = 0;
     } else {
       assert(op->regs.size() <= 3);
@@ -899,8 +902,8 @@ void bb_to_code(CompilerState* state, std::string *out) {
       size_t offset = out->size();
       out->resize(out->size() + RCompilerUtil::op_size(c));
       RCompilerUtil::write_op(&(*out)[0] + offset, c);
-      fprintf(stderr, "Wrote op at offset %d, size: %d\n", offset, RCompilerUtil::op_size(c));
-      RMachineOp* rop = (RMachineOp*)(&(*out)[0] + offset);
+      Log_Info("Wrote op at offset %d, size: %d", offset, RCompilerUtil::op_size(c));
+      RMachineOp* rop = (RMachineOp*) (&(*out)[0] + offset);
       assert(RCompilerUtil::op_size(c) == RMachineOp::size(*rop));
     }
   }
@@ -915,19 +918,29 @@ void bb_to_code(CompilerState* state, std::string *out) {
     // Skip to the end of the basic block.
     for (size_t j = 0; j < bb->code.size(); ++j) {
       op = (RMachineOp*) (out->data() + pos);
-      fprintf(stderr, "Checking op %d at offset %d (original: %d)\n", op->code(), pos, bb->code[j]->code);
+      Log_Info("Checking op %s at offset %d.", opcode_to_name(op->code()), pos);
 
       assert(op->code() == bb->code[j]->code);
       assert(op->arg() == bb->code[j]->arg);
       pos += RMachineOp::size(*op);
     }
 
-//    assert(is_branch_op(op->code()) || op->code() == RETURN_VALUE);
-
     if (is_branch_op(op->code()) && op->code() != RETURN_VALUE) {
-      assert(bb->exits[0] != NULL);
-      op->branch.label = bb->exits[0]->reg_offset;
-      assert(bb->exits[0]->reg_offset > 0);
+      if (bb->exits.size() == 1) {
+        BasicBlock& jmp = *bb->exits[0];
+        assert(jmp.reg_offset > 0);
+        op->branch.label = jmp.reg_offset;
+        assert(op->branch.label == jmp.reg_offset);
+      } else {
+        // One exit is the fall-through to the next block.
+        BasicBlock& a = *bb->exits[0];
+        BasicBlock& b = *bb->exits[1];
+        assert(a.idx == (bb->idx + 1) || b.idx == (bb->idx + 1));
+        BasicBlock& jmp = (a.idx == bb->idx + 1) ? b : a;
+        assert(jmp.reg_offset > 0);
+        op->branch.label = jmp.reg_offset;
+        assert(op->branch.label == jmp.reg_offset);
+      }
     }
   }
 }
@@ -945,15 +958,15 @@ PyObject * RegisterCompileCode(PyCodeObject * code) {
   state.num_locals = code->co_nlocals;
   // Offset by the number of constants and locals.
   state.num_reg = state.num_consts + state.num_locals;
-  fprintf(stderr, "Consts: %d, locals: %d, first register: %d\n", state.num_consts, state.num_locals, state.num_reg);
+  Log_Info("Consts: %d, locals: %d, first register: %d", state.num_consts, state.num_locals, state.num_reg);
 
   state.py_codelen = codelen;
   state.py_codestr = (unsigned char*) PyString_AsString(code->co_code);
 
   BasicBlock* entry_point = registerize(&state, &stack, 0);
   if (entry_point == NULL) {
-    fprintf(stderr, "Failed to registerize %s:%d (%s), using stack machine.\n", PyString_AsString(code->co_filename),
-        code->co_firstlineno, PyString_AsString(code->co_name));
+    Log_Info("Failed to registerize %s:%d (%s), using stack machine.",
+        PyString_AsString(code->co_filename), code->co_firstlineno, PyString_AsString(code->co_name));
     return NULL;
   }
 

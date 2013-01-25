@@ -1,0 +1,19 @@
+*.pyc
+*.so
+bin/
+build/
+include/
+lib/
+local/
+perf.data
+perf.data.old
+python-src
+src/tempest.egg-info/
+src/tempest/__init__.pyc
+tempest.egg-info/
+
+# eclipse
+.cproject
+.project
+.pydevproject
+.settings
