@@ -795,24 +795,25 @@ void bb_combine_refs(BasicBlock* bb) {
   }
 }
 
-void print_compiler_op(BasicBlock *bb, CompilerOp* op) {
-  Log_Info("%d :: %s (ARG: %d, ", bb->idx, opcode_to_name(op->code), op->arg);
+std::string compiler_op_str(BasicBlock *bb, CompilerOp* op) {
+  std::string out;
+  out += StringPrintf("%d :: %s (ARG: %d, ", bb->idx, opcode_to_name(op->code), op->arg);
   for (size_t i = 0; i < op->regs.size(); ++i) {
-    Log_Info("%d, ", op->regs[i]);
+    out += StringPrintf("%d, ", op->regs[i]);
   }
-  Log_Info(")");
+  out += ")";
   if (op->dead) {
-    Log_Info(" DEAD ");
+    out += " DEAD ";
   }
 
   if (op == bb->code[bb->code.size() - 1]) {
-    Log_Info("-> [");
+    out += "-> [";
     for (size_t i = 0; i < bb->exits.size(); ++i) {
-      Log_Info("%d,", bb->exits[i]->idx);
+      out += StringPrintf("%d,", bb->exits[i]->idx);
     }
-    Log_Info("]");
+    out += "]";
   }
-  Log_Info("");
+  return out;
 }
 
 typedef void (*OptPass)(CompilerState*);
@@ -902,7 +903,9 @@ void bb_to_code(CompilerState* state, std::string *out) {
       size_t offset = out->size();
       out->resize(out->size() + RCompilerUtil::op_size(c));
       RCompilerUtil::write_op(&(*out)[0] + offset, c);
-      Log_Info("Wrote op at offset %d, size: %d", offset, RCompilerUtil::op_size(c));
+      Log_Info("Wrote op at offset %d, size: %d, %s", offset, RCompilerUtil::op_size(c),
+               compiler_op_str(bb, c).c_str());
+
       RMachineOp* rop = (RMachineOp*) (&(*out)[0] + offset);
       assert(RCompilerUtil::op_size(c) == RMachineOp::size(*rop));
     }

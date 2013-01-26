@@ -7,7 +7,10 @@
 #include "reval.h"
 
 // #define EVAL_LOG Log_Info
-#define EVAL_LOG(...)
+//#define EVAL_LOG(...)
+#define EVAL_LOG(...) if (kEvalLoggingEnabled) { Log_Info(__VA_ARGS__); }
+
+static bool kEvalLoggingEnabled = false;
 
 struct RunState {
   char *code;
@@ -380,6 +383,7 @@ struct LabelRegistry {
     static int _force_register_ ## opname = LabelRegistry::add_label(opname, &&op_ ## opname);
 
 #define _DEFINE_OP(opname, impl){\
+      EVAL_LOG("Running... %s", opcode_to_name(opname));\
       const EvalStatus status = impl::instance.eval(&state, next);\
       if (state.offset < state.codelen) {\
         next = *((RMachineOp*)(state.code + state.offset));\
@@ -388,7 +392,7 @@ struct LabelRegistry {
       }\
       switch (status) {\
         case EVAL_CONTINUE:\
-        EVAL_LOG("Next op: %d, %s", state.offset, opcode_to_name(next.code()));\
+        /*EVAL_LOG("Next op: %d, %s", state.offset, opcode_to_name(next.code()));*/\
         goto *labels[next.code()]; break;\
         case EVAL_ERROR: goto error; break;\
         case EVAL_RETURN: goto done; break;\
@@ -397,11 +401,11 @@ struct LabelRegistry {
 
 #define DEFINE_OP(opname, impl)\
     op_##opname:\
-      EVAL_LOG("Running... %s", opcode_to_name(opname));\
       _DEFINE_OP(opname, impl)
 
 #define BINARY_OP(opname, opfn)\
-    op_##opname: _DEFINE_OP(opname, BinOp<CONCAT(opname, opfn)>)
+    op_##opname:\
+      _DEFINE_OP(opname, BinOp<CONCAT(opname, opfn)>)
 
 #define _BAD_OP(opname)\
         { EVAL_LOG("Not implemented: %s", #opname); abort(); }
@@ -441,6 +445,7 @@ PyObject* RegisterRunFunction(PyObject* function, PyObject* args) {
 }
 
 PyObject* RegisterEvalFrame(RegisterFrame *reg_frame) {
+  kEvalLoggingEnabled = (getenv("EVAL_LOGGING") != NULL && strcmp(getenv("EVAL_LOGGING"), "1") == 0);
 static void *labels[] = {
   &&op_STOP_CODE,
   &&op_POP_TOP,

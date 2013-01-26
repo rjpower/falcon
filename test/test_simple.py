@@ -10,7 +10,7 @@ def add(a, b):
 def loop(count):
   x = 0
   for i in xrange(count):
-    x *= 0
+    x = x * 0
   return x
 
 def time_compare(function, args):
