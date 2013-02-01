@@ -14,7 +14,6 @@
 
 extern "C" {
 void breakpoint();
-const char* opcode_to_name(int opcode);
 }
 
 static inline uint64_t rdtsc() {

@@ -28,6 +28,256 @@
 
 using namespace std;
 
+const char* opcode_to_name(int opcode) {
+  switch (opcode) {
+  case 0:
+    return "STOP_CODE";
+  case 1:
+    return "POP_TOP";
+  case 2:
+    return "ROT_TWO";
+  case 3:
+    return "ROT_THREE";
+  case 4:
+    return "DUP_TOP";
+  case 5:
+    return "ROT_FOUR";
+  case 9:
+    return "NOP";
+  case 10:
+    return "UNARY_POSITIVE";
+  case 11:
+    return "UNARY_NEGATIVE";
+  case 12:
+    return "UNARY_NOT";
+  case 13:
+    return "UNARY_CONVERT";
+  case 15:
+    return "UNARY_INVERT";
+  case 19:
+    return "BINARY_POWER";
+  case 20:
+    return "BINARY_MULTIPLY";
+  case 21:
+    return "BINARY_DIVIDE";
+  case 22:
+    return "BINARY_MODULO";
+  case 23:
+    return "BINARY_ADD";
+  case 24:
+    return "BINARY_SUBTRACT";
+  case 25:
+    return "BINARY_SUBSCR";
+  case 26:
+    return "BINARY_FLOOR_DIVIDE";
+  case 27:
+    return "BINARY_TRUE_DIVIDE";
+  case 28:
+    return "INPLACE_FLOOR_DIVIDE";
+  case 29:
+    return "INPLACE_TRUE_DIVIDE";
+  case 30:
+    return "SLICE";
+  case 31:
+    return "SLICE";
+  case 32:
+    return "SLICE";
+  case 33:
+    return "SLICE";
+  case 40:
+    return "STORE_SLICE";
+  case 41:
+    return "STORE_SLICE";
+  case 42:
+    return "STORE_SLICE";
+  case 43:
+    return "STORE_SLICE";
+  case 50:
+    return "DELETE_SLICE";
+  case 51:
+    return "DELETE_SLICE";
+  case 52:
+    return "DELETE_SLICE";
+  case 53:
+    return "DELETE_SLICE";
+  case 54:
+    return "STORE_MAP";
+  case 55:
+    return "INPLACE_ADD";
+  case 56:
+    return "INPLACE_SUBTRACT";
+  case 57:
+    return "INPLACE_MULTIPLY";
+  case 58:
+    return "INPLACE_DIVIDE";
+  case 59:
+    return "INPLACE_MODULO";
+  case 60:
+    return "STORE_SUBSCR";
+  case 61:
+    return "DELETE_SUBSCR";
+  case 62:
+    return "BINARY_LSHIFT";
+  case 63:
+    return "BINARY_RSHIFT";
+  case 64:
+    return "BINARY_AND";
+  case 65:
+    return "BINARY_XOR";
+  case 66:
+    return "BINARY_OR";
+  case 67:
+    return "INPLACE_POWER";
+  case 68:
+    return "GET_ITER";
+  case 70:
+    return "PRINT_EXPR";
+  case 71:
+    return "PRINT_ITEM";
+  case 72:
+    return "PRINT_NEWLINE";
+  case 73:
+    return "PRINT_ITEM_TO";
+  case 74:
+    return "PRINT_NEWLINE_TO";
+  case 75:
+    return "INPLACE_LSHIFT";
+  case 76:
+    return "INPLACE_RSHIFT";
+  case 77:
+    return "INPLACE_AND";
+  case 78:
+    return "INPLACE_XOR";
+  case 79:
+    return "INPLACE_OR";
+  case 80:
+    return "BREAK_LOOP";
+  case 81:
+    return "WITH_CLEANUP";
+  case 82:
+    return "LOAD_LOCALS";
+  case 83:
+    return "RETURN_VALUE";
+  case 84:
+    return "IMPORT_STAR";
+  case 85:
+    return "EXEC_STMT";
+  case 86:
+    return "YIELD_VALUE";
+  case 87:
+    return "POP_BLOCK";
+  case 88:
+    return "END_FINALLY";
+  case 89:
+    return "BUILD_CLASS";
+  case 90:
+    return "STORE_NAME";
+  case 91:
+    return "DELETE_NAME";
+  case 92:
+    return "UNPACK_SEQUENCE";
+  case 93:
+    return "FOR_ITER";
+  case 94:
+    return "LIST_APPEND";
+  case 95:
+    return "STORE_ATTR";
+  case 96:
+    return "DELETE_ATTR";
+  case 97:
+    return "STORE_GLOBAL";
+  case 98:
+    return "DELETE_GLOBAL";
+  case 99:
+    return "DUP_TOPX";
+  case 100:
+    return "LOAD_CONST";
+  case 101:
+    return "LOAD_NAME";
+  case 102:
+    return "BUILD_TUPLE";
+  case 103:
+    return "BUILD_LIST";
+  case 104:
+    return "BUILD_SET";
+  case 105:
+    return "BUILD_MAP";
+  case 106:
+    return "LOAD_ATTR";
+  case 107:
+    return "COMPARE_OP";
+  case 108:
+    return "IMPORT_NAME";
+  case 109:
+    return "IMPORT_FROM";
+  case 110:
+    return "JUMP_FORWARD";
+  case 111:
+    return "JUMP_IF_FALSE_OR_POP";
+  case 112:
+    return "JUMP_IF_TRUE_OR_POP";
+  case 113:
+    return "JUMP_ABSOLUTE";
+  case 114:
+    return "POP_JUMP_IF_FALSE";
+  case 115:
+    return "POP_JUMP_IF_TRUE";
+  case 116:
+    return "LOAD_GLOBAL";
+  case 119:
+    return "CONTINUE_LOOP";
+  case 120:
+    return "SETUP_LOOP";
+  case 121:
+    return "SETUP_EXCEPT";
+  case 122:
+    return "SETUP_FINALLY";
+  case 124:
+    return "LOAD_FAST";
+  case 125:
+    return "STORE_FAST";
+  case 126:
+    return "DELETE_FAST";
+  case 130:
+    return "RAISE_VARARGS";
+  case 131:
+    return "CALL_FUNCTION";
+  case 132:
+    return "MAKE_FUNCTION";
+  case 133:
+    return "BUILD_SLICE";
+  case 134:
+    return "MAKE_CLOSURE";
+  case 135:
+    return "LOAD_CLOSURE";
+  case 136:
+    return "LOAD_DEREF";
+  case 137:
+    return "STORE_DEREF";
+  case 140:
+    return "CALL_FUNCTION_VAR";
+  case 141:
+    return "CALL_FUNCTION_KW";
+  case 142:
+    return "CALL_FUNCTION_VAR_KW";
+  case 143:
+    return "SETUP_WITH";
+  case 145:
+    return "EXTENDED_ARG";
+  case 146:
+    return "SET_ADD";
+  case 147:
+    return "MAP_ADD";
+  case 148:
+    return "INCREF";
+  case 149:
+    return "DECREF";
+  default:
+    return "BAD_OPCODE";
+  }
+  return "BAD_OPCODE";
+}
+
 bool is_varargs_op(int opcode) {
   static std::set<int> r;
   if (r.empty()) {
@@ -213,7 +463,7 @@ void copy_stack(RegisterStack *from, RegisterStack* to) {
  * r2 = 2 ('push' r2)
  * r3 = add r1, r2 ('pop' r1, r2)
  */
-static BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) {
+BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) {
   Py_ssize_t r;
   int r1, r2, r3, r4;
   int oparg = 0;
@@ -325,12 +575,14 @@ static BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int o
       break;
       // Load operations: push one register onto the stack.
     case LOAD_CONST:
-      r1 = stack->push_register(oparg);
-      bb->add_op(INCREF, 0, r1);
+      r1 = oparg;
+      r2 = stack->push_register(state->num_reg++);
+      bb->add_op(LOAD_FAST, 0, r1, r2);
       break;
     case LOAD_FAST:
-      r1 = stack->push_register(state->num_consts + oparg);
-      bb->add_op(INCREF, 0, r1);
+      r1 = state->num_consts + oparg;
+      r2 = stack->push_register(state->num_reg++);
+      bb->add_op(LOAD_FAST, 0, r1, r2);
       break;
     case LOAD_CLOSURE:
     case LOAD_DEREF:
@@ -350,7 +602,7 @@ static BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int o
     case STORE_FAST:
       r1 = stack->pop_register();
       // Decrement the old value.
-      bb->add_op(DECREF, 0, state->num_consts + oparg);
+//      bb->add_op(DECREF, 0, state->num_consts + oparg);
       bb->add_op(opcode, 0, r1, state->num_consts + oparg);
       break;
       // Store operations remove one or more registers from the stack.
@@ -509,8 +761,8 @@ static BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int o
       r2 = stack->pop_register();
       r3 = stack->push_register(state->num_reg++);
       bb->add_op(opcode, oparg, r1, r2, r3);
-      bb->add_op(DECREF, 0, r1);
-      bb->add_op(DECREF, 0, r2);
+//      bb->add_op(DECREF, 0, r1);
+//      bb->add_op(DECREF, 0, r2);
       break;
     case CALL_FUNCTION:
     case CALL_FUNCTION_VAR:
@@ -902,8 +1154,7 @@ void bb_to_code(CompilerState* state, std::string *out) {
         BasicBlock& a = *bb->exits[0];
         BasicBlock& b = *bb->exits[1];
         BasicBlock& fallthrough = *state->bbs[i + 1];
-        Log_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx,
-                   "One branch must fall-through (%d, %d) != %d",
+        Log_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx, "One branch must fall-through (%d, %d) != %d",
                    a.idx, b.idx, fallthrough.idx);
         BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
         Log_AssertGt(jmp.reg_offset, 0);
@@ -939,3 +1190,4 @@ PyObject* compileByteCode(PyCodeObject* code) {
 
   return compileRegCode(&state);
 }
+

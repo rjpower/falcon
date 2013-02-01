@@ -27,9 +27,9 @@ def loop(count):
 def infinite_loop():
   while 1: pass
   
-def count_threshold(list, threshold):
+def count_threshold(limit, threshold):
   count = 0
-  for item in list:
+  for item in xrange(limit):
     if item > threshold: count += 1
   return count
 
@@ -61,25 +61,24 @@ class Simple(unittest.TestCase):
     evaluator.dumpStatus()
     
   def test_count_threshold1(self):
-    l = range(10)
-    self.time_compare(count_threshold, l, 5) 
+    self.time_compare(count_threshold, 10, 5) 
     
   def test_count_threshold2(self):
-    l = range(10 * 1000 * 1000)
-    self.time_compare(count_threshold, l, len(l) / 2) 
+    self.time_compare(count_threshold, 100*1000*1000, 50*1000*1000) 
     
 #  def test_infinite_loop(self):
 #    falcon.run_function(infinite_loop)
 #        
-#  def test_nop_loop(self):
-#    st = falcon.CompilerState()
-#    bb = st.alloc_bb(0)
-#    bb.code.push_back(falcon.CompilerOp(opcode.opmap['POP_BLOCK'], 0))
-#    bb.code.push_back(falcon.CompilerOp(opcode.opmap['JUMP_ABSOLUTE'], 0))
-#    code = falcon.compileRegCode(st)
-#    evaluator = falcon.Evaluator()
-#    frame = evaluator.buildFrameFromRegCode(code)
-#    evaluator.eval(frame)
+
+  def test_alex(self):
+    st = falcon.CompilerState(count_threshold.func_code)
+    rs = falcon.RegisterStack()
+    bb0 = falcon.registerize(st, rs, 0)
+    for bb in st.bbs:
+      print bb.idx
+      for op in bb.code:
+        print falcon.opcode_to_name[op.code], op.arg
+    
     
 if __name__ == '__main__':
   unittest.main()

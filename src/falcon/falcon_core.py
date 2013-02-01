@@ -188,6 +188,10 @@ CompilerState_swigregister = _falcon_core.CompilerState_swigregister
 CompilerState_swigregister(CompilerState)
 
 
+def registerize(*args):
+  return _falcon_core.registerize(*args)
+registerize = _falcon_core.registerize
+
 def compileByteCode(*args):
   return _falcon_core.compileByteCode(*args)
 compileByteCode = _falcon_core.compileByteCode
@@ -195,6 +199,10 @@ compileByteCode = _falcon_core.compileByteCode
 def compileRegCode(*args):
   return _falcon_core.compileRegCode(*args)
 compileRegCode = _falcon_core.compileRegCode
+
+def opcode_to_name(*args):
+  return _falcon_core.opcode_to_name(*args)
+opcode_to_name = _falcon_core.opcode_to_name
 REG_MAX_STACK = _falcon_core.REG_MAX_STACK
 REG_MAX_FRAMES = _falcon_core.REG_MAX_FRAMES
 REG_MAX_BBS = _falcon_core.REG_MAX_BBS

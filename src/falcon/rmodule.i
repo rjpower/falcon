@@ -5,6 +5,15 @@
 #include "reval.h"
 %}
 
+%typemap(in) PyCodeObject* {
+  if (!PyCode_Check($input)) {
+    PyErr_SetString(PyExc_ValueError,"Expected a code object.");
+    return NULL;
+  }
+
+  $1 = ((PyCodeObject*)$input);
+}
+
 %include <std_string.i>
 %include <std_map.i>
 %include <std_vector.i>

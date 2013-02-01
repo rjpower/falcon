@@ -48,15 +48,16 @@ struct RunState {
     result = NULL;
 
     // setup const and local register aliases.
-    {
-      int i;
-      for (i = 0; i < num_consts; ++i) {
-        registers[i] = PyTuple_GET_ITEM(consts, i) ;
-      }
+    for (int i = 0; i < prelude->num_registers; ++i) {
+      registers[i] = NULL;
+    }
 
-      for (i = 0; i < num_locals; ++i) {
-        registers[num_consts + i] = fastlocals[i];
-      }
+    for (int i = 0; i < num_consts; ++i) {
+      registers[i] = PyTuple_GET_ITEM(consts, i) ;
+    }
+
+    for (int i = 0; i < num_locals; ++i) {
+      registers[num_consts + i] = fastlocals[i];
     }
 
     EVAL_LOG("New frame: %s:%d (%d %d %d)", PyString_AsString(frame->f_code->co_filename),
@@ -276,11 +277,19 @@ struct LoadName: public Op<RegOp, LoadName> {
   }
 };
 
+struct LoadFast: public Op<RegOp, LoadFast> {
+  f_inline EvalStatus _eval(RegOp op, RunState *state) {
+    Py_IncRef(state->registers[op.reg_1]);
+    Py_DecRef(state->registers[op.reg_2]);
+    state->registers[op.reg_2] = state->registers[op.reg_1];
+    return EVAL_CONTINUE;
+  }
+};
+
 struct StoreFast: public Op<RegOp, StoreFast> {
   f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    PyObject* from = state->registers[op.reg_1];
-    assert(from != NULL);
-    state->registers[op.reg_2] = from;
+    Py_DecRef(state->registers[op.reg_2]);
+    state->registers[op.reg_2] = state->registers[op.reg_1];
     return EVAL_CONTINUE;
   }
 };
@@ -662,10 +671,12 @@ BINARY_OP(INPLACE_ADD, PyNumber_InPlaceAdd);
 BINARY_OP(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract);
 BINARY_OP(INPLACE_MODULO, PyNumber_InPlaceRemainder);
 
-BAD_OP(LOAD_FAST)BAD_OP(LOAD_CONST)
+BAD_OP(LOAD_CONST)
 
 DEFINE_OP(INCREF, IncRef);
 DEFINE_OP(DECREF, DecRef);
+
+DEFINE_OP(LOAD_FAST, LoadFast);
 DEFINE_OP(LOAD_LOCALS, LoadLocals);
 DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
 DEFINE_OP(LOAD_NAME, LoadName);

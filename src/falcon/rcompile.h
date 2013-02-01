@@ -118,7 +118,10 @@ struct CompilerState {
   void dump(Writer* w);
 };
 
+BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset);
 PyObject* compileByteCode(PyCodeObject* c);
 PyObject* compileRegCode(CompilerState* c);
+const char* opcode_to_name(int opcode);
+
 
 #endif /* RCOMPILE_H_ */
