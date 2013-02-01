@@ -279,8 +279,8 @@ struct LoadName: public Op<RegOp, LoadName> {
 
 struct LoadFast: public Op<RegOp, LoadFast> {
   f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    Py_IncRef(state->registers[op.reg_1]);
-    Py_DecRef(state->registers[op.reg_2]);
+    Py_INCREF(state->registers[op.reg_1]);
+//    Py_XDECREF(state->registers[op.reg_2]);
     state->registers[op.reg_2] = state->registers[op.reg_1];
     return EVAL_CONTINUE;
   }
@@ -288,7 +288,7 @@ struct LoadFast: public Op<RegOp, LoadFast> {
 
 struct StoreFast: public Op<RegOp, StoreFast> {
   f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    Py_DecRef(state->registers[op.reg_2]);
+    Py_XDECREF(state->registers[op.reg_2]);
     state->registers[op.reg_2] = state->registers[op.reg_1];
     return EVAL_CONTINUE;
   }

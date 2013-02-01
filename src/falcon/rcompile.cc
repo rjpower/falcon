@@ -611,14 +611,14 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case STORE_NAME:
       r1 = stack->pop_register();
       bb->add_op(opcode, oparg, r1);
-      bb->add_op(DECREF, 0, r1);
+//      bb->add_op(DECREF, 0, r1);
       break;
     case STORE_ATTR:
       r1 = stack->pop_register();
       r2 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2);
-      bb->add_op(DECREF, 0, r1);
-      bb->add_op(DECREF, 0, r2);
+//      bb->add_op(DECREF, 0, r1);
+//      bb->add_op(DECREF, 0, r2);
       break;
     case STORE_MAP:
       r1 = stack->pop_register();
@@ -634,15 +634,15 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       r2 = stack->pop_register();
       r3 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2, r3);
-      bb->add_op(DECREF, 0, r1);
-      bb->add_op(DECREF, 0, r2);
-      bb->add_op(DECREF, 0, r3);
+//      bb->add_op(DECREF, 0, r1);
+//      bb->add_op(DECREF, 0, r2);
+//      bb->add_op(DECREF, 0, r3);
       break;
     case GET_ITER:
       r1 = stack->pop_register();
       r2 = stack->push_register(state->num_reg++);
       bb->add_op(opcode, oparg, r1, r2);
-      bb->add_op(DECREF, oparg, r1);
+//      bb->add_op(DECREF, oparg, r1);
       break;
     case SLICE + 0:
     case SLICE + 1:
