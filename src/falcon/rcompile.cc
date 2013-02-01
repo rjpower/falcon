@@ -10,6 +10,7 @@
 #include "marshal.h"
 #include "opcode.h"
 
+#include "rcompile.h"
 #include "reval.h"
 #include "util.h"
 
@@ -27,171 +28,164 @@
 
 using namespace std;
 
-// While compiling, we use an expanded form to represent opcodes.  This
-// is translated to a compact instruction stream as the last compilation
-// step.
-typedef struct {
-  int code;
-  int arg;
-
-  // this instruction has been marked dead by an optimization pass,
-  // and should be ignored.
-  bool dead;
-
-  std::vector<Register> regs;
-} CompilerOp;
-
-struct BasicBlock;
-
-struct BasicBlock {
-private:
-  CompilerOp* _add_op(int opcode, int arg, int num_regs) {
-    CompilerOp* op = new CompilerOp;
-    op->code = opcode;
-    op->regs.resize(num_regs);
-    op->dead = 0;
-    op->arg = arg;
-    code.push_back(op);
-
-    return op;
-  }
-public:
-
-  int py_offset;
-  int reg_offset;
-  int idx;
-
-  std::vector<BasicBlock*> exits;
-  std::vector<BasicBlock*> entries;
-  std::vector<CompilerOp*> code;
-
-  // Have we been visited by the current pass already?
-  int visited;
-  int dead;
-
-  BasicBlock(int offset, int idx) {
-    reg_offset = 0;
-    py_offset = offset;
-    visited = 0;
-    dead = false;
-    this->idx = idx;
+bool is_varargs_op(int opcode) {
+  static std::set<int> r;
+  if (r.empty()) {
+    r.insert(CALL_FUNCTION);
+    r.insert(CALL_FUNCTION_KW);
+    r.insert(CALL_FUNCTION_VAR);
+    r.insert(CALL_FUNCTION_VAR_KW);
+    r.insert(BUILD_LIST);
+    r.insert(BUILD_MAP);
+    r.insert(BUILD_MAP);
   }
 
-  CompilerOp* add_op(int opcode, int arg) {
-    return _add_op(opcode, arg, 0);
+  return r.find(opcode) != r.end();
+}
+
+bool is_branch_op(int opcode) {
+  static std::set<int> r;
+  if (r.empty()) {
+    r.insert(FOR_ITER);
+    r.insert(JUMP_IF_FALSE_OR_POP);
+    r.insert(JUMP_IF_TRUE_OR_POP);
+    r.insert(POP_JUMP_IF_FALSE);
+    r.insert(POP_JUMP_IF_TRUE);
+    r.insert(JUMP_ABSOLUTE);
+    r.insert(JUMP_FORWARD);
   }
 
-  CompilerOp* add_op(int opcode, int arg, int reg1) {
-    CompilerOp* op = _add_op(opcode, arg, 1);
-    op->regs[0] = reg1;
-    return op;
+  return r.find(opcode) != r.end();
+}
+
+std::string CompilerOp::str() const {
+  std::string out;
+  out += StringPrintf("%s ", opcode_to_name(code));
+  if (HAS_ARG(code)) {
+    out += StringPrintf("(%d) ", arg);
   }
-
-  CompilerOp* add_op(int opcode, int arg, int reg1, int reg2) {
-    CompilerOp* op = _add_op(opcode, arg, 2);
-    op->regs[0] = reg1;
-    op->regs[1] = reg2;
-    return op;
+  out += "[";
+  out += JoinString(regs.begin(), regs.end(), ",");
+  out += "]";
+  if (dead) {
+    out += " DEAD ";
   }
+  return out;
+}
 
-  CompilerOp* add_op(int opcode, int arg, int reg1, int reg2, int reg3) {
-    CompilerOp* op = _add_op(opcode, arg, 3);
-    op->regs[0] = reg1;
-    op->regs[1] = reg2;
-    op->regs[2] = reg3;
-    return op;
+void CompilerState::dump(Writer* w) {
+  for (BasicBlock* bb : bbs) {
+    w->write("bb_%d: \n  ", bb->idx);
+    w->write(JoinString(bb->code, "\n  "));
+    w->write(" -> ");
+    w->write(JoinString(bb->exits.begin(), bb->exits.end(), ",", [](BasicBlock* n) {
+      return StringPrintf("bb_%d", n->idx);
+    }));
+    w->write("\n");
   }
+}
 
-  CompilerOp* add_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4) {
-    CompilerOp* op = _add_op(opcode, arg, 4);
-    op->regs[0] = reg1;
-    op->regs[1] = reg2;
-    op->regs[2] = reg3;
-    op->regs[3] = reg4;
-    return op;
-  }
+std::string CompilerState::str() {
+  StringWriter w;
+  dump(&w);
+  return w.str();
+}
 
-  CompilerOp* add_varargs_op(int opcode, int arg, int num_regs) {
-    return _add_op(opcode, arg, num_regs);
-  }
-};
+BasicBlock* CompilerState::alloc_bb(int offset) {
+  BasicBlock* bb = new BasicBlock(offset, bbs.size());
+  bbs.push_back(bb);
+  return bb;
+}
 
-struct Frame {
-  int target;
-  int stack_pos;
-};
+std::string RegisterStack::str() {
+  return StringPrintf("[%s]", JoinString(&regs[0], &regs[stack_pos], ",", &Coerce::t_str<int>).c_str());
+}
 
-struct RegisterStack {
-  int regs[REG_MAX_STACK];
-  int stack_pos;
+CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
+  CompilerOp* op = new CompilerOp(opcode, arg);
+  op->regs.resize(num_regs);
+  code.push_back(op);
+  return op;
+}
 
-  Frame frames[REG_MAX_FRAMES];
-  int num_frames;
+BasicBlock::BasicBlock(int offset, int idx) {
+  reg_offset = 0;
+  py_offset = offset;
+  visited = 0;
+  dead = false;
+  this->idx = idx;
+}
 
-  RegisterStack() :
-      stack_pos(-1), num_frames(0) {
-  }
+CompilerOp* BasicBlock::add_op(int opcode, int arg) {
+  return _add_op(opcode, arg, 0);
+}
 
-  void push_frame(int target) {
-    assert(num_frames < REG_MAX_FRAMES);
-    Frame* f = &frames[num_frames++];
-    f->target = target;
-    f->stack_pos = stack_pos;
-  }
+CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1) {
+  CompilerOp* op = _add_op(opcode, arg, 1);
+  op->regs[0] = reg1;
+  return op;
+}
 
-  Frame* pop_frame() {
-    assert(num_frames > 0);
-    Frame* f = &frames[--num_frames];
-    stack_pos = f->stack_pos;
-    return f;
-  }
+CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3) {
+  CompilerOp* op = _add_op(opcode, arg, 3);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  op->regs[2] = reg3;
+  return op;
+}
 
-  int push_register(int reg) {
-    // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
-    assert(stack_pos < REG_MAX_STACK);
-    regs[++stack_pos] = reg;
-    return reg;
-  }
+CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4) {
+  CompilerOp* op = _add_op(opcode, arg, 4);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  op->regs[2] = reg3;
+  op->regs[3] = reg4;
+  return op;
+}
 
-  int pop_register() {
-    assert(stack_pos >= 0);
-    int reg = regs[stack_pos--];
-    assert(reg >= -1);
-    // Log_Info("Popped register %d, pos: %d", reg, stack_pos + 1);
-    return reg;
-  }
+CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2) {
+  CompilerOp* op = _add_op(opcode, arg, 2);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  return op;
+}
 
-  int peek_register(int reg) {
-    return regs[stack_pos - reg];
-  }
+CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
+  return _add_op(opcode, arg, num_regs);
+}
 
-  void print() {
-    int i;
-    Log_Info("[");
-    for (i = 0; i <= stack_pos; ++i) {
-      Log_Info("%d, ", regs[i]);
-    }
-    Log_Info("]");
-  }
+void RegisterStack::push_frame(int target) {
+  assert(num_frames < REG_MAX_FRAMES);
+  Frame* f = &frames[num_frames++];
+  f->target = target;
+  f->stack_pos = stack_pos;
+}
 
-};
+Frame* RegisterStack::pop_frame() {
+  assert(num_frames > 0);
+  Frame* f = &frames[--num_frames];
+  stack_pos = f->stack_pos;
+  return f;
+}
 
-struct CompilerState {
-  std::vector<BasicBlock*> bbs;
+int RegisterStack::push_register(int reg) {
+  // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
+  assert(stack_pos < REG_MAX_STACK);
+  regs[++stack_pos] = reg;
+  return reg;
+}
 
-  unsigned char* py_codestr;
-  Py_ssize_t py_codelen;
+int RegisterStack::pop_register() {
+  assert(stack_pos >= 0);
+  int reg = regs[stack_pos--];
+  assert(reg >= -1);
+  // Log_Info("Popped register %d, pos: %d", reg, stack_pos + 1);
+  return reg;
+}
 
-  int num_reg;
-  int num_consts;
-  int num_locals;
-
-  BasicBlock* alloc_bb(int offset) {
-    BasicBlock* bb = new BasicBlock(offset, bbs.size());
-    bbs.push_back(bb);
-    return bb;
-  }
-};
+int RegisterStack::peek_register(int reg) {
+  return regs[stack_pos - reg];
+}
 
 void copy_stack(RegisterStack *from, RegisterStack* to) {
   memcpy(to->regs, from->regs, sizeof(from->regs));
@@ -755,7 +749,7 @@ void remove_dead_code(CompilerState* state) {
 
 void bb_fuse_pass(BasicBlock* bb) {
   if (bb->visited || bb->dead || bb->exits.size() != 1) {
-    Log_Info("Leaving %d alone.", bb->idx);
+//    Log_Info("Leaving %d alone.", bb->idx);
     return;
   }
 
@@ -795,27 +789,6 @@ void bb_combine_refs(BasicBlock* bb) {
   }
 }
 
-std::string compiler_op_str(BasicBlock *bb, CompilerOp* op) {
-  std::string out;
-  out += StringPrintf("%d :: %s (ARG: %d, ", bb->idx, opcode_to_name(op->code), op->arg);
-  for (size_t i = 0; i < op->regs.size(); ++i) {
-    out += StringPrintf("%d, ", op->regs[i]);
-  }
-  out += ")";
-  if (op->dead) {
-    out += " DEAD ";
-  }
-
-  if (op == bb->code[bb->code.size() - 1]) {
-    out += "-> [";
-    for (size_t i = 0; i < bb->exits.size(); ++i) {
-      out += StringPrintf("%d,", bb->exits[i]->idx);
-    }
-    out += "]";
-  }
-  return out;
-}
-
 typedef void (*OptPass)(CompilerState*);
 
 void opt_fuse_bb(CompilerState* state) {
@@ -828,16 +801,8 @@ void opt_combine_refs(CompilerState* state) {
 }
 
 void _apply_opt_pass(CompilerState* state, OptPass pass, const char* name) {
-  //    Log_Info("Before %s:", name);
-  //    apply_op_pass(state, &print_compiler_op);
-
   pass(state);
-
   remove_dead_code(state);
-
-//    Log_Info("After %s:", name);
-//    apply_op_pass(state, &print_compiler_op);
-
 }
 
 #define apply_opt_pass(state, pass) _apply_opt_pass(state, pass, #pass)
@@ -903,11 +868,9 @@ void bb_to_code(CompilerState* state, std::string *out) {
       size_t offset = out->size();
       out->resize(out->size() + RCompilerUtil::op_size(c));
       RCompilerUtil::write_op(&(*out)[0] + offset, c);
-      Log_Info("Wrote op at offset %d, size: %d, %s", offset, RCompilerUtil::op_size(c),
-               compiler_op_str(bb, c).c_str());
-
+      Log_Debug("Wrote op at offset %d, size: %d, %s", offset, RCompilerUtil::op_size(c), c->str().c_str());
       RMachineOp* rop = (RMachineOp*) (&(*out)[0] + offset);
-      assert(RCompilerUtil::op_size(c) == RMachineOp::size(*rop));
+      Log_AssertEq(RCompilerUtil::op_size(c), RMachineOp::size(*rop));
     }
   }
 
@@ -921,10 +884,10 @@ void bb_to_code(CompilerState* state, std::string *out) {
     // Skip to the end of the basic block.
     for (size_t j = 0; j < bb->code.size(); ++j) {
       op = (RMachineOp*) (out->data() + pos);
-      Log_Info("Checking op %s at offset %d.", opcode_to_name(op->code()), pos);
+      Log_Debug("Checking op %s at offset %d.", opcode_to_name(op->code()), pos);
 
-      assert(op->code() == bb->code[j]->code);
-      assert(op->arg() == bb->code[j]->arg);
+      Log_AssertEq(op->code(), bb->code[j]->code);
+      Log_AssertEq(op->arg(), bb->code[j]->arg);
       pos += RMachineOp::size(*op);
     }
 
@@ -938,46 +901,41 @@ void bb_to_code(CompilerState* state, std::string *out) {
         // One exit is the fall-through to the next block.
         BasicBlock& a = *bb->exits[0];
         BasicBlock& b = *bb->exits[1];
-        assert(a.idx == (bb->idx + 1) || b.idx == (bb->idx + 1));
-        BasicBlock& jmp = (a.idx == bb->idx + 1) ? b : a;
-        assert(jmp.reg_offset > 0);
+        BasicBlock& fallthrough = *state->bbs[i + 1];
+        Log_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx,
+                   "One branch must fall-through (%d, %d) != %d",
+                   a.idx, b.idx, fallthrough.idx);
+        BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
+        Log_AssertGt(jmp.reg_offset, 0);
         op->branch.label = jmp.reg_offset;
-        assert(op->branch.label == jmp.reg_offset);
+        Log_AssertEq(op->branch.label, jmp.reg_offset);
       }
     }
   }
 }
 
-/*
- * Transform stack machine bytecode into registerized form.
- */
-PyObject * RegisterCompileCode(PyCodeObject * code) {
-  CompilerState state;
+PyObject* compileRegCode(CompilerState* state) {
+  apply_opt_pass(state, &opt_fuse_bb);
+  apply_opt_pass(state, &opt_combine_refs);
+
+  printf("%s\n", state->str().c_str());
+
+  std::string regcode;
+  bb_to_code(state, &regcode);
+  PyObject* regobj = PyString_FromStringAndSize((char*) regcode.data(), regcode.size());
+  return regobj;
+}
+
+PyObject* compileByteCode(PyCodeObject* code) {
+  CompilerState state(code);
   RegisterStack stack;
-
-  int codelen = PyString_GET_SIZE(code->co_code);
-
-  state.num_consts = PyTuple_Size(code->co_consts);
-  state.num_locals = code->co_nlocals;
-  // Offset by the number of constants and locals.
-  state.num_reg = state.num_consts + state.num_locals;
-  Log_Info("Consts: %d, locals: %d, first register: %d", state.num_consts, state.num_locals, state.num_reg);
-
-  state.py_codelen = codelen;
-  state.py_codestr = (unsigned char*) PyString_AsString(code->co_code);
 
   BasicBlock* entry_point = registerize(&state, &stack, 0);
   if (entry_point == NULL) {
     Log_Info("Failed to registerize %s:%d (%s), using stack machine.",
-        PyString_AsString(code->co_filename), code->co_firstlineno, PyString_AsString(code->co_name));
+             PyString_AsString(code->co_filename), code->co_firstlineno, PyString_AsString(code->co_name));
     return NULL;
   }
 
-  apply_opt_pass(&state, &opt_fuse_bb);
-  apply_opt_pass(&state, &opt_combine_refs);
-
-  std::string regcode;
-  bb_to_code(&state, &regcode);
-  PyObject* regobj = PyString_FromStringAndSize((char*) regcode.data(), regcode.size());
-  return regobj;
+  return compileRegCode(&state);
 }

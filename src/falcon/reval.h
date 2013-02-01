@@ -13,7 +13,14 @@
 
 #define REG_MAGIC "REG1"
 
+#ifdef SWIG
+#define f_inline
+#else
 #define f_inline __attribute__((always_inline)) inline
+#endif
+
+bool is_varargs_op(int opcode);
+bool is_branch_op(int opcode);
 
 // Register layout --
 //
@@ -28,36 +35,6 @@ typedef void* JumpAddr;
 
 #define INCREF 148
 #define DECREF 149
-
-static inline bool is_varargs_op(int opcode) {
-  static std::set<int> r;
-  if (r.empty()) {
-    r.insert(CALL_FUNCTION);
-    r.insert(CALL_FUNCTION_KW);
-    r.insert(CALL_FUNCTION_VAR);
-    r.insert(CALL_FUNCTION_VAR_KW);
-    r.insert(BUILD_LIST);
-    r.insert(BUILD_MAP);
-    r.insert(BUILD_MAP);
-  }
-
-  return r.find(opcode) != r.end();
-}
-
-static inline bool is_branch_op(int opcode) {
-  static std::set<int> r;
-  if (r.empty()) {
-    r.insert(FOR_ITER);
-    r.insert(JUMP_IF_FALSE_OR_POP);
-    r.insert(JUMP_IF_TRUE_OR_POP);
-    r.insert(POP_JUMP_IF_FALSE);
-    r.insert(POP_JUMP_IF_TRUE);
-    r.insert(JUMP_ABSOLUTE);
-    r.insert(JUMP_FORWARD);
-  }
-
-  return r.find(opcode) != r.end();
-}
 
 #pragma pack(push, 0)
 struct RegisterPrelude {
@@ -149,12 +126,39 @@ struct RMachineOp {
 struct RegisterFrame {
   PyFrameObject* frame;
   PyObject* regcode;
+  RegisterFrame(PyFrameObject* f, PyObject* c) :
+      frame(f), regcode(c) {
+  }
+  ~RegisterFrame() {
+    Py_XDECREF(frame);
+  }
 };
 
-extern "C" {
-PyObject* RegisterCompileCode(PyCodeObject * code);
-PyObject* RegisterEvalFrame(RegisterFrame *f);
-PyObject* RegisterRunFunction(PyObject* func, PyObject* args);
-}
+class Evaluator {
+private:
+  f_inline void collectInfo(int opcode);
+
+public:
+  int32_t opCounts[256];
+  int64_t opTimes[256];
+
+  int32_t totalCount;
+  int64_t lastClock;
+
+  Evaluator() {
+    bzero(opCounts, sizeof(opCounts));
+    bzero(opTimes, sizeof(opTimes));
+    totalCount = 0;
+    lastClock = 0;
+  }
+
+  PyObject* eval(RegisterFrame* rf);
+  PyObject* evalPython(PyObject* func, PyObject* args);
+
+  RegisterFrame* buildFrameFromPython(PyObject* func, PyObject* args);
+  RegisterFrame* buildFrameFromRegCode(PyObject* code);
+
+  void dumpStatus();
+};
 
 #endif /* REVAL_H_ */

@@ -5,6 +5,7 @@ build/
 include/
 lib/
 local/
+rmodule_wrap.cpp
 perf.data
 perf.data.old
 python-src

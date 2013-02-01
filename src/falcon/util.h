@@ -6,6 +6,8 @@
 #include <stdarg.h>
 #include <signal.h>
 
+#include <boost/function.hpp>
+
 #include <map>
 #include <string>
 #include <vector>
@@ -60,33 +62,70 @@ const char* strnstr(const char* haystack, const char* needle, int len);
 std::string StringPrintf(StringPiece fmt, ...);
 std::string VStringPrintf(StringPiece fmt, va_list args);
 
-std::string ToString(int32_t);
-std::string ToString(int64_t);
-std::string ToString(double);
-std::string ToString(std::string);
-std::string ToString(StringPiece);
+struct Coerce {
+  static std::string str(const short& v) {
+    return StringPrintf("%d", v);
+  }
 
-template<class T>
-std::string ToString(const std::vector<T>& v) {
-  return JoinString(v.begin(), v.end(), ",");
-}
+  static std::string str(const int& v) {
+    return StringPrintf("%d", v);
+  }
 
-template<class A, class B>
-std::string ToString(const std::pair<A, B>& v) {
-  return ToString(v.first) + " : " + ToString(v.second);
-}
+  static std::string str(const double& v) {
+    return StringPrintf("%f", v);
+  }
+
+  static std::string str(const std::string& v) {
+    return v;
+  }
+
+  template <class T>
+  static std::string str(const T* t) {
+    return t->str();
+  }
+
+  template <class T>
+  static std::string t_str(const T& v) {
+    return str(v);
+  }
+
+  template<class T>
+  static std::string str(const std::vector<T>& v) {
+    return JoinString(v.begin(), v.end(), ",");
+  }
+};
 
 template<class Iterator>
 std::string JoinString(Iterator start, Iterator end, std::string delim = " ") {
   std::string out;
   while (start != end) {
-    out += ToString(*start);
+    out += Coerce::str(*start);
     ++start;
     if (start != end) {
       out += delim;
     }
   }
   return out;
+}
+
+template<class Iterator, class Converter>
+std::string JoinString(Iterator start, Iterator end, std::string delim, Converter to_str) {
+  std::string out;
+  while (start != end) {
+    std::string part = to_str(*start);
+    out += part;
+
+    ++start;
+    if (start != end) {
+      out += delim;
+    }
+  }
+  return out;
+}
+
+template<class ValueType>
+std::string JoinString(const std::vector<ValueType>& v, std::string delim) {
+  return JoinString(v.begin(), v.end(), delim);
 }
 
 struct TimerRegistry {
@@ -105,6 +144,47 @@ struct TimerRegistry {
       out += StringPrintf("%s : %.2f, ", i->first.c_str(), *i->second);
     }
     return out;
+  }
+};
+
+struct Writer {
+  template<class T>
+  void write(const T& t) {
+    write(ToString(t));
+  }
+
+  virtual void write(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    std::string res = VStringPrintf(fmt, args);
+    va_end(args);
+
+    this->write(res);
+  }
+  virtual void write(const std::string&) = 0;
+};
+
+class StringWriter: public Writer {
+  std::string buffer_;
+public:
+  virtual void write(const std::string& data) {
+    buffer_.append(data);
+  }
+
+  const std::string& str() {
+    return buffer_;
+  }
+};
+
+class FileWriter: public Writer {
+private:
+  int fd_;
+public:
+  FileWriter(int fd) :
+      fd_(fd) {
+  }
+  virtual void write(const std::string& data) {
+    assert(::write(fd_, data.data(), data.size()) == data.size());
   }
 };
 
@@ -174,4 +254,8 @@ void logAtLevel(LogLevel level, const char* file, int line, const char* fmt, ...
 #define Log_Assert(expr, fmt, ...)\
   if(!(expr)) { Log_Fatal(fmt, ##__VA_ARGS__); }
 
+#define Log_AssertEq(a, b)\
+    { decltype(a) a_ = (a); decltype(b) b_ = (b); Log_Assert(a_ == b_, "Expected %s == %s.", #a, #b); }
+#define Log_AssertGt(a, b)\
+    { decltype(a) a_ = (a); decltype(b) b_ = (b); Log_Assert(a_ > b_, "Expected %s > %s.", #a, #b); }
 #endif

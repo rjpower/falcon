@@ -12,11 +12,11 @@ from setuptools import setup, Extension
 system, node, release, version, machine, processor = platform.uname()
 
 setup(
-  name='tempest',
+  name='peregrine-falcon',
   version='0.01',
   maintainer='Russell Power',
   maintainer_email='russell.power@gmail.com',
-  url='http://code.google.com/p/py-leveldb/',
+  url='http://github.com/rjpower/peregrine-falcon',
 
   classifiers=[
     'Development Status :: 4 - Beta',
@@ -26,8 +26,6 @@ setup(
     'Operating System :: POSIX',
     'Programming Language :: C++',
     'Programming Language :: Python',
-    'Programming Language :: Python :: 2.4',
-    'Programming Language :: Python :: 2.5',
     'Programming Language :: Python :: 2.6',
     'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3.0',
@@ -36,20 +34,22 @@ setup(
     'Programming Language :: Python :: 3.3',
   ],
 
-  description='Python bindings for leveldb database library',
+  description='Faster then a speeding bullet...',
 
   package_dir={'': 'src'},
-  packages=['tempest'],
+  packages=['falcon'],
 
   ext_modules=[
-    Extension('_tempest',
-      include_dirs=['./src/C'],
+    Extension('_falcon_core',
+      include_dirs=['./src'],
       sources=[
-              'src/c/reval.cc',
-              'src/c/rcompile.cc',
-              'src/c/util.cc',
-      ],
-      extra_compile_args=['-O3', '-fno-gcse', '-fno-crossjumping', '-ggdb2'],
+              'src/falcon/reval.cc',
+              'src/falcon/rcompile.cc',
+              'src/falcon/util.cc',
+              'src/falcon/rmodule.i'
+              ],
+      swig_opts = ['-Isrc', '-modern', '-O', '-c++',],
+      extra_compile_args=['-O2', '-fno-omit-frame-pointer', '-fno-gcse', '-fno-crossjumping', '-ggdb2', '-std=c++0x'],
       extra_link_args=['-lrt'],
     )
   ]

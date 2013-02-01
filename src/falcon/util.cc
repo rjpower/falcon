@@ -438,25 +438,6 @@ string VStringPrintf(StringPiece fmt, va_list l) {
   return string(buffer);
 }
 
-string ToString(int32_t v) {
-  return StringPrintf("%d", v);
-}
-
-string ToString(int64_t v) {
-  return StringPrintf("%ld", v);
-}
-
-string ToString(double v) {
-  return StringPrintf("%f", v);
-}
-
-string ToString(string v) {
-  return v;
-}
-string ToString(StringPiece v) {
-  return v.str();
-}
-
 const char* strnstr(const char* haystack, const char* needle, int len) {
   int nlen = strlen(needle);
   for (int i = 0; i < len - nlen; ++i) {

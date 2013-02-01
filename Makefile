@@ -1,10 +1,5 @@
-export
-
-PATH := $(shell readlink -f ./bin/):$(PATH)
-PYTHONHOME := $(shell readlink -f .)
-
 all:
-	python setup.py build -f
+	python setup.py build -f -g -q
 	python setup.py develop
 
 clean:
