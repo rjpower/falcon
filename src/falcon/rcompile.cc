@@ -591,13 +591,11 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case LOAD_NAME:
       r1 = stack->push_register(state->num_reg++);
       bb->add_op(opcode, oparg, r1);
-      bb->add_op(INCREF, 0, r1);
       break;
     case LOAD_ATTR:
       r1 = stack->pop_register();
       r2 = stack->push_register(state->num_reg++);
       bb->add_op(opcode, oparg, r1, r2);
-      bb->add_op(DECREF, 0, r1);
       break;
     case STORE_FAST:
       r1 = stack->pop_register();

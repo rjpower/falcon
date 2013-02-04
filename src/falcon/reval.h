@@ -46,32 +46,32 @@ struct RegisterPrelude {
 };
 
 struct OpHeader {
-  uint64_t code :8;
-  uint64_t arg :14;
+  uint8_t code;
+  uint8_t arg;
 };
 
 struct BranchOp {
-  uint64_t code :8;
-  uint64_t arg :14;
-  uint64_t reg_1 :14;
-  uint64_t reg_2 :14;
-  uint64_t label :14;
+  uint8_t code;
+  uint8_t arg;
+  uint16_t reg_1;
+  uint16_t reg_2;
+  uint16_t label;
 };
 
 struct RegOp {
-  uint64_t code :8;
-  uint64_t arg :14;
-  uint64_t reg_1 :14;
-  uint64_t reg_2 :14;
-  uint64_t reg_3 :14;
+  uint8_t code;
+  uint8_t arg;
+  uint16_t reg_1;
+  uint16_t reg_2;
+  uint16_t reg_3;
 };
 
 // A variable size op is at least 8 bytes, but can contain
 // addition registers off the end of the structure.
 struct VarRegOp {
-  uint32_t code :8;
-  uint32_t arg :14;
-  uint32_t num_registers :10;
+  uint8_t code;
+  uint8_t arg;
+  uint16_t num_registers;
   Register regs[2];
 };
 
@@ -134,10 +134,71 @@ struct RegisterFrame {
   }
 };
 
+struct RunState {
+  char *code;
+  PyObject** registers;
+  PyFrameObject* frame;
+
+  f_inline PyObject* names() {
+    return frame->f_code->co_names;
+  }
+
+  f_inline PyObject* locals() {
+    return frame->f_locals;
+  }
+
+  f_inline PyObject* globals() {
+    return frame->f_globals;
+  }
+
+  f_inline PyObject* builtins() {
+    return frame->f_builtins;
+  }
+
+  f_inline int offset(const char* pc) const {
+    return (int) (pc - code);
+  }
+
+  f_inline int next_code(const char* pc) const {
+    return ((RMachineOp*)pc)->header.code;
+  }
+
+  RunState(RegisterFrame* r) {
+    Py_ssize_t codelen;
+    PyString_AsStringAndSize(r->regcode, &code, &codelen);
+
+    RegisterPrelude *prelude = (RegisterPrelude*) code;
+    assert(memcmp(&prelude->magic, REG_MAGIC, 4) == 0);
+
+    frame = r->frame;
+    registers = new PyObject*[prelude->num_registers];
+    PyObject* consts = frame->f_code->co_consts;
+    PyObject** fastlocals = frame->f_localsplus;
+    int num_consts = PyTuple_Size(consts);
+    int num_locals = frame->f_code->co_nlocals;
+
+    // setup const and local register aliases.
+    for (int i = 0; i < prelude->num_registers; ++i) {
+      registers[i] = NULL;
+    }
+
+    for (int i = 0; i < num_consts; ++i) {
+      registers[i] = PyTuple_GET_ITEM(consts, i);
+    }
+
+    for (int i = 0; i < num_locals; ++i) {
+      registers[num_consts + i] = fastlocals[i];
+    }
+  }
+
+  ~RunState() {
+    delete[] registers;
+  }
+};
+
 class Evaluator {
 private:
   f_inline void collectInfo(int opcode);
-
 public:
   int32_t opCounts[256];
   int64_t opTimes[256];

@@ -7,71 +7,18 @@
 #include "reval.h"
 #include "rcompile.h"
 
+static const char* Repr(PyObject* o) {
+  return PyString_AsString(PyObject_Str(o));
+}
+
 #define EVAL_LOG(...)
-//#define EVAL_LOG(...) if (kEvalLoggingEnabled) { fprintf(stderr, __VA_ARGS__); fputs("\n", stderr); }
+//#define EVAL_LOG(...) fprintf(stderr, __VA_ARGS__); fputs("\n", stderr);
 
-static bool kEvalLoggingEnabled = false;
+typedef PyObject* (*PyNumberFunction)(PyObject*, PyObject*);
 
-struct RunState {
-  char *code;
-  Py_ssize_t codelen;
-
-  int offset;
-  PyObject** registers;
-  PyObject* consts;
-  PyObject* globals;
-  PyObject* names;
-  PyObject* locals;
-  PyObject* result;
-  PyObject** fastlocals;
-  int num_consts;
-  int num_locals;
-  PyFrameObject* frame;
-
-  RunState(RegisterFrame* r) {
-    PyString_AsStringAndSize(r->regcode, &code, &codelen);
-
-    RegisterPrelude *prelude = (RegisterPrelude*) code;
-    assert(memcmp(&prelude->magic, REG_MAGIC, 4) == 0);
-
-    offset = sizeof(RegisterPrelude);
-
-    frame = r->frame;
-    registers = new PyObject*[prelude->num_registers];
-    consts = frame->f_code->co_consts;
-    globals = frame->f_globals;
-    names = frame->f_code->co_names;
-    locals = frame->f_locals;
-    fastlocals = frame->f_localsplus;
-    num_consts = PyTuple_Size(consts);
-    num_locals = frame->f_code->co_nlocals;
-    result = NULL;
-
-    // setup const and local register aliases.
-    for (int i = 0; i < prelude->num_registers; ++i) {
-      registers[i] = NULL;
-    }
-
-    for (int i = 0; i < num_consts; ++i) {
-      registers[i] = PyTuple_GET_ITEM(consts, i) ;
-    }
-
-    for (int i = 0; i < num_locals; ++i) {
-      registers[num_consts + i] = fastlocals[i];
-    }
-
-    EVAL_LOG("New frame: %s:%d (%d %d %d)", PyString_AsString(frame->f_code->co_filename),
-        frame->f_code->co_firstlineno, num_consts, num_locals, prelude->num_registers);
-  }
-
-  ~RunState() {
-    delete[] registers;
-  }
-
-  f_inline RMachineOp* next() {
-    return (RMachineOp*) (code + offset);
-  }
-};
+typedef enum {
+  EVAL_ERROR,
+} EvalStatus;
 
 struct GilHelper {
   PyGILState_STATE state_;
@@ -91,7 +38,7 @@ RegisterFrame* Evaluator::buildFrameFromPython(PyObject* function, PyObject* arg
   PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(function);
 
   if (args == NULL || !PyTuple_Check(args)) {
-    EVAL_LOG("Not a tuple? %d %s", PyString_AsString(PyObject_Repr(PyObject_Type(args))));
+    EVAL_LOG("Not a tuple? %s", PyString_AsString(PyObject_Repr(PyObject_Type(args))));
     return NULL;
   }
 
@@ -135,46 +82,28 @@ void Evaluator::dumpStatus() {
 }
 
 void Evaluator::collectInfo(int opcode) {
-  //  ++totalCount;
+  ++totalCount;
   //  ++opCounts[opcode];
-  //  if (totalCount % 113 == 0) {
+//    if (totalCount % 113 == 0) {
   //    opTimes[opcode] += rdtsc() - lastClock;
   //    lastClock = rdtsc();
   //  }
-//  if (totalCount > 1e9) {
-//    dumpStatus();
-//    raise EVAL_ERROR;
-//  }
+  if (totalCount > 1e9) {
+    dumpStatus();
+    throw EVAL_ERROR;
+  }
 }
-
-typedef PyObject* (*PyNumberFunction)(PyObject*, PyObject*);
-
-typedef enum {
-  EVAL_CONTINUE, EVAL_RETURN, EVAL_ERROR
-} EvalStatus;
 
 template<class OpType, class SubType>
 struct Op {
 };
 
 template<class SubType>
-struct Op<BranchOp, SubType> {
-  f_inline EvalStatus eval(RunState* state, RMachineOp op) {
-    state->offset += sizeof(RMachineOp);
-    return ((SubType*) this)->_eval(op.branch, state);
-  }
-
-  static SubType instance;
-};
-
-template<class SubType>
-SubType Op<BranchOp, SubType>::instance;
-
-template<class SubType>
 struct Op<RegOp, SubType> {
-  f_inline EvalStatus eval(RunState* state, RMachineOp op) {
-    state->offset += sizeof(RMachineOp);
-    return ((SubType*) this)->_eval(op.reg, state);
+  f_inline void eval(RunState* state, const char** pc) {
+    RegOp op = *((RegOp*)*pc);
+    *pc += sizeof(RegOp);
+    ((SubType*) this)->_eval(op, state);
   }
 
   static SubType instance;
@@ -185,10 +114,10 @@ SubType Op<RegOp, SubType>::instance;
 
 template<class SubType>
 struct Op<VarRegOp, SubType> {
-  f_inline EvalStatus eval(RunState* state, RMachineOp ignored) {
-    VarRegOp *op = (VarRegOp*) (state->code + state->offset);
-    state->offset += RMachineOp::size(*op);
-    return ((SubType*) this)->_eval(op, state);
+  f_inline void eval(RunState* state, const char** pc) {
+    VarRegOp *op = (VarRegOp*) (*pc);
+    *pc += RMachineOp::size(*op);
+    ((SubType*) this)->_eval(op, state);
   }
 
   static SubType instance;
@@ -196,153 +125,150 @@ struct Op<VarRegOp, SubType> {
 template<class SubType>
 SubType Op<VarRegOp, SubType>::instance;
 
+template<class SubType>
+struct Op<BranchOp, SubType> {
+  f_inline void eval(RunState* state, const char** pc) {
+    BranchOp op = *((BranchOp*)*pc);
+    ((SubType*) this)->_eval(op, state, pc);
+  }
+
+  static SubType instance;
+};
+
+template<class SubType>
+SubType Op<BranchOp, SubType>::instance;
+
 template<int OpCode, PyNumberFunction F>
 struct BinOp: public Op<RegOp, BinOp<OpCode, F> > {
-  f_inline EvalStatus _eval(RegOp op, RunState* state) {
+  f_inline void _eval(RegOp op, RunState* state) {
     PyObject* r1 = state->registers[op.reg_1];
     PyObject* r2 = state->registers[op.reg_2];
     PyObject* r3 = F(r1, r2);
     state->registers[op.reg_3] = r3;
-    return EVAL_CONTINUE;
   }
 };
 
-static const char* Repr(PyObject* o) {
-  return PyString_AsString(PyObject_Str(o));
-}
-
 struct CompareOp: public Op<RegOp, CompareOp> {
-  f_inline EvalStatus _eval(RegOp op, RunState* state) {
+  f_inline void _eval(RegOp op, RunState* state) {
     PyObject* r1 = state->registers[op.reg_1];
     PyObject* r2 = state->registers[op.reg_2];
     PyObject* r3 = PyObject_RichCompare(r2, r1, op.arg);
 
     EVAL_LOG("Compare: %s, %s -> %s", Repr(r1), Repr(r2), Repr(r3));
     state->registers[op.reg_3] = r3;
-
-    return EVAL_CONTINUE;
   }
 };
 
 struct IncRef: public Op<RegOp, IncRef> {
-  f_inline EvalStatus _eval(RegOp op, RunState* state) {
+  f_inline void _eval(RegOp op, RunState* state) {
     Py_IncRef(state->registers[op.reg_1]);
-    return EVAL_CONTINUE;
   }
 };
 
 struct DecRef: public Op<RegOp, DecRef> {
-  f_inline EvalStatus _eval(RegOp op, RunState* state) {
+  f_inline void _eval(RegOp op, RunState* state) {
     Py_DecRef(state->registers[op.reg_1]);
-    return EVAL_CONTINUE;
   }
 };
 
 struct LoadLocals: public Op<RegOp, LoadLocals> {
-  f_inline EvalStatus _eval(RegOp op, RunState* state) {
-    state->registers[op.reg_1] = state->locals;
-    Py_IncRef(state->locals);
-    return EVAL_CONTINUE;
+  f_inline void _eval(RegOp op, RunState* state) {
+    state->registers[op.reg_1] = state->frame->f_locals;
+    Py_IncRef(state->registers[op.reg_1]);
   }
 };
 
 struct LoadGlobal: public Op<RegOp, LoadGlobal> {
-  f_inline EvalStatus _eval(RegOp op, RunState* state) {
-    PyObject* r1 = PyTuple_GET_ITEM(state->names, op.arg) ;
-    PyObject* r2 = PyDict_GetItem(state->globals, r1);
+  f_inline void _eval(RegOp op, RunState* state) {
+    PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
+    PyObject* r2 = PyDict_GetItem(state->globals(), r1);
     if (r2 == NULL) {
-      r2 = PyDict_GetItem(state->frame->f_builtins, r1);
+      r2 = PyDict_GetItem(state->builtins(), r1);
     }
     if (r2 == NULL) {
       PyErr_SetString(PyExc_NameError, "Global name XXX not defined.");
       throw EVAL_ERROR;
     }
     state->registers[op.reg_1] = r2;
-    return EVAL_CONTINUE;
   }
 };
 
 struct LoadName: public Op<RegOp, LoadName> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    PyObject* r1 = PyTuple_GET_ITEM(state->names, op.arg) ;
-    PyObject* r2 = PyDict_GetItem(state->locals, r1);
+  f_inline void _eval(RegOp op, RunState *state) {
+    PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
+    PyObject* r2 = PyDict_GetItem(state->locals(), r1);
     if (r2 == NULL) {
-      r2 = PyDict_GetItem(state->globals, r1);
+      r2 = PyDict_GetItem(state->globals(), r1);
     }
     if (r2 == NULL) {
       r2 = PyDict_GetItem(state->frame->f_builtins, r1);
     }
+    Py_INCREF(r2);
     state->registers[op.reg_1] = r2;
-    return EVAL_CONTINUE;
   }
 };
 
 struct LoadFast: public Op<RegOp, LoadFast> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    Py_INCREF(state->registers[op.reg_1]);
+  f_inline void _eval(RegOp op, RunState *state) {
+    Py_IncRef(state->registers[op.reg_1]);
 //    Py_XDECREF(state->registers[op.reg_2]);
     state->registers[op.reg_2] = state->registers[op.reg_1];
-    return EVAL_CONTINUE;
   }
 };
 
 struct StoreFast: public Op<RegOp, StoreFast> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
+  f_inline void _eval(RegOp op, RunState *state) {
     Py_XDECREF(state->registers[op.reg_2]);
     state->registers[op.reg_2] = state->registers[op.reg_1];
-    return EVAL_CONTINUE;
   }
 };
 
 struct StoreName: public Op<RegOp, StoreName> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    PyObject* r1 = PyTuple_GET_ITEM(state->names, op.arg) ;
+  f_inline void _eval(RegOp op, RunState *state) {
+    PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = state->registers[op.reg_1];
-    PyObject_SetItem(state->locals, r1, r2);
-    return EVAL_CONTINUE;
+    PyObject_SetItem(state->frame->f_locals, r1, r2);
   }
 };
 
 struct StoreAttr: public Op<RegOp, StoreAttr> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    PyObject* t = PyTuple_GET_ITEM(state->names, op.arg) ;
+  f_inline void _eval(RegOp op, RunState *state) {
+    PyObject* t = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* key = state->registers[op.reg_1];
     PyObject* value = state->registers[op.reg_2];
     PyObject_SetAttr(t, key, value);
-    return EVAL_CONTINUE;
   }
 };
 
 struct StoreSubscr: public Op<RegOp, StoreSubscr> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
+  f_inline void _eval(RegOp op, RunState *state) {
     PyObject* key = state->registers[op.reg_1];
     PyObject* list = state->registers[op.reg_2];
     PyObject* value = state->registers[op.reg_3];
     PyObject_SetItem(list, key, value);
-    return EVAL_CONTINUE;
   }
 };
 
 struct BinarySubscr: public Op<RegOp, BinarySubscr> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
+  f_inline void _eval(RegOp op, RunState *state) {
     PyObject* key = state->registers[op.reg_1];
     PyObject* list = state->registers[op.reg_2];
     state->registers[op.reg_3] = PyObject_GetItem(list, key);
-    return EVAL_CONTINUE;
+
   }
 };
 
 struct LoadAttr: public Op<RegOp, LoadAttr> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
+  f_inline void _eval(RegOp op, RunState *state) {
     PyObject* obj = state->registers[op.reg_1];
-    PyObject* name = PyTuple_GET_ITEM(state->names, op.arg) ;
+    PyObject* name = PyTuple_GET_ITEM(state->names(), op.arg) ;
     state->registers[op.reg_2] = PyObject_GetAttr(obj, name);
-    return EVAL_CONTINUE;
+    Py_DECREF(obj);
   }
 };
 
 struct CallFunction: public Op<VarRegOp, CallFunction> {
-  f_inline EvalStatus _eval(VarRegOp *op, RunState *state) {
+  f_inline void _eval(VarRegOp *op, RunState *state) {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
@@ -370,99 +296,101 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
     }
 
     state->registers[op->regs[n + 1]] = res;
-    return EVAL_CONTINUE;
+
   }
 };
 
 struct GetIter: public Op<RegOp, GetIter> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
+  f_inline void _eval(RegOp op, RunState *state) {
     PyObject* res = PyObject_GetIter(state->registers[op.reg_1]);
     state->registers[op.reg_2] = res;
-    return EVAL_CONTINUE;
   }
 };
 
 struct ForIter: public Op<BranchOp, ForIter> {
-  f_inline EvalStatus _eval(BranchOp op, RunState *state) {
+  f_inline void _eval(BranchOp op, RunState *state, const char **pc) {
     PyObject* r1 = PyIter_Next(state->registers[op.reg_1]);
     if (r1) {
       state->registers[op.reg_2] = r1;
+      *pc += sizeof(BranchOp);
     } else {
-      state->offset = op.label;
+      *pc = state->code + op.label;
     }
-    return EVAL_CONTINUE;
+
   }
 };
 
 struct JumpIfFalseOrPop: public Op<BranchOp, JumpIfFalseOrPop> {
-  f_inline EvalStatus _eval(BranchOp op, RunState *state) {
+  f_inline void _eval(BranchOp op, RunState *state, const char **pc) {
     PyObject *r1 = state->registers[op.reg_1];
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
 //      EVAL_LOG("Jumping: %s -> %d", Repr(r1), op.label);
-      state->offset = op.label;
+      *pc = state->code + op.label;
+    } else {
+      *pc += sizeof(BranchOp);
     }
-    return EVAL_CONTINUE;
+
   }
 };
 
 struct JumpIfTrueOrPop: public Op<BranchOp, JumpIfTrueOrPop> {
-  f_inline EvalStatus _eval(BranchOp op, RunState *state) {
+  f_inline void _eval(BranchOp op, RunState *state, const char **pc) {
     PyObject* r1 = state->registers[op.reg_1];
     if (r1 == Py_True || (PyObject_IsTrue(r1) == 1)) {
-      state->offset = op.label;
+      *pc = state->code + op.label;
+    } else {
+      *pc += sizeof(BranchOp);
     }
-    return EVAL_CONTINUE;
+
   }
 };
 
 struct JumpAbsolute: public Op<BranchOp, JumpAbsolute> {
-  f_inline EvalStatus _eval(BranchOp op, RunState *state) {
-    state->offset = op.label;
-    return EVAL_CONTINUE;
+  f_inline void _eval(BranchOp op, RunState *state, const char **pc) {
+    *pc = state->code + op.label;
   }
 };
 
 struct ReturnValue: public Op<RegOp, ReturnValue> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    state->result = state->registers[op.reg_1];
-    Py_IncRef(state->result);
-    throw EVAL_RETURN;
+  f_inline void _eval(RegOp op, RunState *state) {
+    PyObject* result = state->registers[op.reg_1];
+    Py_IncRef(result);
+    throw result;
   }
 };
 
 struct PopBlock: public Op<RegOp, PopBlock> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    return EVAL_CONTINUE;
+  f_inline void _eval(RegOp op, RunState *state) {
+
   }
 };
 
 struct Nop: public Op<RegOp, Nop> {
-  f_inline EvalStatus _eval(RegOp op, RunState *state) {
-    return EVAL_CONTINUE;
+  f_inline void _eval(RegOp op, RunState *state) {
+
   }
 };
 
 struct BuildTuple: public Op<VarRegOp, BuildTuple> {
-  f_inline EvalStatus _eval(VarRegOp *op, RunState *state) {
+  f_inline void _eval(VarRegOp *op, RunState *state) {
     int i;
     PyObject* t = PyTuple_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
       PyTuple_SET_ITEM(t, i, state->registers[op->regs[i]]);
     }
     state->registers[op->regs[op->arg]] = t;
-    return EVAL_CONTINUE;
+
   }
 };
 
 struct BuildList: public Op<VarRegOp, BuildList> {
-  f_inline EvalStatus _eval(VarRegOp *op, RunState *state) {
+  f_inline void _eval(VarRegOp *op, RunState *state) {
     int i;
     PyObject* t = PyList_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
       PyList_SET_ITEM(t, i, state->registers[op->regs[i]]);
     }
     state->registers[op->regs[op->arg]] = t;
-    return EVAL_CONTINUE;
   }
 };
 
@@ -471,14 +399,11 @@ struct BuildList: public Op<VarRegOp, BuildList> {
 #define REGISTER_OP(opname)\
     static int _force_register_ ## opname = LabelRegistry::add_label(opname, &&op_ ## opname);
 
-#define _DEFINE_OP(opname, impl){\
-      EVAL_LOG("%5d: %s", state.offset, opcode_to_name(opname));\
-      collectInfo(opname);\
-      impl::instance.eval(&state, next);\
-      assert(state.offset < state.codelen);\
-      next = *((RMachineOp*)(state.code + state.offset));\
-      goto *labels[next.code()];\
-}
+#define _DEFINE_OP(opname, impl)\
+      EVAL_LOG("%5d: %s", state.offset(), opcode_to_name(opname));\
+      /*collectInfo(opname);\*/\
+      impl::instance.eval(&state, &pc);\
+      goto *labels[state.next_code(pc)];
 
 #define DEFINE_OP(opname, impl)\
     op_##opname:\
@@ -497,8 +422,10 @@ struct BuildList: public Op<VarRegOp, BuildList> {
 #define FALLTHROUGH(opname) op_##opname:
 
 PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
-  kEvalLoggingEnabled = (getenv("EVAL_LOGGING") != NULL && strcmp(getenv("EVAL_LOGGING"), "1") == 0);
-static void *labels[] = {
+  RunState state(reg_frame);
+  register const char* pc = state.code + sizeof(RegisterPrelude);
+  lastClock = rdtsc();
+const void* const labels[] = {
   &&op_STOP_CODE,
   &&op_POP_TOP,
   &&op_ROT_TWO,
@@ -651,15 +578,11 @@ static void *labels[] = {
   &&op_DECREF
 }
 ;
-
-RunState state(reg_frame);
-RMachineOp next = *((RMachineOp*) (state.code + state.offset));
-EVAL_LOG("Jumping to: %ld, %s", state.offset, opcode_to_name(next.code()));
-lastClock = rdtsc();
+EVAL_LOG("Jumping to: %d, %s", state.offset(), opcode_to_name(state.next_code(pc)));
 try {
-goto *labels[next.code()];
+    goto *labels[state.next_code(pc)];
 
-BINARY_OP(BINARY_MULTIPLY, PyNumber_Multiply);
+    BINARY_OP(BINARY_MULTIPLY, PyNumber_Multiply);
 BINARY_OP(BINARY_DIVIDE, PyNumber_Divide);
 BINARY_OP(BINARY_ADD, PyNumber_Add);
 BINARY_OP(BINARY_SUBTRACT, PyNumber_Subtract);
@@ -670,11 +593,6 @@ BINARY_OP(INPLACE_DIVIDE, PyNumber_InPlaceDivide);
 BINARY_OP(INPLACE_ADD, PyNumber_InPlaceAdd);
 BINARY_OP(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract);
 BINARY_OP(INPLACE_MODULO, PyNumber_InPlaceRemainder);
-
-BAD_OP(LOAD_CONST)
-
-DEFINE_OP(INCREF, IncRef);
-DEFINE_OP(DECREF, DecRef);
 
 DEFINE_OP(LOAD_FAST, LoadFast);
 DEFINE_OP(LOAD_LOCALS, LoadLocals);
@@ -713,8 +631,10 @@ FALLTHROUGH(SETUP_LOOP);
 DEFINE_OP(POP_BLOCK, PopBlock);
 
 DEFINE_OP(COMPARE_OP, CompareOp);
+DEFINE_OP(INCREF, IncRef);
+DEFINE_OP(DECREF, DecRef);
 
-BAD_OP(JUMP_FORWARD);
+BAD_OP(LOAD_CONST)BAD_OP(JUMP_FORWARD);
 BAD_OP(MAP_ADD);
 BAD_OP(SET_ADD);
 BAD_OP(EXTENDED_ARG);
@@ -787,14 +707,13 @@ BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 BAD_OP(STOP_CODE);
 op_BADCODE: {EVAL_LOG("Bad opcode.");
-abort();}
-} catch (EvalStatus exitReason) {
-  if (exitReason == EVAL_ERROR) {
-    EVAL_LOG("error during evaluation...");
+abort(); }
+  } catch (PyObject* result) {
+      return result;
+    } catch (EvalStatus reason) {
+      EVAL_LOG("error during evaluation: %d", reason);
 return NULL;
-  } else {
-    EVAL_LOG("Leaving eval frame...");
-return state.result;
-}
-}
+    }
+    Log_Fatal("Shouldn't reach here.");
+return NULL;
 }

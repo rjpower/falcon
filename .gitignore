@@ -9,9 +9,7 @@ rmodule_wrap.cpp
 perf.data
 perf.data.old
 python-src
-src/tempest.egg-info/
-src/tempest/__init__.pyc
-tempest.egg-info/
+src/falcon/falcon_core.py
 
 # eclipse
 .cproject

@@ -34,17 +34,22 @@ def count_threshold(limit, threshold):
   return count
 
 class Simple(unittest.TestCase):
-  def time_compare(self, function, *args):
-    st = time.time()
-    py_result = function(*args)
-    py_time = time.time() - st
+  def time_compare(self, function, *args, **kw):
+    repeat = kw.get('repeat', 1)
+    evaluator = falcon.Evaluator()
+    frame = evaluator.buildFrameFromPython(function, args)
     
-    st = time.time()
-    falcon_result = falcon.run_function(function, *args)
-    f_time = time.time() - st
-    
-    logging.info('%s : Python: %.3f, Falcon: %.3f' % (function.func_name, py_time, f_time))
-    self.assertEqual(py_result, falcon_result)
+    for i in range(repeat):
+      st = time.time()
+      py_result = function(*args)
+      py_time = time.time() - st
+      
+      st = time.time()
+      falcon_result = evaluator.eval(frame)
+      f_time = time.time() - st
+      
+      logging.info('%s : Python: %.3f, Falcon: %.3f' % (function.func_name, py_time, f_time))
+      self.assertEqual(py_result, falcon_result)
 
   def test_add1(self): self.time_compare(add, 1, 2)
   def test_add2(self): self.time_compare(add, 100, 200)
@@ -64,11 +69,10 @@ class Simple(unittest.TestCase):
     self.time_compare(count_threshold, 10, 5) 
     
   def test_count_threshold2(self):
-    self.time_compare(count_threshold, 100*1000*1000, 50*1000*1000) 
+    self.time_compare(count_threshold, 1*1000*1000, 5*100*1000, repeat=15) 
     
 #  def test_infinite_loop(self):
 #    falcon.run_function(infinite_loop)
-#        
 
   def test_alex(self):
     st = falcon.CompilerState(count_threshold.func_code)
