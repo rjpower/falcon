@@ -994,6 +994,7 @@ public:
 };
 
 class MarkEntries : public CompilerPass {
+public:
 	void visit_bb(BasicBlock* bb) {
 		for (size_t i = 0; i < bb->exits.size(); ++i) {
 		    BasicBlock* next = bb->exits[i];
@@ -1003,6 +1004,7 @@ class MarkEntries : public CompilerPass {
 };
 
 class FuseBasicBlocks : public CompilerPass {
+public:
 	void visit_bb(BasicBlock* bb) {
 		if (bb->visited || bb->dead || bb->exits.size() != 1) { return; }
 
@@ -1049,12 +1051,38 @@ void opt_combine_refs(CompilerState* state) {
 
 */
 
-
+class CopyPropagation : public CompilerPass {
+  public:
+    void visit_bb(BasicBlock* bb) {
+	  std::map<int, int> env;
+	  size_t n_ops = bb->code.size();
+	  for (int i = 0; i < n_ops; ++i) {
+		  CompilerOp * op = bb->code[i];
+		  switch(op->code){
+		  case LOAD_FAST:
+		  case STORE_FAST:
+			  env[op->regs[1]] = op->regs[0];
+			  break;
+		  default:
+			  // check all the registers and forward any that are in the env
+			  size_t n_args = op->regs.size();
+			  for (int reg_idx = 0; reg_idx < n_args; reg_idx ++) {
+				  std::map<int, int>::iterator iter = env.find(op->regs[reg_idx]);
+				  if (iter != env.end()){
+					op->regs[reg_idx] = iter->second;
+				  }
+			  }
+			  break;
+		  }
+	  }
+  }
+};
 
 
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
+  CopyPropagation()(fn);
 }
 
 
