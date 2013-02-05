@@ -3,11 +3,12 @@
 #include <marshal.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #include "reval.h"
 #include "rcompile.h"
 
-static const char* Repr(PyObject* o) {
+const char* obj_to_str(PyObject* o) {
   return PyString_AsString(PyObject_Str(o));
 }
 
@@ -16,9 +17,28 @@ static const char* Repr(PyObject* o) {
 
 typedef PyObject* (*PyNumberFunction)(PyObject*, PyObject*);
 
-typedef enum {
-  EVAL_ERROR,
-} EvalStatus;
+struct EvalError {
+  PyObject* exception;
+  PyObject* value;
+
+  EvalError() {
+    assert(PyErr_Occurred());
+    exception = NULL;
+    value = NULL;
+  }
+
+  EvalError(PyObject* exc) :
+      exception(exc), value(NULL) {
+  }
+
+  EvalError(PyObject* exc, const char* fmt, ...) :
+      exception(exc) {
+    va_list vargs;
+    va_start(vargs, fmt);
+    value = PyString_FromFormatV(fmt, vargs);
+    va_end(vargs);
+  }
+};
 
 struct GilHelper {
   PyGILState_STATE state_;
@@ -38,7 +58,7 @@ RegisterFrame* Evaluator::buildFrameFromPython(PyObject* function, PyObject* arg
   PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(function);
 
   if (args == NULL || !PyTuple_Check(args)) {
-    EVAL_LOG("Not a tuple? %s", PyString_AsString(PyObject_Repr(PyObject_Type(args))));
+    EVAL_LOG("Not a tuple? %s", PyString_AsString(PyObject_obj_to_str(PyObject_Type(args))));
     return NULL;
   }
 
@@ -90,7 +110,7 @@ void Evaluator::collectInfo(int opcode) {
   //  }
   if (totalCount > 1e9) {
     dumpStatus();
-    throw EVAL_ERROR;
+    throw new EvalError(PyExc_SystemError, "Execution entered infinite loop.");
   }
 }
 
@@ -101,7 +121,7 @@ struct Op {
 template<class SubType>
 struct Op<RegOp, SubType> {
   f_inline void eval(RunState* state, const char** pc, PyObject** registers) {
-    RegOp op = *((RegOp*)*pc);
+    RegOp op = *((RegOp*) *pc);
     *pc += sizeof(RegOp);
     ((SubType*) this)->_eval(op, registers, state);
   }
@@ -128,7 +148,7 @@ SubType Op<VarRegOp, SubType>::instance;
 template<class SubType>
 struct Op<BranchOp, SubType> {
   f_inline void eval(RunState* state, const char** pc, PyObject** registers) {
-    BranchOp op = *((BranchOp*)*pc);
+    BranchOp op = *((BranchOp*) *pc);
     ((SubType*) this)->_eval(op, pc, registers, state);
   }
 
@@ -138,51 +158,88 @@ struct Op<BranchOp, SubType> {
 template<class SubType>
 SubType Op<BranchOp, SubType>::instance;
 
-template<int OpCode, PyNumberFunction F>
-struct BinOp: public Op<RegOp, BinOp<OpCode, F> > {
-  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
-    PyObject* r1 = registers[op.reg_1];
-    PyObject* r2 = registers[op.reg_2];
-    PyObject* r3 = F(r1, r2);
-    registers[op.reg_3] = r3;
+struct IntegerOps {
+#define _OP(name, op)\
+  static f_inline PyObject* name(PyObject* w, PyObject* v) {\
+    if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {\
+      return NULL;\
+    }\
+    register long a, b, i;\
+    a = PyInt_AS_LONG(v);\
+    b = PyInt_AS_LONG(w);\
+    i = (long) ((unsigned long) a op b);\
+    if ((i ^ a) < 0 && (i ^ b) < 0) {\
+      return NULL;\
+    }\
+    return PyInt_FromLong(i);\
+  }
+
+  _OP(add, +)
+  _OP(sub, -)
+  _OP(mul, *)
+  _OP(div, /)
+  _OP(mod, %)
+
+  static f_inline PyObject* compare(PyObject* w, PyObject* v, int arg) {
+    if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {
+      return NULL;
+    }
+
+    long a = PyInt_AS_LONG(v);
+    long b = PyInt_AS_LONG(w);
+
+    switch (arg) {
+    case PyCmp_LT:
+      return a < b ? Py_True : Py_False ;
+    case PyCmp_LE:
+      return a <= b ? Py_True : Py_False ;
+    case PyCmp_EQ:
+      return a == b ? Py_True : Py_False ;
+    case PyCmp_NE:
+      return a != b ? Py_True : Py_False ;
+    case PyCmp_GT:
+      return a > b ? Py_True : Py_False ;
+    case PyCmp_GE:
+      return a >= b ? Py_True : Py_False ;
+    case PyCmp_IS:
+      return v == w ? Py_True : Py_False ;
+    case PyCmp_IS_NOT:
+      return v != w ? Py_True : Py_False ;
+    default:
+      return NULL;
+    }
+
+    return NULL;
   }
 };
 
-static f_inline PyObject* compare_int(PyObject* w, PyObject* v, int arg) {
-  register long a, b;
-  register int res;
-  a = PyInt_AS_LONG(v);
-  b = PyInt_AS_LONG(w);
+template<int OpCode, PyNumberFunction ObjF, PyNumberFunction IntegerF = (PyNumberFunction*) NULL>
+struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF, IntegerF> > {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* r1 = registers[op.reg_1];
+    PyObject* r2 = registers[op.reg_2];
+    PyObject* r3 = NULL;
+    r3 = IntegerF(r1, r2);
+    if (r3 == NULL) {
+      r3 = ObjF(r1, r2);
+    }
 
-  switch (arg) {
-  case PyCmp_LT: res = a <  b; break;
-  case PyCmp_LE: res = a <= b; break;
-  case PyCmp_EQ: res = a == b; break;
-  case PyCmp_NE: res = a != b; break;
-  case PyCmp_GT: res = a >  b; break;
-  case PyCmp_GE: res = a >= b; break;
-  case PyCmp_IS: res = v == w; break;
-  case PyCmp_IS_NOT: res = v != w; break;
-  default: throw EVAL_ERROR;
+    registers[op.reg_3] = r3;
   }
-
-  PyObject* x = res ? Py_True : Py_False;
-  Py_INCREF(x);
-  return x;
-}
+};
 
 struct CompareOp: public Op<RegOp, CompareOp> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* r2 = registers[op.reg_2];
-    PyObject* r3 = NULL;
-    if (PyInt_CheckExact(r1) && PyInt_CheckExact(r2)) {
-      r3 = compare_int(r1, r2, op.arg);
+    PyObject* r3 = IntegerOps::compare(r1, r2, op.arg);
+    if (r3 != NULL) {
+      Py_INCREF(r3);
     } else {
       r3 = PyObject_RichCompare(r2, r1, op.arg);
     }
 
-    EVAL_LOG("Compare: %s, %s -> %s", Repr(r1), Repr(r2), Repr(r3));
+    EVAL_LOG("Compare: %s, %s -> %s", obj_to_str(r1), obj_to_str(r2), obj_to_str(r3));
     registers[op.reg_3] = r3;
   }
 };
@@ -214,8 +271,7 @@ struct LoadGlobal: public Op<RegOp, LoadGlobal> {
       r2 = PyDict_GetItem(state->builtins(), r1);
     }
     if (r2 == NULL) {
-      PyErr_SetString(PyExc_NameError, "Global name XXX not defined.");
-      throw EVAL_ERROR;
+      throw new EvalError(PyExc_NameError, "Global name %.200s not defined.", r1);
     }
     registers[op.reg_1] = r2;
   }
@@ -291,7 +347,7 @@ struct LoadAttr: public Op<RegOp, LoadAttr> {
     PyObject* obj = registers[op.reg_1];
     PyObject* name = PyTuple_GET_ITEM(state->names(), op.arg) ;
     registers[op.reg_2] = PyObject_GetAttr(obj, name);
-    Py_DECREF(obj);
+//    Py_DECREF(obj);
   }
 };
 
@@ -305,7 +361,12 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
 
     assert(n + 2 == op->num_registers);
 
-    PyObject* args = PyTuple_New(na);
+    if (state->call_args == NULL || PyTuple_GET_SIZE(state->call_args) != na) {
+      Py_XDECREF(state->call_args);
+      state->call_args = PyTuple_New(na);
+    }
+
+    PyObject* args = state->call_args;
     for (i = 0; i < na; ++i) {
       PyTuple_SET_ITEM(args, i, registers[op->regs[i]]);
     }
@@ -318,9 +379,15 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
       }
     }
 
-    PyObject* res = PyObject_Call(fn, args, kwdict);
+    PyObject* res = NULL;
+    if (PyCFunction_Check(fn)) {
+      res = PyCFunction_Call(fn, args, kwdict);
+    } else {
+      res = PyObject_Call(fn, args, kwdict);
+    }
+
     if (res == NULL) {
-      throw EVAL_ERROR;
+      throw new EvalError();
     }
 
     registers[op->regs[n + 1]] = res;
@@ -352,7 +419,7 @@ struct JumpIfFalseOrPop: public Op<BranchOp, JumpIfFalseOrPop> {
   f_inline void _eval(BranchOp op, const char **pc, PyObject** registers, RunState *state) {
     PyObject *r1 = registers[op.reg_1];
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
-//      EVAL_LOG("Jumping: %s -> %d", Repr(r1), op.label);
+//      EVAL_LOG("Jumping: %s -> %d", obj_to_str(r1), op.label);
       *pc = state->code + op.label;
     } else {
       *pc += sizeof(BranchOp);
@@ -437,10 +504,6 @@ struct BuildList: public Op<VarRegOp, BuildList> {
     op_##opname:\
       _DEFINE_OP(opname, impl)
 
-#define BINARY_OP(opname, opfn)\
-    op_##opname:\
-      _DEFINE_OP(opname, BinOp<CONCAT(opname, opfn)>)
-
 #define _BAD_OP(opname)\
         { EVAL_LOG("Not implemented: %s", #opname); abort(); }
 
@@ -448,6 +511,18 @@ struct BuildList: public Op<VarRegOp, BuildList> {
     op_##opname: _BAD_OP(opname)
 
 #define FALLTHROUGH(opname) op_##opname:
+
+#define INTEGER_OP(op)\
+    a = PyInt_AS_LONG(v);\
+    b = PyInt_AS_LONG(w);\
+    i = (long)((unsigned long)a op b);\
+    if ((i^a) < 0 && (i^b) < 0)\
+        goto slow_path;\
+    x = PyInt_FromLong(i);
+
+#define BINARY_OP(opname, objfn, intfn)\
+    op_##opname:\
+      _DEFINE_OP(opname, BinaryOp<CONCAT(opname, objfn, intfn)>)
 
 PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
   RunState state(reg_frame);
@@ -467,7 +542,7 @@ PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
   }
 
   for (int i = 0; i < num_consts; ++i) {
-    registers[i] = PyTuple_GET_ITEM(consts, i);
+    registers[i] = PyTuple_GET_ITEM(consts, i) ;
   }
 
   for (int i = 0; i < num_locals; ++i) {
@@ -475,6 +550,7 @@ PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
   }
 
   lastClock = rdtsc();
+
 const void* const labels[] = {
   &&op_STOP_CODE,
   &&op_POP_TOP,
@@ -628,21 +704,22 @@ const void* const labels[] = {
   &&op_DECREF
 }
 ;
+
 EVAL_LOG("Jumping to: %d, %s", state.offset(), opcode_to_name(state.next_code(pc)));
 try {
     goto *labels[state.next_code(pc)];
 
-    BINARY_OP(BINARY_MULTIPLY, PyNumber_Multiply);
-BINARY_OP(BINARY_DIVIDE, PyNumber_Divide);
-BINARY_OP(BINARY_ADD, PyNumber_Add);
-BINARY_OP(BINARY_SUBTRACT, PyNumber_Subtract);
-BINARY_OP(BINARY_MODULO, PyNumber_Remainder);
+    BINARY_OP(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
+BINARY_OP(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
+BINARY_OP(BINARY_ADD, PyNumber_Add, IntegerOps::add);
+BINARY_OP(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
+BINARY_OP(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
 
-BINARY_OP(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply);
-BINARY_OP(INPLACE_DIVIDE, PyNumber_InPlaceDivide);
-BINARY_OP(INPLACE_ADD, PyNumber_InPlaceAdd);
-BINARY_OP(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract);
-BINARY_OP(INPLACE_MODULO, PyNumber_InPlaceRemainder);
+BINARY_OP(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
+BINARY_OP(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
+BINARY_OP(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
+BINARY_OP(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
+BINARY_OP(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
 
 DEFINE_OP(LOAD_FAST, LoadFast);
 DEFINE_OP(LOAD_LOCALS, LoadLocals);
@@ -756,14 +833,19 @@ BAD_OP(ROT_THREE);
 BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 BAD_OP(STOP_CODE);
-op_BADCODE: {EVAL_LOG("Bad opcode.");
-abort(); }
-  } catch (PyObject* result) {
-      return result;
-    } catch (EvalStatus reason) {
-      EVAL_LOG("error during evaluation: %d", reason);
-return NULL;
+op_BADCODE: {
+      EVAL_LOG("Bad opcode.");
+abort();
     }
-    Log_Fatal("Shouldn't reach here.");
+  } catch (PyObject* result) {
+    return result;
+  } catch (EvalError *error) {
+    if (!PyErr_Occurred()) {
+      PyErr_SetObject(error->exception, error->value);
+    }
+    delete error;
+    return NULL;
+  }
+  Log_Fatal("Shouldn't reach here.");
 return NULL;
 }

@@ -16,6 +16,7 @@
 #ifdef SWIG
 #define f_inline
 #else
+//#define f_inline __attribute__((noinline)) inline
 #define f_inline __attribute__((always_inline)) inline
 #endif
 
@@ -138,6 +139,7 @@ struct RunState {
   char *code;
   PyFrameObject* frame;
   RegisterPrelude prelude;
+  PyObject *call_args;
 
   f_inline PyObject* names() {
     return frame->f_code->co_names;
@@ -172,6 +174,7 @@ struct RunState {
     PyString_AsStringAndSize(r->regcode, &code, &codelen);
 
     frame = r->frame;
+    call_args = NULL;
 
     prelude = *(RegisterPrelude*) code;
     Log_AssertEq(memcmp(&prelude.magic, REG_MAGIC, 4), 0);

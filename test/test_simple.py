@@ -6,6 +6,7 @@ import opcode
 import sys
 import time
 import unittest
+import math
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 
@@ -32,6 +33,10 @@ def count_threshold(limit, threshold):
   for item in xrange(limit):
     if item > threshold: count += 1
   return count
+
+def global_math(count):
+  for i in xrange(count):
+    math.floor(i)
 
 class Simple(unittest.TestCase):
   def time_compare(self, function, *args, **kw):
@@ -69,20 +74,11 @@ class Simple(unittest.TestCase):
     self.time_compare(count_threshold, 10, 5) 
     
   def test_count_threshold2(self):
-    self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=15) 
+    self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=15)
     
-#  def test_infinite_loop(self):
-#    falcon.run_function(infinite_loop)
+  def test_global_load(self): 
+    self.time_compare(global_math, 1000000, repeat=15)
 
-  def test_alex(self):
-    st = falcon.CompilerState(count_threshold.func_code)
-    rs = falcon.RegisterStack()
-    bb0 = falcon.registerize(st, rs, 0)
-    for bb in st.bbs:
-      print bb.idx
-      for op in bb.code:
-        print falcon.opcode_to_name[op.code], op.arg
-    
     
 if __name__ == '__main__':
   unittest.main()

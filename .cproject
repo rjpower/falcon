@@ -55,4 +55,5 @@
 			<resource resourceType="PROJECT" workspacePath="/peregrine-falcon"/>
 		</configuration>
 	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 </cproject>
