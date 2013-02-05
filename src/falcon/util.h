@@ -183,7 +183,8 @@ public:
       fd_(fd) {
   }
   virtual void write(const std::string& data) {
-    assert(::write(fd_, data.data(), data.size()) == data.size());
+    int result = ::write(fd_, data.data(), data.size());
+    assert(result == data.size());
   }
 };
 
