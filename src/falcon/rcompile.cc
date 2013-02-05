@@ -929,98 +929,103 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
   return entry_point;
 }
 
-typedef void (*BBPass)(BasicBlock*);
-typedef void (*OpPass)(BasicBlock*, CompilerOp*);
-void apply_bb_pass(CompilerState* state, BBPass pass) {
-  for (size_t i = 0; i < state->bbs.size(); ++i) {
-    state->bbs[i]->visited = 0;
-  }
+class CompilerPass {
+	void remove_dead_ops(BasicBlock* bb) {
+		size_t live_pos = 0;
+		size_t n_ops = bb->code.size();
+		for (size_t i = 0; i < n_ops; ++i) {
+		    CompilerOp * op = bb->code[i];
+		    if (op->dead) { continue; }
+		    bb->code[live_pos++] = op;
+		 }
 
-  for (size_t i = 0; i < state->bbs.size(); ++i) {
-    if (!state->bbs[i]->visited) {
-      pass(state->bbs[i]);
-      state->bbs[i]->visited = 1;
-    }
-  }
-}
+		bb->code.resize(live_pos);
+	}
+	void remove_dead_code(CompilerState* fn) {
+		size_t i = 0;
+		size_t live_pos = 0;
+		size_t n_bbs = fn->bbs.size();
+		for (i = 0; i < n_bbs; ++i) {
+			BasicBlock* bb = fn->bbs[i];
+			if (bb->dead) {
+				continue;
+			}
+			this->remove_dead_ops(bb);
+			if (bb->code.size() > 0) {
+			  fn->bbs[live_pos++] = bb;
+			}
+		}
+		fn->bbs.resize(live_pos);
+	}
 
-void apply_op_pass(CompilerState* state, OpPass pass) {
-  size_t i, j;
-  for (i = 0; i < state->bbs.size(); ++i) {
-    BasicBlock* bb = state->bbs[i];
-    if (bb->dead) {
-      continue;
-    }
-    for (j = 0; j < bb->code.size(); ++j) {
-      if (!bb->code[j]->dead) {
-        pass(bb, bb->code[j]);
-      }
-    }
-  }
+public:
+	virtual void visit_op(CompilerOp* op) {
+	}
 
-}
+	virtual void visit_bb(BasicBlock* bb) {
+		size_t n_ops = bb->code.size();
+		for (size_t  i = 0; i < n_ops; ++i) {
+			CompilerOp* op = bb->code[i];
+			if (!op->dead) {
+				this->visit_op(op);
+		    }
+		 }
+	}
 
-void bb_nop_pass(BasicBlock* bb) {
-}
+	virtual void visit_fn(CompilerState* fn) {
+		size_t n_bbs = fn->bbs.size();
+		for (size_t i = 0; i < n_bbs; ++i) {
+			fn->bbs[i]->visited = false;
+		}
 
-void bb_mark_entries_pass(BasicBlock* bb) {
-  for (size_t i = 0; i < bb->exits.size(); ++i) {
-    BasicBlock* next = bb->exits[i];
-    next->entries.push_back(bb);
-  }
-}
+		for (size_t i = 0; i < n_bbs; ++i) {
+			BasicBlock* bb = fn->bbs[i];
+			if (!bb->visited && !bb->dead) {
+				this->visit_bb(bb);
+				bb->visited = true;
+		    }
+		  }
+        this->remove_dead_code(fn);
+	}
 
-void remove_dead_ops(BasicBlock* bb) {
-  size_t j = 0;
-  for (size_t i = 0; i < bb->code.size(); ++i) {
-    CompilerOp * op = bb->code[i];
-    if (op->dead) {
-      continue;
-    }
-    bb->code[j++] = bb->code[i];
-  }
+	void operator()(CompilerState* fn) { this->visit_fn(fn); }
 
-  bb->code.resize(j);
-}
+	virtual ~CompilerPass() {}
+};
 
-void remove_dead_code(CompilerState* state) {
-  size_t i = 0;
-  size_t pos = 0;
-  for (i = 0; i < state->bbs.size(); ++i) {
-    BasicBlock* bb = state->bbs[i];
-    if (bb->dead) {
-      continue;
-    }
-    remove_dead_ops(bb);
-    state->bbs[pos++] = bb;
-  }
-  state->bbs.resize(pos);
-}
+class MarkEntries : public CompilerPass {
+	void visit_bb(BasicBlock* bb) {
+		for (size_t i = 0; i < bb->exits.size(); ++i) {
+		    BasicBlock* next = bb->exits[i];
+		    next->entries.push_back(bb);
+		}
+	}
+};
 
-void bb_fuse_pass(BasicBlock* bb) {
-  if (bb->visited || bb->dead || bb->exits.size() != 1) {
-//    Log_Info("Leaving %d alone.", bb->idx);
-    return;
-  }
+class FuseBasicBlocks : public CompilerPass {
+	void visit_bb(BasicBlock* bb) {
+		if (bb->visited || bb->dead || bb->exits.size() != 1) { return; }
 
-  BasicBlock* next = bb->exits[0];
-  while (1) {
-    if (next->entries.size() > 1 || next->visited) {
-      break;
-    }
+		BasicBlock* next = bb->exits[0];
+		while (1) {
+			if (next->entries.size() > 1 || next->visited) { break; }
 
-//        Log_Info("Merging %d into %d", next->idx, bb->idx);
-    bb->code.insert(bb->code.end(), next->code.begin(), next->code.end());
+			//        Log_Info("Merging %d into %d", next->idx, bb->idx);
+		    bb->code.insert(bb->code.end(), next->code.begin(), next->code.end());
 
-    next->dead = next->visited = 1;
-    bb->exits = next->exits;
+		    next->dead = next->visited = true;
+		    bb->exits = next->exits;
 
-    if (bb->exits.size() != 1) {
-      break;
-    }
-    next = bb->exits[0];
-  }
-}
+		    if (bb->exits.size() != 1) {
+		      break;
+		    }
+		    next = bb->exits[0];
+		  }
+
+	}
+};
+
+/*
 
 // For each basic block, find matching increfs and decrefs, and cancel them out.
 void bb_combine_refs(BasicBlock* bb) {
@@ -1038,24 +1043,20 @@ void bb_combine_refs(BasicBlock* bb) {
     }
   }
 }
-
-typedef void (*OptPass)(CompilerState*);
-
-void opt_fuse_bb(CompilerState* state) {
-  apply_bb_pass(state, &bb_mark_entries_pass);
-  apply_bb_pass(state, &bb_fuse_pass);
-}
-
 void opt_combine_refs(CompilerState* state) {
   apply_bb_pass(state, &bb_combine_refs);
 }
 
-void _apply_opt_pass(CompilerState* state, OptPass pass, const char* name) {
-  pass(state);
-  remove_dead_code(state);
+*/
+
+
+
+
+void optimize(CompilerState* fn) {
+  MarkEntries()(fn);
+  FuseBasicBlocks()(fn);
 }
 
-#define apply_opt_pass(state, pass) _apply_opt_pass(state, pass, #pass)
 
 struct RCompilerUtil {
   static int op_size(CompilerOp* op) {
@@ -1097,7 +1098,7 @@ struct RCompilerUtil {
   }
 };
 
-void bb_to_code(CompilerState* state, std::string *out) {
+void lower_register_code(CompilerState* state, std::string *out) {
   RegisterPrelude p;
   memcpy(&p.magic, REG_MAGIC, 4);
   p.mapped_registers = 0;
@@ -1163,17 +1164,20 @@ void bb_to_code(CompilerState* state, std::string *out) {
   }
 }
 
-PyObject* compileRegCode(CompilerState* state) {
-  apply_opt_pass(state, &opt_fuse_bb);
-  apply_opt_pass(state, &opt_combine_refs);
+PyObject* compileRegCode(CompilerState* fn) {
 
-  printf("%s\n", state->str().c_str());
+  optimize(fn);
+
+  printf("%s\n", fn->str().c_str());
 
   std::string regcode;
-  bb_to_code(state, &regcode);
+  lower_register_code(fn, &regcode);
   PyObject* regobj = PyString_FromStringAndSize((char*) regcode.data(), regcode.size());
   return regobj;
 }
+
+
+
 
 PyObject* compileByteCode(PyCodeObject* code) {
   CompilerState state(code);
