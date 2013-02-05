@@ -930,161 +930,192 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 }
 
 class CompilerPass {
-	void remove_dead_ops(BasicBlock* bb) {
-		size_t live_pos = 0;
-		size_t n_ops = bb->code.size();
-		for (size_t i = 0; i < n_ops; ++i) {
-		    CompilerOp * op = bb->code[i];
-		    if (op->dead) { continue; }
-		    bb->code[live_pos++] = op;
-		 }
+  void remove_dead_ops(BasicBlock* bb) {
+    size_t live_pos = 0;
+    size_t n_ops = bb->code.size();
+    for (size_t i = 0; i < n_ops; ++i) {
+      CompilerOp * op = bb->code[i];
+      if (op->dead) {
+        continue;
+      }
+      bb->code[live_pos++] = op;
+    }
 
-		bb->code.resize(live_pos);
-	}
-	void remove_dead_code(CompilerState* fn) {
-		size_t i = 0;
-		size_t live_pos = 0;
-		size_t n_bbs = fn->bbs.size();
-		for (i = 0; i < n_bbs; ++i) {
-			BasicBlock* bb = fn->bbs[i];
-			if (bb->dead) {
-				continue;
-			}
-			this->remove_dead_ops(bb);
-			if (bb->code.size() > 0) {
-			  fn->bbs[live_pos++] = bb;
-			}
-		}
-		fn->bbs.resize(live_pos);
-	}
+    bb->code.resize(live_pos);
+  }
+  void remove_dead_code(CompilerState* fn) {
+    size_t i = 0;
+    size_t live_pos = 0;
+    size_t n_bbs = fn->bbs.size();
+    for (i = 0; i < n_bbs; ++i) {
+      BasicBlock* bb = fn->bbs[i];
+      if (bb->dead) {
+        continue;
+      }
+      this->remove_dead_ops(bb);
+      if (bb->code.size() > 0) {
+        fn->bbs[live_pos++] = bb;
+      }
+    }
+    fn->bbs.resize(live_pos);
+  }
 
 public:
-	virtual void visit_op(CompilerOp* op) {
-	}
+  virtual void visit_op(CompilerOp* op) {
+  }
 
-	virtual void visit_bb(BasicBlock* bb) {
-		size_t n_ops = bb->code.size();
-		for (size_t  i = 0; i < n_ops; ++i) {
-			CompilerOp* op = bb->code[i];
-			if (!op->dead) {
-				this->visit_op(op);
-		    }
-		 }
-	}
+  virtual void visit_bb(BasicBlock* bb) {
+    size_t n_ops = bb->code.size();
+    for (size_t i = 0; i < n_ops; ++i) {
+      CompilerOp* op = bb->code[i];
+      if (!op->dead) {
+        this->visit_op(op);
+      }
+    }
+  }
 
-	virtual void visit_fn(CompilerState* fn) {
-		size_t n_bbs = fn->bbs.size();
-		for (size_t i = 0; i < n_bbs; ++i) {
-			fn->bbs[i]->visited = false;
-		}
+  virtual void visit_fn(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t i = 0; i < n_bbs; ++i) {
+      fn->bbs[i]->visited = false;
+    }
 
-		for (size_t i = 0; i < n_bbs; ++i) {
-			BasicBlock* bb = fn->bbs[i];
-			if (!bb->visited && !bb->dead) {
-				this->visit_bb(bb);
-				bb->visited = true;
-		    }
-		  }
-        this->remove_dead_code(fn);
-	}
+    for (size_t i = 0; i < n_bbs; ++i) {
+      BasicBlock* bb = fn->bbs[i];
+      if (!bb->visited && !bb->dead) {
+        this->visit_bb(bb);
+        bb->visited = true;
+      }
+    }
+    this->remove_dead_code(fn);
+  }
 
-	void operator()(CompilerState* fn) { this->visit_fn(fn); }
+  void operator()(CompilerState* fn) {
+    this->visit_fn(fn);
+  }
 
-	virtual ~CompilerPass() {}
+  virtual ~CompilerPass() {
+  }
 };
 
-class MarkEntries : public CompilerPass {
+class MarkEntries: public CompilerPass {
 public:
-	void visit_bb(BasicBlock* bb) {
-		for (size_t i = 0; i < bb->exits.size(); ++i) {
-		    BasicBlock* next = bb->exits[i];
-		    next->entries.push_back(bb);
-		}
-	}
+  void visit_bb(BasicBlock* bb) {
+    for (size_t i = 0; i < bb->exits.size(); ++i) {
+      BasicBlock* next = bb->exits[i];
+      next->entries.push_back(bb);
+    }
+  }
 };
 
-class FuseBasicBlocks : public CompilerPass {
+class FuseBasicBlocks: public CompilerPass {
 public:
-	void visit_bb(BasicBlock* bb) {
-		if (bb->visited || bb->dead || bb->exits.size() != 1) { return; }
+  void visit_bb(BasicBlock* bb) {
+    if (bb->visited || bb->dead || bb->exits.size() != 1) {
+      return;
+    }
 
-		BasicBlock* next = bb->exits[0];
-		while (1) {
-			if (next->entries.size() > 1 || next->visited) { break; }
+    BasicBlock* next = bb->exits[0];
+    while (1) {
+      if (next->entries.size() > 1 || next->visited) {
+        break;
+      }
 
-			//        Log_Info("Merging %d into %d", next->idx, bb->idx);
-		    bb->code.insert(bb->code.end(), next->code.begin(), next->code.end());
+      //        Log_Info("Merging %d into %d", next->idx, bb->idx);
+      bb->code.insert(bb->code.end(), next->code.begin(), next->code.end());
 
-		    next->dead = next->visited = true;
-		    bb->exits = next->exits;
+      next->dead = next->visited = true;
+      bb->exits = next->exits;
 
-		    if (bb->exits.size() != 1) {
-		      break;
-		    }
-		    next = bb->exits[0];
-		  }
+      if (bb->exits.size() != 1) {
+        break;
+      }
+      next = bb->exits[0];
+    }
 
-	}
+  }
 };
 
 /*
 
-// For each basic block, find matching increfs and decrefs, and cancel them out.
-void bb_combine_refs(BasicBlock* bb) {
-  for (size_t i = 0; i < bb->code.size(); ++i) {
-    CompilerOp * decref = bb->code[i];
-    if (decref->dead || decref->code != DECREF) {
-      continue;
-    }
-    for (size_t j = 0; j < i; ++j) {
-      CompilerOp* incref = bb->code[j];
-      if (!incref->dead && incref->code == INCREF && incref->regs[0] == decref->regs[0]) {
-        decref->dead = 1;
-        incref->dead = 1;
+ // For each basic block, find matching increfs and decrefs, and cancel them out.
+ void bb_combine_refs(BasicBlock* bb) {
+ for (size_t i = 0; i < bb->code.size(); ++i) {
+ CompilerOp * decref = bb->code[i];
+ if (decref->dead || decref->code != DECREF) {
+ continue;
+ }
+ for (size_t j = 0; j < i; ++j) {
+ CompilerOp* incref = bb->code[j];
+ if (!incref->dead && incref->code == INCREF && incref->regs[0] == decref->regs[0]) {
+ decref->dead = 1;
+ incref->dead = 1;
+ }
+ }
+ }
+ }
+ void opt_combine_refs(CompilerState* state) {
+ apply_bb_pass(state, &bb_combine_refs);
+ }
+
+ */
+
+class CopyPropagation: public CompilerPass {
+public:
+  void visit_bb(BasicBlock* bb) {
+    std::map<Register, Register> env;
+    size_t n_ops = bb->code.size();
+    Register source, target;
+    for (int i = 0; i < n_ops; ++i) {
+      CompilerOp * op = bb->code[i];
+      switch (op->code) {
+      case LOAD_FAST:
+      case STORE_FAST: {
+        source = op->regs[0];
+        target = op->regs[1];
+        auto iter = env.find(source);
+        if (iter != env.end()) {
+          source = iter->second;
+        }
+        env[target] = source;
+        break;
+      }
+      default: {
+        // check all the registers and forward any that are in the env
+        size_t n_args = op->regs.size();
+        for (int reg_idx = 0; reg_idx < n_args; reg_idx++) {
+          auto iter = env.find(op->regs[reg_idx]);
+          if (iter != env.end()) {
+            op->regs[reg_idx] = iter->second;
+          }
+        }
+        break;
+      }
       }
     }
   }
-}
-void opt_combine_refs(CompilerState* state) {
-  apply_bb_pass(state, &bb_combine_refs);
-}
-
-*/
-
-class CopyPropagation : public CompilerPass {
-  public:
-    void visit_bb(BasicBlock* bb) {
-	  std::map<int, int> env;
-	  size_t n_ops = bb->code.size();
-	  for (int i = 0; i < n_ops; ++i) {
-		  CompilerOp * op = bb->code[i];
-		  switch(op->code){
-		  case LOAD_FAST:
-		  case STORE_FAST:
-			  env[op->regs[1]] = op->regs[0];
-			  break;
-		  default:
-			  // check all the registers and forward any that are in the env
-			  size_t n_args = op->regs.size();
-			  for (int reg_idx = 0; reg_idx < n_args; reg_idx ++) {
-				  std::map<int, int>::iterator iter = env.find(op->regs[reg_idx]);
-				  if (iter != env.end()){
-					op->regs[reg_idx] = iter->second;
-				  }
-			  }
-			  break;
-		  }
-	  }
-  }
 };
 
+class DeadCodeElim: public CompilerPass {
+private:
+  std::map<Register, int> counts;
+
+  void count_uses(CompilerState* fn) {
+
+  }
+
+public:
+  void visit_fn(CompilerState* fn) {
+
+  }
+};
 
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
   CopyPropagation()(fn);
+  DeadCodeElim()(fn);
 }
-
 
 struct RCompilerUtil {
   static int op_size(CompilerOp* op) {
@@ -1203,9 +1234,6 @@ PyObject* compileRegCode(CompilerState* fn) {
   PyObject* regobj = PyString_FromStringAndSize((char*) regcode.data(), regcode.size());
   return regobj;
 }
-
-
-
 
 PyObject* compileByteCode(PyCodeObject* code) {
   CompilerState state(code);
