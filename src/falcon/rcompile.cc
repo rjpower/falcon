@@ -931,34 +931,38 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 
 class CompilerPass {
   void remove_dead_ops(BasicBlock* bb) {
-    size_t live_pos = 0;
-    size_t n_ops = bb->code.size();
-    for (size_t i = 0; i < n_ops; ++i) {
-      CompilerOp * op = bb->code[i];
-      if (op->dead) {
-        continue;
-      }
-      bb->code[live_pos++] = op;
+        size_t live_pos = 0;
+        size_t n_ops = bb->code.size();
+        for (size_t i = 0; i < n_ops; ++i) {
+          CompilerOp * op = bb->code[i];
+          if (op->dead) {
+            continue;
+          }
+          bb->code[live_pos++] = op;
+        }
+
+        bb->code.resize(live_pos);
     }
 
-    bb->code.resize(live_pos);
-  }
-  void remove_dead_code(CompilerState* fn) {
-    size_t i = 0;
-    size_t live_pos = 0;
-    size_t n_bbs = fn->bbs.size();
-    for (i = 0; i < n_bbs; ++i) {
-      BasicBlock* bb = fn->bbs[i];
-      if (bb->dead) {
-        continue;
-      }
-      this->remove_dead_ops(bb);
-      if (bb->code.size() > 0) {
-        fn->bbs[live_pos++] = bb;
-      }
+    void remove_dead_code(CompilerState* fn) {
+        size_t i = 0;
+        size_t live_pos = 0;
+        size_t n_bbs = fn->bbs.size();
+        for (i = 0; i < n_bbs; ++i) {
+          BasicBlock* bb = fn->bbs[i];
+          if (bb->dead) {
+            continue;
+          }
+
+          this->remove_dead_ops(bb);
+
+          if (bb->code.size() > 0) {
+            fn->bbs[live_pos++] = bb;
+          }
+        }
+        fn->bbs.resize(live_pos);
     }
-    fn->bbs.resize(live_pos);
-  }
+
 
 public:
   virtual void visit_op(CompilerOp* op) {
@@ -1066,7 +1070,7 @@ public:
     std::map<Register, Register> env;
     size_t n_ops = bb->code.size();
     Register source, target;
-    for (int i = 0; i < n_ops; ++i) {
+    for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp * op = bb->code[i];
       switch (op->code) {
       case LOAD_FAST:
@@ -1083,7 +1087,7 @@ public:
       default: {
         // check all the registers and forward any that are in the env
         size_t n_args = op->regs.size();
-        for (int reg_idx = 0; reg_idx < n_args; reg_idx++) {
+        for (size_t reg_idx = 0; reg_idx < n_args; reg_idx++) {
           auto iter = env.find(op->regs[reg_idx]);
           if (iter != env.end()) {
             op->regs[reg_idx] = iter->second;
@@ -1096,18 +1100,67 @@ public:
   }
 };
 
+
+
+
 class DeadCodeElim: public CompilerPass {
 private:
   std::map<Register, int> counts;
 
-  void count_uses(CompilerState* fn) {
+  int get_count(Register r) {
+    std::map<Register, int>::iterator iter = counts.find(r);
+    return iter == counts.end() ? 0 : iter->second;
+  }
 
+
+  void incr_count(Register r) {
+    printf("Incrementing register %d", r);
+    printf("...old count %d\n", this->get_count(r));
+    this->counts[r] = this->get_count(r) + 1;
+    printf("Done!\n");
+  }
+
+  void count_uses(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
+
+      BasicBlock* bb = fn->bbs[bb_idx];
+      size_t n_ops = bb->code.size();
+      for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
+         CompilerOp* op = bb->code[op_idx];
+         if (op->code == POP_JUMP_IF_FALSE) {
+           this->incr_count(op->regs[0]);
+         } else {
+           // the last argument is assumed to be the target to which a value is assigned
+           size_t n_args = op->regs.size();
+           if (n_args > 0) {
+             for (size_t reg_idx = 0; reg_idx < (n_args - 1); reg_idx++) {
+               this->incr_count(op->regs[reg_idx]);
+             }
+           }
+         }
+       }
+     }
   }
 
 public:
-  void visit_fn(CompilerState* fn) {
-
+  void visit_op(CompilerOp* op) {
+    size_t n_args = op->regs.size();
+    if ((n_args > 0) &&  (op->code != POP_JUMP_IF_FALSE)) {
+      Register target = op->regs[n_args-1];
+      int count = this->get_count(target);
+      if (count == 0) {
+        op->dead = true;
+      }
+    }
   }
+
+  void visit_fn(CompilerState* fn) {
+    this->count_uses(fn);
+    breakpoint();
+    CompilerPass::visit_fn(fn);
+  }
+
 };
 
 void optimize(CompilerState* fn) {
