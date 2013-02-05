@@ -315,7 +315,7 @@ std::string CompilerOp::str() const {
     out += StringPrintf("(%d) ", arg);
   }
   out += "[";
-  out += JoinString(regs.begin(), regs.end(), ",");
+  out += StrUtil::join(regs.begin(), regs.end(), ",");
   out += "]";
   if (dead) {
     out += " DEAD ";
@@ -325,10 +325,10 @@ std::string CompilerOp::str() const {
 
 void CompilerState::dump(Writer* w) {
   for (BasicBlock* bb : bbs) {
-    w->write("bb_%d: \n  ", bb->idx);
-    w->write(JoinString(bb->code, "\n  "));
+    w->printf("bb_%d: \n  ", bb->idx);
+    w->write(StrUtil::join(bb->code, "\n  "));
     w->write(" -> ");
-    w->write(JoinString(bb->exits.begin(), bb->exits.end(), ",", [](BasicBlock* n) {
+    w->write(StrUtil::join(bb->exits.begin(), bb->exits.end(), ",", [](BasicBlock* n) {
       return StringPrintf("bb_%d", n->idx);
     }));
     w->write("\n");
@@ -348,7 +348,7 @@ BasicBlock* CompilerState::alloc_bb(int offset) {
 }
 
 std::string RegisterStack::str() {
-  return StringPrintf("[%s]", JoinString(&regs[0], &regs[stack_pos], ",", &Coerce::t_str<int>).c_str());
+  return StringPrintf("[%s]", StrUtil::join(&regs[0], &regs[stack_pos], ",", &Coerce::t_str<int>).c_str());
 }
 
 CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
@@ -1157,7 +1157,7 @@ public:
 
   void visit_fn(CompilerState* fn) {
     this->count_uses(fn);
-    breakpoint();
+    Log_Info("%s", Coerce::str(counts).c_str());
     CompilerPass::visit_fn(fn);
   }
 

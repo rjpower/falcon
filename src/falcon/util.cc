@@ -13,19 +13,10 @@
 #include <string>
 
 using namespace std;
-map<string, double*> TimerRegistry::timers;
+map<string, double*> Counters::counters;
 
 LogLevel currentLogLevel = kLogInfo;
 static const char* logLevels[5] = { "D", "I", "W", "E", "F" };
-
-void breakpoint() {
-  struct sigaction oldAct;
-  struct sigaction newAct;
-  newAct.sa_handler = SIG_IGN;
-  sigaction(SIGTRAP, &newAct, &oldAct);
-  raise(SIGTRAP);
-  sigaction(SIGTRAP, &oldAct, NULL);
-}
 
 double clockAsDouble() {
   timespec tp;
@@ -133,27 +124,27 @@ void StringPiece::strip() {
     --len_;
   }
 }
-vector<StringPiece> StringPiece::split(StringPiece sp, StringPiece delim) {
+
+vector<StringPiece> StrUtil::split(StringPiece sp, StringPiece delim) {
   vector<StringPiece> out;
-  const char* c = sp.data_;
-  while (c < sp.data_ + sp.len_) {
+  const char* c = sp.data();
+  while (c < sp.data() + sp.size()) {
     const char* next = c;
 
     bool found = false;
 
-    while (next < sp.data_ + sp.len_) {
-      for (int i = 0; i < delim.len_; ++i) {
-        if (*next == delim.data_[i]) {
+    while (next < sp.data() + sp.size()) {
+      for (int i = 0; i < delim.size(); ++i) {
+        if (*next == delim.data()[i]) {
           found = true;
         }
       }
-      if (found)
-        break;
+      if (found) break;
 
       ++next;
     }
 
-    if (found || c < sp.data_ + sp.len_) {
+    if (found || c < sp.data() + sp.size()) {
       StringPiece part(c, next - c);
       out.push_back(part);
     }

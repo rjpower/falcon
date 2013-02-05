@@ -12,8 +12,13 @@
 #include <string>
 #include <vector>
 
-extern "C" {
-void breakpoint();
+static inline void breakpoint() {
+  struct sigaction oldAct;
+  struct sigaction newAct;
+  newAct.sa_handler = SIG_IGN;
+  sigaction(SIGTRAP, &newAct, &oldAct);
+  raise(SIGTRAP);
+  sigaction(SIGTRAP, &oldAct, NULL);
 }
 
 static inline uint64_t rdtsc() {
@@ -21,6 +26,13 @@ static inline uint64_t rdtsc() {
   __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
   return (((uint64_t) hi) << 32) | ((uint64_t) lo);
 }
+
+double Now();
+std::string Hostname();
+timeval timevalFromDouble(double t);
+timespec timespecFromDouble(double t);
+
+void Sleep(double sleepTime);
 
 class StringPiece {
 public:
@@ -46,8 +58,6 @@ public:
   const char* data() const {
     return data_;
   }
-
-  static std::vector<StringPiece> split(StringPiece sp, StringPiece delim);
 private:
   const char* data_;
   int len_;
@@ -56,142 +66,42 @@ private:
 bool operator==(const StringPiece& a, const char* b);
 bool operator==(const StringPiece& a, const StringPiece& b);
 
+struct StrUtil {
+  static std::vector<StringPiece> split(StringPiece sp, StringPiece delim);
+
+  template<class Iterator>
+  static std::string join(Iterator start, Iterator end, std::string delim = " ");
+
+  template<class Iterator, class Converter>
+  static std::string join(Iterator start, Iterator end, std::string delim, Converter to_str);
+
+  template<class ValueType>
+  static std::string join(const std::vector<ValueType>& v, std::string delim);
+};
+
 const char* strnstr(const char* haystack, const char* needle, int len);
 
 std::string StringPrintf(StringPiece fmt, ...);
 std::string VStringPrintf(StringPiece fmt, va_list args);
 
-struct Coerce {
-  static std::string str(const short& v) {
-    return StringPrintf("%d", v);
-  }
-
-  static std::string str(const int& v) {
-    return StringPrintf("%d", v);
-  }
-
-  static std::string str(const double& v) {
-    return StringPrintf("%f", v);
-  }
-
-  static std::string str(const std::string& v) {
-    return v;
-  }
-
-  template <class T>
-  static std::string str(const T* t) {
-    return t->str();
-  }
-
-  template <class T>
-  static std::string t_str(const T& v) {
-    return str(v);
-  }
-
-  template<class T>
-  static std::string str(const std::vector<T>& v) {
-    return JoinString(v.begin(), v.end(), ",");
-  }
-};
-
-template<class Iterator>
-std::string JoinString(Iterator start, Iterator end, std::string delim = " ") {
-  std::string out;
-  while (start != end) {
-    out += Coerce::str(*start);
-    ++start;
-    if (start != end) {
-      out += delim;
-    }
-  }
-  return out;
-}
-
-template<class Iterator, class Converter>
-std::string JoinString(Iterator start, Iterator end, std::string delim, Converter to_str) {
-  std::string out;
-  while (start != end) {
-    std::string part = to_str(*start);
-    out += part;
-
-    ++start;
-    if (start != end) {
-      out += delim;
-    }
-  }
-  return out;
-}
-
-template<class ValueType>
-std::string JoinString(const std::vector<ValueType>& v, std::string delim) {
-  return JoinString(v.begin(), v.end(), delim);
-}
-
-struct TimerRegistry {
-  typedef std::map<std::string, double*> TimerMap;
-  static TimerMap timers;
+struct Counters {
+  typedef std::map<std::string, double*> CounterMap;
+  static CounterMap counters;
   static double& get(const std::string& name) {
-    if (timers.find(name) == timers.end()) {
-      timers[name] = new double(0);
+    if (counters.find(name) == counters.end()) {
+      counters[name] = new double(0);
     }
-    return *timers[name];
+    return *counters[name];
   }
 
   static std::string str() {
     std::string out;
-    for (TimerMap::iterator i = timers.begin(); i != timers.end(); ++i) {
+    for (CounterMap::iterator i = counters.begin(); i != counters.end(); ++i) {
       out += StringPrintf("%s : %.2f, ", i->first.c_str(), *i->second);
     }
     return out;
   }
 };
-
-struct Writer {
-  template<class T>
-  void write(const T& t) {
-    write(ToString(t));
-  }
-
-  virtual void write(const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    std::string res = VStringPrintf(fmt, args);
-    va_end(args);
-
-    this->write(res);
-  }
-  virtual void write(const std::string&) = 0;
-};
-
-class StringWriter: public Writer {
-  std::string buffer_;
-public:
-  virtual void write(const std::string& data) {
-    buffer_.append(data);
-  }
-
-  const std::string& str() {
-    return buffer_;
-  }
-};
-
-class FileWriter: public Writer {
-private:
-  int fd_;
-public:
-  FileWriter(int fd) :
-      fd_(fd) {
-  }
-  virtual void write(const std::string& data) {
-    int result = ::write(fd_, data.data(), data.size());
-    assert(result == data.size());
-  }
-};
-
-double Now();
-std::string Hostname();
-timeval timevalFromDouble(double t);
-timespec timespecFromDouble(double t);
 
 struct TimerBlock {
   double& t_;
@@ -204,10 +114,61 @@ struct TimerBlock {
   }
 };
 
-void Sleep(double sleepTime);
+struct Coerce {
+  static std::string str(const short & v);
+  static std::string str(const int& v);
+  static std::string str(const double& v);
+  static std::string str(const std::string& v);
+
+  template<class T>
+  static std::string str(const T* t);
+
+  template<class T>
+  static std::string t_str(const T& v);
+
+  template<class T>
+  static std::string str(const std::vector<T>& v);
+
+  template<class K, class V>
+  static std::string str(const std::map<K, V>& m);
+};
+
+class Writer {
+public:
+  virtual void printf(const char* fmt, ...);
+  virtual void write(const char*);
+
+  virtual void write(const std::string&) = 0;
+
+  template<class T>
+  void write(const T& t) {
+    write(Coerce::t_str(t));
+  }
+};
+
+class StringWriter: public Writer {
+  std::string buffer_;
+public:
+  virtual void write(const std::string& data);
+  const std::string& str();
+};
+
+class FileWriter: public Writer {
+private:
+  int fd_;
+public:
+  FileWriter(int fd) :
+      fd_(fd) {
+  }
+  virtual void write(const std::string& data);
+};
 
 enum LogLevel {
-  kLogDebug = 0, kLogInfo = 1, kLogWarn = 2, kLogError = 3, kLogFatal = 4,
+  kLogDebug = 0,
+  kLogInfo = 1,
+  kLogWarn = 2,
+  kLogError = 3,
+  kLogFatal = 4,
 };
 
 extern LogLevel currentLogLevel;
@@ -258,4 +219,104 @@ void logAtLevel(LogLevel level, const char* file, int line, const char* fmt, ...
     { decltype(a) a_ = (a); decltype(b) b_ = (b); Log_Assert(a_ == b_, "Expected %s == %s.", #a, #b); }
 #define Log_AssertGt(a, b)\
     { decltype(a) a_ = (a); decltype(b) b_ = (b); Log_Assert(a_ > b_, "Expected %s > %s.", #a, #b); }
+
+template<class K, class V>
+inline std::string Coerce::str(const std::map<K, V>& m) {
+  StringWriter w;
+  w.write("{\n");
+  for (auto i = m.begin(); i != m.end(); ++i) {
+    w.printf("%s : %s,\n", Coerce::str(i->first).c_str(), Coerce::str(i->second).c_str());
+  }
+  w.write("}\n");
+  return w.str();
+}
+
+template<class T>
+inline std::string Coerce::str(const std::vector<T>& v) {
+  return StrUtil::join(v.begin(), v.end(), ",");
+}
+
+template<class T>
+inline std::string Coerce::t_str(const T& v) {
+  return str(v);
+}
+
+template<class T>
+inline std::string Coerce::str(const T* t) {
+  return t->str();
+}
+
+inline std::string Coerce::str(const std::string& v) {
+  return v;
+}
+
+inline std::string Coerce::str(const double& v) {
+  return StringPrintf("%f", v);
+}
+
+inline std::string Coerce::str(const int& v) {
+  return StringPrintf("%d", v);
+}
+
+inline std::string Coerce::str(const short & v) {
+  return StringPrintf("%d", v);
+}
+
+template<class Iterator>
+inline std::string StrUtil::join(Iterator start, Iterator end, std::string delim) {
+  std::string out;
+  while (start != end) {
+    out += Coerce::str(*start);
+    ++start;
+    if (start != end) {
+      out += delim;
+    }
+  }
+  return out;
+}
+
+template<class Iterator, class Converter>
+inline std::string StrUtil::join(Iterator start, Iterator end, std::string delim, Converter to_str) {
+  std::string out;
+  while (start != end) {
+    std::string part = to_str(*start);
+    out += part;
+    ++start;
+    if (start != end) {
+      out += delim;
+    }
+  }
+  return out;
+}
+
+template<class ValueType>
+inline std::string StrUtil::join(const std::vector<ValueType>& v, std::string delim) {
+  return join(v.begin(), v.end(), delim);
+}
+
+inline void Writer::printf(const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  std::string res = VStringPrintf(fmt, args);
+  va_end(args);
+  this->write(res);
+}
+
+inline void Writer::write(const char* str) {
+  write(std::string(str));
+}
+
+inline void StringWriter::write(const std::string& data) {
+  buffer_.append(data);
+}
+
+inline const std::string& StringWriter::str() {
+  return buffer_;
+}
+
+inline void FileWriter::write(const std::string& data) {
+  int result = ::write(fd_, data.data(), data.size());
+  assert(result == data.size());
+}
+
 #endif
