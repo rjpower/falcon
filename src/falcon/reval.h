@@ -136,8 +136,8 @@ struct RegisterFrame {
 
 struct RunState {
   char *code;
-  PyObject** registers;
   PyFrameObject* frame;
+  RegisterPrelude prelude;
 
   f_inline PyObject* names() {
     return frame->f_code->co_names;
@@ -155,44 +155,26 @@ struct RunState {
     return frame->f_builtins;
   }
 
+  f_inline PyObject* consts() {
+    return frame->f_code->co_consts;
+  }
+
   f_inline int offset(const char* pc) const {
     return (int) (pc - code);
   }
 
   f_inline int next_code(const char* pc) const {
-    return ((RMachineOp*)pc)->header.code;
+    return ((RMachineOp*) pc)->header.code;
   }
 
   RunState(RegisterFrame* r) {
     Py_ssize_t codelen;
     PyString_AsStringAndSize(r->regcode, &code, &codelen);
 
-    RegisterPrelude *prelude = (RegisterPrelude*) code;
-    assert(memcmp(&prelude->magic, REG_MAGIC, 4) == 0);
-
     frame = r->frame;
-    registers = new PyObject*[prelude->num_registers];
-    PyObject* consts = frame->f_code->co_consts;
-    PyObject** fastlocals = frame->f_localsplus;
-    int num_consts = PyTuple_Size(consts);
-    int num_locals = frame->f_code->co_nlocals;
 
-    // setup const and local register aliases.
-    for (int i = 0; i < prelude->num_registers; ++i) {
-      registers[i] = NULL;
-    }
-
-    for (int i = 0; i < num_consts; ++i) {
-      registers[i] = PyTuple_GET_ITEM(consts, i);
-    }
-
-    for (int i = 0; i < num_locals; ++i) {
-      registers[num_consts + i] = fastlocals[i];
-    }
-  }
-
-  ~RunState() {
-    delete[] registers;
+    prelude = *(RegisterPrelude*) code;
+    Log_AssertEq(memcmp(&prelude.magic, REG_MAGIC, 4), 0);
   }
 };
 

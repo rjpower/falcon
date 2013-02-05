@@ -69,7 +69,7 @@ class Simple(unittest.TestCase):
     self.time_compare(count_threshold, 10, 5) 
     
   def test_count_threshold2(self):
-    self.time_compare(count_threshold, 1*1000*1000, 5*100*1000, repeat=15) 
+    self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=15) 
     
 #  def test_infinite_loop(self):
 #    falcon.run_function(infinite_loop)
