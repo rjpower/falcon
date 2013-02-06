@@ -1,8 +1,11 @@
 #ifndef RCOMPILE_H_
 #define RCOMPILE_H_
 
+#include <cassert>
+
 #include "util.h"
 #include "reval.h"
+
 
 
 // While compiling, we use an expanded form to represent opcodes.  This
@@ -16,6 +19,9 @@ struct CompilerOp {
   // and should be ignored.
   bool dead;
 
+  // is the last register argument a destination we're writing to?
+  bool has_dest;
+
   std::vector<Register> regs;
 
   std::string str() const;
@@ -24,12 +30,28 @@ struct CompilerOp {
     this->code = code;
     this->arg = arg;
     this->dead = false;
+    this->has_dest = false;
+  }
+
+  Register dest() {
+    size_t n_regs = this->regs.size();
+    assert(n_regs > 0);
+    assert(this->has_dest);
+    return this->regs[n_regs-1];
+  }
+
+  size_t num_inputs() {
+    size_t n = this->regs.size();
+    // if one of the registers is a target for a store, don't count it as an input
+    return this->has_dest ? n-1 : n;
   }
 };
 
 struct BasicBlock {
 private:
   CompilerOp* _add_op(int opcode, int arg, int num_regs);
+  CompilerOp* _add_dest_op(int opcode, int arg, int num_regs);
+
 public:
 
   int py_offset;
@@ -46,11 +68,21 @@ public:
 
   BasicBlock(int offset, int idx);
 
+  /* operations without a destination register */
   CompilerOp* add_op(int opcode, int arg);
   CompilerOp* add_op(int opcode, int arg, int reg1);
   CompilerOp* add_op(int opcode, int arg, int reg1, int reg2);
   CompilerOp* add_op(int opcode, int arg, int reg1, int reg2, int reg3);
   CompilerOp* add_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4);
+
+
+  /* operations with a destination register */
+  CompilerOp* add_dest_op(int opcode, int arg);
+  CompilerOp* add_dest_op(int opcode, int arg, int reg1);
+  CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2);
+  CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3);
+  CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4);
+
   CompilerOp* add_varargs_op(int opcode, int arg, int num_regs);
 };
 

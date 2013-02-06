@@ -272,6 +272,8 @@ const char* opcode_to_name(int opcode) {
     return "INCREF";
   case 149:
     return "DECREF";
+  case 150:
+    return "CONST_INDEX";
   default:
     return "BAD_OPCODE";
   }
@@ -358,6 +360,12 @@ CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
   return op;
 }
 
+CompilerOp* BasicBlock::_add_dest_op(int opcode, int arg, int num_regs) {
+  CompilerOp* op = _add_op(opcode, arg, num_regs);
+  op->has_dest = true;
+  return op;
+}
+
 BasicBlock::BasicBlock(int offset, int idx) {
   reg_offset = 0;
   py_offset = offset;
@@ -367,16 +375,29 @@ BasicBlock::BasicBlock(int offset, int idx) {
 }
 
 CompilerOp* BasicBlock::add_op(int opcode, int arg) {
+  /* operation with 0 inputs and no destination register */
   return _add_op(opcode, arg, 0);
 }
 
 CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1) {
+  /* operation with 1 input and no destination register */
   CompilerOp* op = _add_op(opcode, arg, 1);
   op->regs[0] = reg1;
   return op;
 }
 
+
+CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2) {
+  /* operation with 2 inputs and no destination register */
+  CompilerOp* op = _add_op(opcode, arg, 2);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  return op;
+}
+
+
 CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3) {
+  /* operation with 3 inputs and no destination register */
   CompilerOp* op = _add_op(opcode, arg, 3);
   op->regs[0] = reg1;
   op->regs[1] = reg2;
@@ -385,6 +406,7 @@ CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3
 }
 
 CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4) {
+  /* operation with 4 inputs and no destination register */
   CompilerOp* op = _add_op(opcode, arg, 4);
   op->regs[0] = reg1;
   op->regs[1] = reg2;
@@ -393,16 +415,54 @@ CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3
   return op;
 }
 
-CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2) {
-  CompilerOp* op = _add_op(opcode, arg, 2);
+
+
+
+CompilerOp* BasicBlock::add_dest_op(int opcode, int arg) {
+  /* operation with 0 inputs and a destination register */
+  return _add_dest_op(opcode, arg, 0);
+}
+
+CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1) {
+  /* operation with 1 input and a destination register */
+  CompilerOp* op = _add_dest_op(opcode, arg, 1);
+  op->regs[0] = reg1;
+  return op;
+}
+
+
+CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2) {
+  /* operation with 2 inputs and a destination register */
+  CompilerOp* op = _add_dest_op(opcode, arg, 2);
   op->regs[0] = reg1;
   op->regs[1] = reg2;
   return op;
 }
 
-CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
-  return _add_op(opcode, arg, num_regs);
+
+CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3) {
+  /* operation with 3 inputs and a destination register */
+  CompilerOp* op = _add_dest_op(opcode, arg, 3);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  op->regs[2] = reg3;
+  return op;
 }
+
+CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4) {
+  /* operation with 4 inputs and a destination register */
+  CompilerOp* op = _add_op(opcode, arg, 4);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  op->regs[2] = reg3;
+  op->regs[3] = reg4;
+  return op;
+}
+
+CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
+  return _add_dest_op(opcode, arg, num_regs);
+}
+
 
 void RegisterStack::push_frame(int target) {
   assert(num_frames < REG_MAX_FRAMES);
@@ -577,12 +637,12 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case LOAD_CONST:
       r1 = oparg;
       r2 = stack->push_register(state->num_reg++);
-      bb->add_op(LOAD_FAST, 0, r1, r2);
+      bb->add_dest_op(LOAD_FAST, 0, r1, r2);
       break;
     case LOAD_FAST:
       r1 = state->num_consts + oparg;
       r2 = stack->push_register(state->num_reg++);
-      bb->add_op(LOAD_FAST, 0, r1, r2);
+      bb->add_dest_op(LOAD_FAST, 0, r1, r2);
       break;
     case LOAD_CLOSURE:
     case LOAD_DEREF:
@@ -590,18 +650,18 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case LOAD_LOCALS:
     case LOAD_NAME:
       r1 = stack->push_register(state->num_reg++);
-      bb->add_op(opcode, oparg, r1);
+      bb->add_dest_op(opcode, oparg, r1);
       break;
     case LOAD_ATTR:
       r1 = stack->pop_register();
       r2 = stack->push_register(state->num_reg++);
-      bb->add_op(opcode, oparg, r1, r2);
+      bb->add_dest_op(opcode, oparg, r1, r2);
       break;
     case STORE_FAST:
       r1 = stack->pop_register();
       // Decrement the old value.
 //      bb->add_op(DECREF, 0, state->num_consts + oparg);
-      bb->add_op(opcode, 0, r1, state->num_consts + oparg);
+      bb->add_dest_op(opcode, 0, r1, state->num_consts + oparg);
       break;
       // Store operations remove one or more registers from the stack.
     case STORE_DEREF:
@@ -624,8 +684,8 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       r3 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2, r3);
       stack->push_register(r3);
-      bb->add_op(DECREF, 0, r1);
-      bb->add_op(DECREF, 0, r2);
+      //bb->add_op(DECREF, 0, r1);
+      //bb->add_op(DECREF, 0, r2);
       break;
     case STORE_SUBSCR:
       r1 = stack->pop_register();
@@ -639,7 +699,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case GET_ITER:
       r1 = stack->pop_register();
       r2 = stack->push_register(state->num_reg++);
-      bb->add_op(opcode, oparg, r1, r2);
+      bb->add_dest_op(opcode, oparg, r1, r2);
 //      bb->add_op(DECREF, oparg, r1);
       break;
     case SLICE + 0:
@@ -655,12 +715,12 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       r4 = stack->push_register(state->num_reg++);
 
       if (r2 == -1) {
-        bb->add_op(opcode, oparg, r1, r4);
+        bb->add_dest_op(opcode, oparg, r1, r4);
       } else {
         if (r3 == -1) {
-          bb->add_op(opcode, oparg, r1, r2, r4);
+          bb->add_dest_op(opcode, oparg, r1, r2, r4);
         } else {
-          bb->add_op(opcode, oparg, r1, r2, r3, r4);
+          bb->add_dest_op(opcode, oparg, r1, r2, r3, r4);
         }
       }
       break;
@@ -715,7 +775,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       // Unary operations: pop 1, push 1.
       r1 = stack->pop_register();
       r2 = stack->push_register(state->num_reg++);
-      bb->add_op(opcode, oparg, r1, r2);
+      bb->add_dest_op(opcode, oparg, r1, r2);
       break;
     case UNARY_POSITIVE:
     case UNARY_NEGATIVE:
@@ -724,8 +784,8 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       // Unary operations: pop 1, push 1.
       r1 = stack->pop_register();
       r2 = stack->push_register(state->num_reg++);
-      bb->add_op(opcode, oparg, r1, r2);
-      bb->add_op(DECREF, 0, r1);
+      bb->add_dest_op(opcode, oparg, r1, r2);
+      // bb->add_op(DECREF, 0, r1);
       break;
     case BINARY_POWER:
     case BINARY_MULTIPLY:
@@ -758,7 +818,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       r1 = stack->pop_register();
       r2 = stack->pop_register();
       r3 = stack->push_register(state->num_reg++);
-      bb->add_op(opcode, oparg, r1, r2, r3);
+      bb->add_dest_op(opcode, oparg, r1, r2, r3);
 //      bb->add_op(DECREF, 0, r1);
 //      bb->add_op(DECREF, 0, r2);
       break;
@@ -791,10 +851,11 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       break;
     }
     case UNPACK_SEQUENCE: {
-      CompilerOp* f = bb->add_varargs_op(opcode, oparg, oparg + 1);
-      f->regs[0] = stack->pop_register();
-      for (r = 1; r < oparg + 1; ++r) {
-        f->regs[r] = stack->push_register(state->num_reg++);
+      Register seq = stack->pop_register();
+
+      for (r = oparg; r >= 1; --r) {
+        Register elt = stack->push_register(state->num_reg++);
+        bb->add_dest_op(CONST_INDEX, r-1, seq, elt);
       }
       break;
     }
@@ -849,7 +910,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       a.push_register(r1);
       r2 = a.push_register(state->num_reg++);
 
-      bb->add_op(opcode, 0, r1, r2);
+      bb->add_dest_op(opcode, 0, r1, r2);
 
       // fall-through if iterator had an item, jump forward if iterator is empty.
       BasicBlock* left = registerize(state, &a, offset + CODESIZE(opcode));
@@ -1072,29 +1133,24 @@ public:
     Register source, target;
     for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp * op = bb->code[i];
-      switch (op->code) {
-      case LOAD_FAST:
-      case STORE_FAST: {
+
+      // check all the registers and forward any that are in the env
+      size_t n_inputs = op->num_inputs();
+      for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
+        auto iter = env.find(op->regs[reg_idx]);
+        if (iter != env.end()) {
+          op->regs[reg_idx] = iter->second;
+        }
+      }
+      if (op->code == LOAD_FAST || op->code == STORE_FAST) {
         source = op->regs[0];
         target = op->regs[1];
         auto iter = env.find(source);
         if (iter != env.end()) {
+          printf("Changing source for %d from %d to %d\n", target, source, iter->second);
           source = iter->second;
         }
         env[target] = source;
-        break;
-      }
-      default: {
-        // check all the registers and forward any that are in the env
-        size_t n_args = op->regs.size();
-        for (size_t reg_idx = 0; reg_idx < n_args; reg_idx++) {
-          auto iter = env.find(op->regs[reg_idx]);
-          if (iter != env.end()) {
-            op->regs[reg_idx] = iter->second;
-          }
-        }
-        break;
-      }
       }
     }
   }
@@ -1114,10 +1170,7 @@ private:
 
 
   void incr_count(Register r) {
-    printf("Incrementing register %d", r);
-    printf("...old count %d\n", this->get_count(r));
     this->counts[r] = this->get_count(r) + 1;
-    printf("Done!\n");
   }
 
   void count_uses(CompilerState* fn) {
@@ -1128,15 +1181,11 @@ private:
       size_t n_ops = bb->code.size();
       for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
          CompilerOp* op = bb->code[op_idx];
-         if (op->code == POP_JUMP_IF_FALSE) {
-           this->incr_count(op->regs[0]);
-         } else {
-           // the last argument is assumed to be the target to which a value is assigned
-           size_t n_args = op->regs.size();
-           if (n_args > 0) {
-             for (size_t reg_idx = 0; reg_idx < (n_args - 1); reg_idx++) {
-               this->incr_count(op->regs[reg_idx]);
-             }
+         size_t n_inputs = op->num_inputs();
+
+         if (n_inputs > 0) {
+           for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
+             this->incr_count(op->regs[reg_idx]);
            }
          }
        }
@@ -1145,11 +1194,10 @@ private:
 
 public:
   void visit_op(CompilerOp* op) {
-    size_t n_args = op->regs.size();
-    if ((n_args > 0) &&  (op->code != POP_JUMP_IF_FALSE)) {
-      Register target = op->regs[n_args-1];
-      int count = this->get_count(target);
-      if (count == 0) {
+    size_t n_inputs = op->num_inputs();
+    if ((n_inputs > 0) &&  (op->has_dest)) {
+      Register dest = op->regs[n_inputs];
+      if (this->get_count(dest) == 0) {
         op->dead = true;
       }
     }
@@ -1167,6 +1215,7 @@ void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
   CopyPropagation()(fn);
+  DeadCodeElim()(fn);
   DeadCodeElim()(fn);
 }
 

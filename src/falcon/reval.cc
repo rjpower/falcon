@@ -342,6 +342,16 @@ struct BinarySubscr: public Op<RegOp, BinarySubscr> {
   }
 };
 
+
+struct ConstIndex: public Op<RegOp, ConstIndex> {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* list = registers[op.reg_1];
+    uint8_t key = op.arg;
+    registers[op.reg_2] = PyObject_GetItem(list, PyInt_FromLong(key));
+  }
+};
+
+
 struct LoadAttr: public Op<RegOp, LoadAttr> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* obj = registers[op.reg_1];
@@ -701,7 +711,8 @@ const void* const labels[] = {
   &&op_SET_ADD,
   &&op_MAP_ADD,
   &&op_INCREF,
-  &&op_DECREF
+  &&op_DECREF,
+  &&op_CONST_INDEX
 }
 ;
 
@@ -733,6 +744,7 @@ DEFINE_OP(STORE_SUBSCR, StoreSubscr);
 DEFINE_OP(STORE_FAST, StoreFast);
 
 DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
+DEFINE_OP(CONST_INDEX, ConstIndex);
 
 DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);
@@ -761,7 +773,8 @@ DEFINE_OP(COMPARE_OP, CompareOp);
 DEFINE_OP(INCREF, IncRef);
 DEFINE_OP(DECREF, DecRef);
 
-BAD_OP(LOAD_CONST)BAD_OP(JUMP_FORWARD);
+BAD_OP(LOAD_CONST);
+BAD_OP(JUMP_FORWARD);
 BAD_OP(MAP_ADD);
 BAD_OP(SET_ADD);
 BAD_OP(EXTENDED_ARG);

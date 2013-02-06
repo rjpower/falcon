@@ -36,6 +36,7 @@ typedef void* JumpAddr;
 
 #define INCREF 148
 #define DECREF 149
+#define CONST_INDEX 150
 
 #pragma pack(push, 0)
 struct RegisterPrelude {

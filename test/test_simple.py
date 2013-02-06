@@ -38,6 +38,10 @@ def global_math(count):
   for i in xrange(count):
     math.floor(i)
 
+def unpack_first(x):
+    a,b,c = x
+    return a
+
 class Simple(unittest.TestCase):
   def time_compare(self, function, *args, **kw):
     repeat = kw.get('repeat', 1)
@@ -78,7 +82,9 @@ class Simple(unittest.TestCase):
     
   def test_global_load(self): 
     self.time_compare(global_math, 1000000, repeat=15)
-
+  
+  def test_unpack_first(self):
+    self.time_compare(unpack_first, (1,2,3), repeat = 1)
     
 if __name__ == '__main__':
   unittest.main()
