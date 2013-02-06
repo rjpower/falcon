@@ -5,8 +5,7 @@
 
 #include "util.h"
 #include "reval.h"
-
-
+#include "oputil.h"
 
 // While compiling, we use an expanded form to represent opcodes.  This
 // is translated to a compact instruction stream as the last compilation
@@ -154,7 +153,5 @@ struct CompilerState {
 BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset);
 PyObject* compileByteCode(PyCodeObject* c);
 PyObject* compileRegCode(CompilerState* c);
-const char* opcode_to_name(int opcode);
-
 
 #endif /* RCOMPILE_H_ */

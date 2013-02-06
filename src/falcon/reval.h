@@ -4,6 +4,8 @@
 // Definitions for the register compiler/evaluator.
 #include "frameobject.h"
 #include "util.h"
+#include "oputil.h"
+
 #include <algorithm>
 #include <set>
 
@@ -20,9 +22,6 @@
 #define f_inline __attribute__((always_inline)) inline
 #endif
 
-bool is_varargs_op(int opcode);
-bool is_branch_op(int opcode);
-
 // Register layout --
 //
 // Each function call pushes a new set of registers for evaluation.
@@ -33,10 +32,6 @@ bool is_branch_op(int opcode);
 typedef int16_t Register;
 typedef int16_t JumpLoc;
 typedef void* JumpAddr;
-
-#define INCREF 148
-#define DECREF 149
-#define CONST_INDEX 150
 
 #pragma pack(push, 0)
 struct RegisterPrelude {
@@ -113,10 +108,10 @@ struct RMachineOp {
     assert(sizeof(RMachineOp) == 8);
     assert(sizeof(VarRegOp) == sizeof(RMachineOp));
 
-    if (is_varargs_op(op.header.code)) {
+    if (OpUtil::is_varargs(op.header.code)) {
       return size(op.varargs);
     }
-    if (is_branch_op(op.header.code)) {
+    if (OpUtil::is_branch(op.header.code)) {
       return sizeof(RMachineOp);
     }
     return sizeof(RMachineOp);

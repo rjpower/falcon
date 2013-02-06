@@ -316,7 +316,7 @@ inline const std::string& StringWriter::str() {
 
 inline void FileWriter::write(const std::string& data) {
   int result = ::write(fd_, data.data(), data.size());
-  assert(result == data.size());
+  Log_AssertEq(result, (int)data.size());
 }
 
 #endif

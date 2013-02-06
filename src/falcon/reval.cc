@@ -12,8 +12,11 @@ const char* obj_to_str(PyObject* o) {
   return PyString_AsString(PyObject_Str(o));
 }
 
+#ifdef FALCON_DEBUG
+#define EVAL_LOG(...) fprintf(stderr, __VA_ARGS__); fputs("\n", stderr);
+#else
 #define EVAL_LOG(...)
-//#define EVAL_LOG(...) fprintf(stderr, __VA_ARGS__); fputs("\n", stderr);
+#endif
 
 typedef PyObject* (*PyNumberFunction)(PyObject*, PyObject*);
 
@@ -58,7 +61,7 @@ RegisterFrame* Evaluator::buildFrameFromPython(PyObject* function, PyObject* arg
   PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(function);
 
   if (args == NULL || !PyTuple_Check(args)) {
-    EVAL_LOG("Not a tuple? %s", PyString_AsString(PyObject_obj_to_str(PyObject_Type(args))));
+    EVAL_LOG("Not a tuple? %s", obj_to_str(PyObject_Type(args)));
     return NULL;
   }
 
@@ -96,7 +99,7 @@ void Evaluator::dumpStatus() {
   Log_Info("%d operations executed.", totalCount);
   for (int i = 0; i < 256; ++i) {
     if (opCounts[i] > 0) {
-      Log_Info("%20s : %10d, %.3f", opcode_to_name(i), opCounts[i], opTimes[i] / 1e9);
+      Log_Info("%20s : %10d, %.3f", OpUtil::name(i), opCounts[i], opTimes[i] / 1e9);
     }
   }
 }
@@ -452,6 +455,7 @@ struct JumpIfTrueOrPop: public Op<BranchOp, JumpIfTrueOrPop> {
 
 struct JumpAbsolute: public Op<BranchOp, JumpAbsolute> {
   f_inline void _eval(BranchOp op, const char **pc, PyObject** registers, RunState *state) {
+    EVAL_LOG("Jumping to: %d", op.label);
     *pc = state->code + op.label;
   }
 };
@@ -505,7 +509,7 @@ struct BuildList: public Op<VarRegOp, BuildList> {
     static int _force_register_ ## opname = LabelRegistry::add_label(opname, &&op_ ## opname);
 
 #define _DEFINE_OP(opname, impl)\
-      EVAL_LOG("%5d: %s", state.offset(), opcode_to_name(opname));\
+      EVAL_LOG("%5d: %s", state.offset(pc), OpUtil::name(opname));\
       /*collectInfo(opname);\*/\
       impl::instance.eval(&state, &pc, registers);\
       goto *labels[state.next_code(pc)];
@@ -716,7 +720,7 @@ const void* const labels[] = {
 }
 ;
 
-EVAL_LOG("Jumping to: %d, %s", state.offset(), opcode_to_name(state.next_code(pc)));
+EVAL_LOG("Jumping to: %d, %s", state.offset(pc), OpUtil::name(state.next_code(pc)));
 try {
     goto *labels[state.next_code(pc)];
 

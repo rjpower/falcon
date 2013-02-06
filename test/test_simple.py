@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import dis
 import falcon
 import logging
 import opcode
@@ -8,7 +9,10 @@ import time
 import unittest
 import math
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+logging.basicConfig(
+    format='%(asctime)s %(filename)s:%(funcName)s %(message)s',
+    level=logging.INFO, 
+    stream=sys.stderr)
 
 def add(a, b):
   return a + b
@@ -44,6 +48,7 @@ def unpack_first(x):
 
 class Simple(unittest.TestCase):
   def time_compare(self, function, *args, **kw):
+    print 'Original bytecode:\n%s\n' % dis.dis(function)
     repeat = kw.get('repeat', 1)
     evaluator = falcon.Evaluator()
     frame = evaluator.buildFrameFromPython(function, args)

@@ -28,291 +28,9 @@
 
 using namespace std;
 
-const char* opcode_to_name(int opcode) {
-  switch (opcode) {
-  case 0:
-    return "STOP_CODE";
-  case 1:
-    return "POP_TOP";
-  case 2:
-    return "ROT_TWO";
-  case 3:
-    return "ROT_THREE";
-  case 4:
-    return "DUP_TOP";
-  case 5:
-    return "ROT_FOUR";
-  case 9:
-    return "NOP";
-  case 10:
-    return "UNARY_POSITIVE";
-  case 11:
-    return "UNARY_NEGATIVE";
-  case 12:
-    return "UNARY_NOT";
-  case 13:
-    return "UNARY_CONVERT";
-  case 15:
-    return "UNARY_INVERT";
-  case 19:
-    return "BINARY_POWER";
-  case 20:
-    return "BINARY_MULTIPLY";
-  case 21:
-    return "BINARY_DIVIDE";
-  case 22:
-    return "BINARY_MODULO";
-  case 23:
-    return "BINARY_ADD";
-  case 24:
-    return "BINARY_SUBTRACT";
-  case 25:
-    return "BINARY_SUBSCR";
-  case 26:
-    return "BINARY_FLOOR_DIVIDE";
-  case 27:
-    return "BINARY_TRUE_DIVIDE";
-  case 28:
-    return "INPLACE_FLOOR_DIVIDE";
-  case 29:
-    return "INPLACE_TRUE_DIVIDE";
-  case 30:
-    return "SLICE";
-  case 31:
-    return "SLICE";
-  case 32:
-    return "SLICE";
-  case 33:
-    return "SLICE";
-  case 40:
-    return "STORE_SLICE";
-  case 41:
-    return "STORE_SLICE";
-  case 42:
-    return "STORE_SLICE";
-  case 43:
-    return "STORE_SLICE";
-  case 50:
-    return "DELETE_SLICE";
-  case 51:
-    return "DELETE_SLICE";
-  case 52:
-    return "DELETE_SLICE";
-  case 53:
-    return "DELETE_SLICE";
-  case 54:
-    return "STORE_MAP";
-  case 55:
-    return "INPLACE_ADD";
-  case 56:
-    return "INPLACE_SUBTRACT";
-  case 57:
-    return "INPLACE_MULTIPLY";
-  case 58:
-    return "INPLACE_DIVIDE";
-  case 59:
-    return "INPLACE_MODULO";
-  case 60:
-    return "STORE_SUBSCR";
-  case 61:
-    return "DELETE_SUBSCR";
-  case 62:
-    return "BINARY_LSHIFT";
-  case 63:
-    return "BINARY_RSHIFT";
-  case 64:
-    return "BINARY_AND";
-  case 65:
-    return "BINARY_XOR";
-  case 66:
-    return "BINARY_OR";
-  case 67:
-    return "INPLACE_POWER";
-  case 68:
-    return "GET_ITER";
-  case 70:
-    return "PRINT_EXPR";
-  case 71:
-    return "PRINT_ITEM";
-  case 72:
-    return "PRINT_NEWLINE";
-  case 73:
-    return "PRINT_ITEM_TO";
-  case 74:
-    return "PRINT_NEWLINE_TO";
-  case 75:
-    return "INPLACE_LSHIFT";
-  case 76:
-    return "INPLACE_RSHIFT";
-  case 77:
-    return "INPLACE_AND";
-  case 78:
-    return "INPLACE_XOR";
-  case 79:
-    return "INPLACE_OR";
-  case 80:
-    return "BREAK_LOOP";
-  case 81:
-    return "WITH_CLEANUP";
-  case 82:
-    return "LOAD_LOCALS";
-  case 83:
-    return "RETURN_VALUE";
-  case 84:
-    return "IMPORT_STAR";
-  case 85:
-    return "EXEC_STMT";
-  case 86:
-    return "YIELD_VALUE";
-  case 87:
-    return "POP_BLOCK";
-  case 88:
-    return "END_FINALLY";
-  case 89:
-    return "BUILD_CLASS";
-  case 90:
-    return "STORE_NAME";
-  case 91:
-    return "DELETE_NAME";
-  case 92:
-    return "UNPACK_SEQUENCE";
-  case 93:
-    return "FOR_ITER";
-  case 94:
-    return "LIST_APPEND";
-  case 95:
-    return "STORE_ATTR";
-  case 96:
-    return "DELETE_ATTR";
-  case 97:
-    return "STORE_GLOBAL";
-  case 98:
-    return "DELETE_GLOBAL";
-  case 99:
-    return "DUP_TOPX";
-  case 100:
-    return "LOAD_CONST";
-  case 101:
-    return "LOAD_NAME";
-  case 102:
-    return "BUILD_TUPLE";
-  case 103:
-    return "BUILD_LIST";
-  case 104:
-    return "BUILD_SET";
-  case 105:
-    return "BUILD_MAP";
-  case 106:
-    return "LOAD_ATTR";
-  case 107:
-    return "COMPARE_OP";
-  case 108:
-    return "IMPORT_NAME";
-  case 109:
-    return "IMPORT_FROM";
-  case 110:
-    return "JUMP_FORWARD";
-  case 111:
-    return "JUMP_IF_FALSE_OR_POP";
-  case 112:
-    return "JUMP_IF_TRUE_OR_POP";
-  case 113:
-    return "JUMP_ABSOLUTE";
-  case 114:
-    return "POP_JUMP_IF_FALSE";
-  case 115:
-    return "POP_JUMP_IF_TRUE";
-  case 116:
-    return "LOAD_GLOBAL";
-  case 119:
-    return "CONTINUE_LOOP";
-  case 120:
-    return "SETUP_LOOP";
-  case 121:
-    return "SETUP_EXCEPT";
-  case 122:
-    return "SETUP_FINALLY";
-  case 124:
-    return "LOAD_FAST";
-  case 125:
-    return "STORE_FAST";
-  case 126:
-    return "DELETE_FAST";
-  case 130:
-    return "RAISE_VARARGS";
-  case 131:
-    return "CALL_FUNCTION";
-  case 132:
-    return "MAKE_FUNCTION";
-  case 133:
-    return "BUILD_SLICE";
-  case 134:
-    return "MAKE_CLOSURE";
-  case 135:
-    return "LOAD_CLOSURE";
-  case 136:
-    return "LOAD_DEREF";
-  case 137:
-    return "STORE_DEREF";
-  case 140:
-    return "CALL_FUNCTION_VAR";
-  case 141:
-    return "CALL_FUNCTION_KW";
-  case 142:
-    return "CALL_FUNCTION_VAR_KW";
-  case 143:
-    return "SETUP_WITH";
-  case 145:
-    return "EXTENDED_ARG";
-  case 146:
-    return "SET_ADD";
-  case 147:
-    return "MAP_ADD";
-  case 148:
-    return "INCREF";
-  case 149:
-    return "DECREF";
-  case 150:
-    return "CONST_INDEX";
-  default:
-    return "BAD_OPCODE";
-  }
-  return "BAD_OPCODE";
-}
-
-bool is_varargs_op(int opcode) {
-  static std::set<int> r;
-  if (r.empty()) {
-    r.insert(CALL_FUNCTION);
-    r.insert(CALL_FUNCTION_KW);
-    r.insert(CALL_FUNCTION_VAR);
-    r.insert(CALL_FUNCTION_VAR_KW);
-    r.insert(BUILD_LIST);
-    r.insert(BUILD_MAP);
-    r.insert(BUILD_MAP);
-  }
-
-  return r.find(opcode) != r.end();
-}
-
-bool is_branch_op(int opcode) {
-  static std::set<int> r;
-  if (r.empty()) {
-    r.insert(FOR_ITER);
-    r.insert(JUMP_IF_FALSE_OR_POP);
-    r.insert(JUMP_IF_TRUE_OR_POP);
-    r.insert(POP_JUMP_IF_FALSE);
-    r.insert(POP_JUMP_IF_TRUE);
-    r.insert(JUMP_ABSOLUTE);
-    r.insert(JUMP_FORWARD);
-  }
-
-  return r.find(opcode) != r.end();
-}
-
 std::string CompilerOp::str() const {
   std::string out;
-  out += StringPrintf("%s ", opcode_to_name(code));
+  out += StringPrintf("%s ", OpUtil::name(code));
   if (HAS_ARG(code)) {
     out += StringPrintf("(%d) ", arg);
   }
@@ -982,7 +700,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-//            Log_Info("Unknown opcode %s, arg = %d", opcode_to_name(opcode), oparg);
+//            Log_Info("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
       return NULL;
       break;
     }
@@ -1221,7 +939,7 @@ void optimize(CompilerState* fn) {
 
 struct RCompilerUtil {
   static int op_size(CompilerOp* op) {
-    if (is_varargs_op(op->code)) {
+    if (OpUtil::is_varargs(op->code)) {
       return sizeof(RMachineOp) + sizeof(Register) * max(0, (int) op->regs.size() - 2);
     }
     return sizeof(RMachineOp);
@@ -1232,7 +950,7 @@ struct RCompilerUtil {
     dst_op->header.code = op->code;
     dst_op->header.arg = op->arg;
 
-    if (is_varargs_op(op->code)) {
+    if (OpUtil::is_varargs(op->code)) {
       dst_op->varargs.num_registers = op->regs.size();
       for (size_t i = 0; i < op->regs.size(); ++i) {
         dst_op->varargs.regs[i] = op->regs[i];
@@ -1242,7 +960,7 @@ struct RCompilerUtil {
       }
 
       assert(dst_op->varargs.num_registers == op->regs.size());
-    } else if (is_branch_op(op->code)) {
+    } else if (OpUtil::is_branch(op->code)) {
       assert(op->regs.size() < 3);
       dst_op->branch.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
       dst_op->branch.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
@@ -1296,19 +1014,19 @@ void lower_register_code(CompilerState* state, std::string *out) {
     // Skip to the end of the basic block.
     for (size_t j = 0; j < bb->code.size(); ++j) {
       op = (RMachineOp*) (out->data() + pos);
-      Log_Debug("Checking op %s at offset %d.", opcode_to_name(op->code()), pos);
+      Log_Debug("Checking op %s at offset %d.", OpUtil::name(op->code()), pos);
 
       Log_AssertEq(op->code(), bb->code[j]->code);
       Log_AssertEq(op->arg(), bb->code[j]->arg);
       pos += RMachineOp::size(*op);
     }
 
-    if (is_branch_op(op->code()) && op->code() != RETURN_VALUE) {
+    if (OpUtil::is_branch(op->code()) && op->code() != RETURN_VALUE) {
       if (bb->exits.size() == 1) {
         BasicBlock& jmp = *bb->exits[0];
-        assert(jmp.reg_offset > 0);
         op->branch.label = jmp.reg_offset;
-        assert(op->branch.label == jmp.reg_offset);
+        Log_AssertGt(jmp.reg_offset, 0);
+        Log_AssertEq(op->branch.label, jmp.reg_offset);
       } else {
         // One exit is the fall-through to the next block.
         BasicBlock& a = *bb->exits[0];

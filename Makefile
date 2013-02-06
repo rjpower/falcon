@@ -1,5 +1,9 @@
-all:
+opt:
 	python setup.py build -f -g -q
+	python setup.py develop
+
+dbg:
+	CFLAGS='-O0 -DFALCON_DEBUG=1' python setup.py build -f -g -q
 	python setup.py develop
 
 clean:
