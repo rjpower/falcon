@@ -226,7 +226,7 @@ struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF, IntegerF> > {
     if (r3 == NULL) {
       r3 = ObjF(r1, r2);
     }
-
+    Py_XDECREF(registers[op.reg_3]);
     registers[op.reg_3] = r3;
   }
 };
@@ -243,6 +243,7 @@ struct CompareOp: public Op<RegOp, CompareOp> {
     }
 
     EVAL_LOG("Compare: %s, %s -> %s", obj_to_str(r1), obj_to_str(r2), obj_to_str(r3));
+    Py_XDECREF(registers[op.reg_3]);
     registers[op.reg_3] = r3;
   }
 };
@@ -419,6 +420,7 @@ struct ForIter: public Op<BranchOp, ForIter> {
   f_inline void _eval(BranchOp op, const char **pc, PyObject** registers, RunState *state) {
     PyObject* r1 = PyIter_Next(registers[op.reg_1]);
     if (r1) {
+      Py_XDECREF(registers[op.reg_2]);
       registers[op.reg_2] = r1;
       *pc += sizeof(BranchOp);
     } else {

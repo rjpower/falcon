@@ -88,10 +88,10 @@ class Simple(unittest.TestCase):
     dis.dis(count_threshold)
     self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=5)
     
-  def test_count_threshold_generator(self):
-    print "Original bytecode for count_threshold_generator"
-    dis.dis(count_threshold_generator)
-    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
+#  def test_count_threshold_generator(self):
+#    print "Original bytecode for count_threshold_generator"
+#    dis.dis(count_threshold_generator)
+#    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
 
   def test_global_load(self): 
     self.time_compare(global_math, 1000000, repeat=5)

@@ -746,22 +746,8 @@ public:
   virtual void visit_op(CompilerOp* op) {
   }
 
-  virtual void visit_bb(BasicBlock* bb) = 0;
-  virtual void visit_fn(CompilerState* fn) = 0;
-
-  void operator()(CompilerState* fn) {
-    this->visit_fn(fn);
-  }
-
-  virtual ~CompilerPass() {
-  }
-
-};
-
-class ForwardPass : public CompilerPass {
-
 public:
-  void visit_bb(BasicBlock* bb) {
+  virtual void visit_bb(BasicBlock* bb) {
     size_t n_ops = bb->code.size();
     for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp* op = bb->code[i];
@@ -771,7 +757,7 @@ public:
     }
   }
 
-  void visit_fn(CompilerState* fn) {
+  virtual void visit_fn(CompilerState* fn) {
     size_t n_bbs = fn->bbs.size();
     for (size_t i = 0; i < n_bbs; ++i) {
       fn->bbs[i]->visited = false;
@@ -787,7 +773,16 @@ public:
     this->remove_dead_code(fn);
   }
 
+
+  void operator()(CompilerState* fn) {
+    this->visit_fn(fn);
+  }
+
+  virtual ~CompilerPass() {
+  }
+
 };
+
 
 class BackwardPass : public CompilerPass {
 
@@ -820,7 +815,7 @@ public:
 
 };
 
-class MarkEntries: public ForwardPass {
+class MarkEntries: public CompilerPass {
 public:
   void visit_bb(BasicBlock* bb) {
     for (size_t i = 0; i < bb->exits.size(); ++i) {
@@ -830,7 +825,7 @@ public:
   }
 };
 
-class FuseBasicBlocks: public ForwardPass {
+class FuseBasicBlocks: public CompilerPass {
 public:
   void visit_bb(BasicBlock* bb) {
     if (bb->visited || bb->dead || bb->exits.size() != 1) {
@@ -882,7 +877,7 @@ public:
 
  */
 
-class CopyPropagation: public ForwardPass {
+class CopyPropagation: public CompilerPass {
 public:
   void visit_bb(BasicBlock* bb) {
     std::map<Register, Register> env;
@@ -913,67 +908,115 @@ public:
 };
 
 
-
-
-class DeadCodeElim: public BackwardPass {
-private:
+class UseCounts {
+protected:
   std::map<Register, int> counts;
 
-  int get_count(Register r) {
-    std::map<Register, int>::iterator iter = counts.find(r);
-    return iter == counts.end() ? 0 : iter->second;
-  }
+   int get_count(Register r) {
+     std::map<Register, int>::iterator iter = counts.find(r);
+     return iter == counts.end() ? 0 : iter->second;
+   }
 
+   void incr_count(Register r) {
+     this->counts[r] = this->get_count(r) + 1;
+   }
 
-  void incr_count(Register r) {
-    this->counts[r] = this->get_count(r) + 1;
-  }
+   void decr_count(Register r) {
+     this->counts[r] = this->get_count(r) - 1;
+   }
 
-  void decr_count(Register r) {
-    this->counts[r] = this->get_count(r) - 1;
-  }
+   bool is_pure(int op_code) {
+     Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
+     switch (op_code) {
+     case LOAD_LOCALS:
+     case LOAD_CONST:
+     case LOAD_NAME:
+     case BUILD_TUPLE:
+     case BUILD_LIST:
+     case BUILD_SET:
+     case BUILD_MAP:
+     case MAKE_CLOSURE:
+     case LOAD_GLOBAL:
+     case LOAD_FAST:
+     case LOAD_DEREF:
+     case LOAD_CLOSURE:
+     case BUILD_SLICE:
+     case CONST_INDEX:
+     case STORE_FAST:
+       return true;
+     default:
+       return false;
+     }
+   }
+   void count_uses(CompilerState* fn) {
+     size_t n_bbs = fn->bbs.size();
+     for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
 
-  bool is_pure(int op_code) {
-    Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
-    switch (op_code) {
-    case LOAD_LOCALS:
-    case LOAD_CONST:
-    case LOAD_NAME:
-    case BUILD_TUPLE:
-    case BUILD_LIST:
-    case BUILD_SET:
-    case BUILD_MAP:
-    case MAKE_CLOSURE:
-    case LOAD_GLOBAL:
-    case LOAD_FAST:
-    case LOAD_DEREF:
-    case LOAD_CLOSURE:
-    case BUILD_SLICE:
-    case CONST_INDEX:
-    case STORE_FAST:
-      return true;
-    default:
-      return false;
+       BasicBlock* bb = fn->bbs[bb_idx];
+       size_t n_ops = bb->code.size();
+       for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
+          CompilerOp* op = bb->code[op_idx];
+          size_t n_inputs = op->num_inputs();
+
+          if (n_inputs > 0) {
+            for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
+              this->incr_count(op->regs[reg_idx]);
+            }
+          }
+        }
+      }
+   }
+
+};
+
+class StoreElim : public CompilerPass, UseCounts {
+public:
+  void visit_bb(BasicBlock* bb) {
+    // map from registers to their last definition in the basic block
+    std::map<Register, CompilerOp*> env;
+
+    // if we encounter a move X->Y when:
+    //   - X is locally defined in the basic block
+    //   - X is only used once (for this move)
+    // then modify the defining instruction of X
+    // to directly write to Y and mark the move X->Y as dead
+
+    size_t n_ops = bb->code.size();
+    Register source, target;
+    for (size_t i = 0; i < n_ops; ++i) {
+      CompilerOp * op = bb->code[i];
+      // check all the registers and forward any that are in the env
+      size_t n_inputs = op->num_inputs();
+
+      if (op->has_dest) {
+        target = op->regs[n_inputs];
+        env[target] = op;
+      }
+
+      if (op->code == LOAD_FAST || op->code == STORE_FAST) {
+        source = op->regs[0];
+        auto iter = env.find(source);
+        if (iter != env.end() && this->get_count(source) == 1) {
+          CompilerOp* def = iter->second;
+          def->regs[def->num_inputs()] = target;
+          op->dead = true;
+        }
+      }
     }
   }
-  void count_uses(CompilerState* fn) {
-    size_t n_bbs = fn->bbs.size();
-    for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
 
-      BasicBlock* bb = fn->bbs[bb_idx];
-      size_t n_ops = bb->code.size();
-      for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
-         CompilerOp* op = bb->code[op_idx];
-         size_t n_inputs = op->num_inputs();
 
-         if (n_inputs > 0) {
-           for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
-             this->incr_count(op->regs[reg_idx]);
-           }
-         }
-       }
-     }
+  void visit_fn(CompilerState* fn) {
+    this->count_uses(fn);
+    CompilerPass::visit_fn(fn);
   }
+};
+
+
+
+
+class DeadCodeElim: public BackwardPass, UseCounts {
+private:
 
 public:
   void visit_op(CompilerOp* op) {
@@ -1010,7 +1053,9 @@ void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
   CopyPropagation()(fn);
+  StoreElim()(fn);
   DeadCodeElim()(fn);
+
 }
 
 struct RCompilerUtil {
