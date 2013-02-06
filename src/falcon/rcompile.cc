@@ -709,6 +709,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 }
 
 class CompilerPass {
+protected:
   void remove_dead_ops(BasicBlock* bb) {
         size_t live_pos = 0;
         size_t n_ops = bb->code.size();
@@ -741,13 +742,26 @@ class CompilerPass {
         }
         fn->bbs.resize(live_pos);
     }
-
-
 public:
   virtual void visit_op(CompilerOp* op) {
   }
 
-  virtual void visit_bb(BasicBlock* bb) {
+  virtual void visit_bb(BasicBlock* bb) = 0;
+  virtual void visit_fn(CompilerState* fn) = 0;
+
+  void operator()(CompilerState* fn) {
+    this->visit_fn(fn);
+  }
+
+  virtual ~CompilerPass() {
+  }
+
+};
+
+class ForwardPass : public CompilerPass {
+
+public:
+  void visit_bb(BasicBlock* bb) {
     size_t n_ops = bb->code.size();
     for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp* op = bb->code[i];
@@ -757,7 +771,7 @@ public:
     }
   }
 
-  virtual void visit_fn(CompilerState* fn) {
+  void visit_fn(CompilerState* fn) {
     size_t n_bbs = fn->bbs.size();
     for (size_t i = 0; i < n_bbs; ++i) {
       fn->bbs[i]->visited = false;
@@ -773,15 +787,40 @@ public:
     this->remove_dead_code(fn);
   }
 
-  void operator()(CompilerState* fn) {
-    this->visit_fn(fn);
-  }
-
-  virtual ~CompilerPass() {
-  }
 };
 
-class MarkEntries: public CompilerPass {
+class BackwardPass : public CompilerPass {
+
+public:
+  void visit_bb(BasicBlock* bb) {
+    size_t n_ops = bb->code.size();
+    for (size_t i = n_ops - 1; i-- > 0; ) {
+      CompilerOp* op = bb->code[i];
+      if (!op->dead) {
+        this->visit_op(op);
+      }
+    }
+  }
+
+  void visit_fn(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t i = 0; i < n_bbs; ++i) {
+      fn->bbs[i]->visited = false;
+    }
+
+    for (size_t i = n_bbs - 1; i-- > 0; ) {
+      BasicBlock* bb = fn->bbs[i];
+      if (!bb->visited && !bb->dead) {
+        this->visit_bb(bb);
+        bb->visited = true;
+      }
+    }
+    this->remove_dead_code(fn);
+  }
+
+};
+
+class MarkEntries: public ForwardPass {
 public:
   void visit_bb(BasicBlock* bb) {
     for (size_t i = 0; i < bb->exits.size(); ++i) {
@@ -791,7 +830,7 @@ public:
   }
 };
 
-class FuseBasicBlocks: public CompilerPass {
+class FuseBasicBlocks: public ForwardPass {
 public:
   void visit_bb(BasicBlock* bb) {
     if (bb->visited || bb->dead || bb->exits.size() != 1) {
@@ -843,7 +882,7 @@ public:
 
  */
 
-class CopyPropagation: public CompilerPass {
+class CopyPropagation: public ForwardPass {
 public:
   void visit_bb(BasicBlock* bb) {
     std::map<Register, Register> env;
@@ -860,12 +899,11 @@ public:
           op->regs[reg_idx] = iter->second;
         }
       }
-      if (op->code == LOAD_FAST || op->code == STORE_FAST) {
+      if (op->code == LOAD_FAST || op->code == STORE_FAST || op->code == LOAD_CONST) {
         source = op->regs[0];
         target = op->regs[1];
         auto iter = env.find(source);
         if (iter != env.end()) {
-          printf("Changing source for %d from %d to %d\n", target, source, iter->second);
           source = iter->second;
         }
         env[target] = source;
@@ -877,7 +915,7 @@ public:
 
 
 
-class DeadCodeElim: public CompilerPass {
+class DeadCodeElim: public BackwardPass {
 private:
   std::map<Register, int> counts;
 
@@ -891,6 +929,33 @@ private:
     this->counts[r] = this->get_count(r) + 1;
   }
 
+  void decr_count(Register r) {
+    this->counts[r] = this->get_count(r) - 1;
+  }
+
+  bool is_pure(int op_code) {
+    Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
+    switch (op_code) {
+    case LOAD_LOCALS:
+    case LOAD_CONST:
+    case LOAD_NAME:
+    case BUILD_TUPLE:
+    case BUILD_LIST:
+    case BUILD_SET:
+    case BUILD_MAP:
+    case MAKE_CLOSURE:
+    case LOAD_GLOBAL:
+    case LOAD_FAST:
+    case LOAD_DEREF:
+    case LOAD_CLOSURE:
+    case BUILD_SLICE:
+    case CONST_INDEX:
+    case STORE_FAST:
+      return true;
+    default:
+      return false;
+    }
+  }
   void count_uses(CompilerState* fn) {
     size_t n_bbs = fn->bbs.size();
     for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
@@ -912,11 +977,23 @@ private:
 
 public:
   void visit_op(CompilerOp* op) {
+    printf("visit_op %s (code = %d)\n", op->str().c_str(), op->code);
+
     size_t n_inputs = op->num_inputs();
+    printf(" -- n_inputs %d\n", n_inputs);
+    printf(" -- has_dest %d\n", op->has_dest);
+    printf(" -- is pure? %d\n", this->is_pure(op->code));
     if ((n_inputs > 0) &&  (op->has_dest)) {
       Register dest = op->regs[n_inputs];
-      if (this->get_count(dest) == 0) {
+      printf(" ** use count %d\n", this->get_count(dest));
+      if (this->is_pure(op->code) && this->get_count(dest) == 0) {
         op->dead = true;
+        Log_Debug("Dead!");
+        // if an operation is marked dead, decrement the use counts
+        // on all of its arguments
+        for (size_t input_idx = 0; input_idx < n_inputs; ++input_idx) {
+          this->decr_count(op->regs[input_idx]);
+        }
       }
     }
   }
@@ -924,7 +1001,7 @@ public:
   void visit_fn(CompilerState* fn) {
     this->count_uses(fn);
     Log_Info("%s", Coerce::str(counts).c_str());
-    CompilerPass::visit_fn(fn);
+    BackwardPass::visit_fn(fn);
   }
 
 };
@@ -933,7 +1010,6 @@ void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
   CopyPropagation()(fn);
-  DeadCodeElim()(fn);
   DeadCodeElim()(fn);
 }
 

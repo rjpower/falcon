@@ -38,6 +38,9 @@ def count_threshold(limit, threshold):
     if item > threshold: count += 1
   return count
 
+def count_threshold_generator(limit, threshold):
+  return sum(item > threshold for item in xrange(limit))
+
 def global_math(count):
   for i in xrange(count):
     math.floor(i)
@@ -79,14 +82,19 @@ class Simple(unittest.TestCase):
     evaluator.evalPython(loop, (1000 * 1000 * 10,))
     evaluator.dumpStatus()
     
-  def test_count_threshold1(self):
-    self.time_compare(count_threshold, 10, 5) 
     
-  def test_count_threshold2(self):
-    self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=15)
+  def test_count_threshold(self):
+    print "Original bytecode for count_threshold"
+    dis.dis(count_threshold)
+    self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=5)
     
+  def test_count_threshold_generator(self):
+    print "Original bytecode for count_threshold_generator"
+    dis.dis(count_threshold_generator)
+    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
+
   def test_global_load(self): 
-    self.time_compare(global_math, 1000000, repeat=15)
+    self.time_compare(global_math, 1000000, repeat=5)
   
   def test_unpack_first(self):
     self.time_compare(unpack_first, (1,2,3), repeat = 1)

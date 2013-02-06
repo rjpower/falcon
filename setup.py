@@ -50,7 +50,7 @@ setup(
               'src/falcon/rmodule.i'
               ],
       swig_opts = ['-Isrc', '-modern', '-O', '-c++',],
-      extra_compile_args=['-O0', '-fno-gcse', '-fno-crossjumping', '-ggdb2', '-std=c++0x'],
+      extra_compile_args=['-O3', '-fno-gcse', '-fno-crossjumping', '-ggdb2', '-std=c++0x'],
       extra_link_args=['-lrt'],
     )
   ]

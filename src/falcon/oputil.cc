@@ -121,6 +121,9 @@ const char* OpUtil::name(int opcode) {
     case EXTENDED_ARG: return "EXTENDED_ARG";
     case SET_ADD: return "SET_ADD";
     case MAP_ADD: return "MAP_ADD";
+    case DECREF: return "DECREF";
+    case INCREF: return "INCREF";
+    case CONST_INDEX: return "CONST_INDEX";
   }
 
   return "BAD_OP";
