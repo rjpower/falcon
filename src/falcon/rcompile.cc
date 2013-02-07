@@ -316,6 +316,23 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     last = bb;
     switch (opcode) {
     // Stack pushing/popping
+
+    case NOP:
+      break;
+    case ROT_TWO:
+      r1 = stack->pop_register();
+      r2 = stack->pop_register();
+      stack->push_register(r1);
+      stack->push_register(r2);
+      break;
+    case ROT_THREE:
+      r1 = stack->pop_register();
+      r2 = stack->pop_register();
+      r3 = stack->pop_register();
+      stack->push_register(r1);
+      stack->push_register(r3);
+      stack->push_register(r2);
+      break;
     case POP_TOP:
       r1 = stack->pop_register();
       bb->add_op(DECREF, 0, r1);
@@ -324,14 +341,14 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       r1 = stack->pop_register();
       stack->push_register(r1);
       stack->push_register(r1);
-      bb->add_op(INCREF, 0, r1);
+      //bb->add_op(INCREF, 0, r1);
       break;
     case DUP_TOPX:
       if (oparg == 2) {
         r1 = stack->pop_register();
         r2 = stack->pop_register();
-        bb->add_op(INCREF, 0, r1);
-        bb->add_op(INCREF, 0, r2);
+        //bb->add_op(INCREF, 0, r1);
+        //bb->add_op(INCREF, 0, r2);
         stack->push_register(r1);
         stack->push_register(r2);
         stack->push_register(r1);
@@ -340,9 +357,9 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
         r1 = stack->pop_register();
         r2 = stack->pop_register();
         r3 = stack->pop_register();
-        bb->add_op(INCREF, 0, r1);
-        bb->add_op(INCREF, 0, r2);
-        bb->add_op(INCREF, 0, r3);
+        //bb->add_op(INCREF, 0, r1);
+        //bb->add_op(INCREF, 0, r2);
+        //bb->add_op(INCREF, 0, r3);
         stack->push_register(r3);
         stack->push_register(r2);
         stack->push_register(r1);
@@ -599,7 +616,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       break;
     case POP_BLOCK:
       stack->pop_frame();
-      bb->add_op(opcode, oparg);
+      // bb->add_op(opcode, oparg);
       break;
       // Control flow instructions - recurse down each branch with a copy of the current stack.
     case BREAK_LOOP: {
@@ -735,10 +752,7 @@ protected:
           }
 
           this->remove_dead_ops(bb);
-
-          if (bb->code.size() > 0) {
-            fn->bbs[live_pos++] = bb;
-          }
+          fn->bbs[live_pos++] = bb;
         }
         fn->bbs.resize(live_pos);
     }
@@ -1020,18 +1034,17 @@ private:
 
 public:
   void visit_op(CompilerOp* op) {
-    printf("visit_op %s (code = %d)\n", op->str().c_str(), op->code);
+    // printf("visit_op %s (code = %d)\n", op->str().c_str(), op->code);
 
     size_t n_inputs = op->num_inputs();
-    printf(" -- n_inputs %d\n", n_inputs);
-    printf(" -- has_dest %d\n", op->has_dest);
-    printf(" -- is pure? %d\n", this->is_pure(op->code));
+    // printf(" -- n_inputs %d\n", n_inputs);
+    // printf(" -- has_dest %d\n", op->has_dest);
+    // printf(" -- is pure? %d\n", this->is_pure(op->code));
     if ((n_inputs > 0) &&  (op->has_dest)) {
       Register dest = op->regs[n_inputs];
-      printf(" ** use count %d\n", this->get_count(dest));
+      // printf(" ** use count %d\n", this->get_count(dest));
       if (this->is_pure(op->code) && this->get_count(dest) == 0) {
         op->dead = true;
-        Log_Debug("Dead!");
         // if an operation is marked dead, decrement the use counts
         // on all of its arguments
         for (size_t input_idx = 0; input_idx < n_inputs; ++input_idx) {
@@ -1156,6 +1169,7 @@ void lower_register_code(CompilerState* state, std::string *out) {
         Log_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx, "One branch must fall-through (%d, %d) != %d",
                    a.idx, b.idx, fallthrough.idx);
         BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
+        Log_Info("%d, %d", a.idx, b.idx);
         Log_AssertGt(jmp.reg_offset, 0);
         op->branch.label = jmp.reg_offset;
         Log_AssertEq(op->branch.label, jmp.reg_offset);

@@ -9,10 +9,7 @@ import time
 import unittest
 import math
 
-logging.basicConfig(
-    format='%(asctime)s %(filename)s:%(funcName)s %(message)s',
-    level=logging.INFO, 
-    stream=sys.stderr)
+from timed_test import TimedTest
 
 def add(a, b):
   return a + b
@@ -49,25 +46,7 @@ def unpack_first(x):
     a,b,c = x
     return a
 
-class Simple(unittest.TestCase):
-  def time_compare(self, function, *args, **kw):
-    print 'Original bytecode:\n%s\n' % dis.dis(function)
-    repeat = kw.get('repeat', 1)
-    evaluator = falcon.Evaluator()
-    frame = evaluator.buildFrameFromPython(function, args)
-    
-    for i in range(repeat):
-      st = time.time()
-      py_result = function(*args)
-      py_time = time.time() - st
-      
-      st = time.time()
-      falcon_result = evaluator.eval(frame)
-      f_time = time.time() - st
-      
-      logging.info('%s : Python: %.3f, Falcon: %.3f' % (function.func_name, py_time, f_time))
-      self.assertEqual(py_result, falcon_result)
-
+class Simple(TimedTest):
   def test_add1(self): self.time_compare(add, 1, 2)
   def test_add2(self): self.time_compare(add, 100, 200)
   def test_add3(self): self.time_compare(add, 10 * 50, 2)
