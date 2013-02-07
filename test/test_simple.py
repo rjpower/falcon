@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import dis
-import falcon
 import logging
 import opcode
 import sys
@@ -51,22 +50,33 @@ def unpack_first(x):
 
 class Simple(unittest.TestCase):
   def time_compare(self, function, *args, **kw):
-    print 'Original bytecode:\n%s\n' % dis.dis(function)
+    try: import falcon
+    except: falcon = None
+
+    print 'Original bytecode:\n'
+    dis.dis(function)
+    
     repeat = kw.get('repeat', 1)
-    evaluator = falcon.Evaluator()
-    frame = evaluator.buildFrameFromPython(function, args)
+    if falcon:
+      evaluator = falcon.Evaluator()
+      frame = evaluator.frame_from_python(function, args)
     
     for i in range(repeat):
       st = time.time()
       py_result = function(*args)
       py_time = time.time() - st
-      
-      st = time.time()
-      falcon_result = evaluator.eval(frame)
-      f_time = time.time() - st
+     
+      if falcon:
+        st = time.time()
+        falcon_result = evaluator.eval(frame)
+        f_time = time.time() - st
+      else:
+        f_time = 0
       
       logging.info('%s : Python: %.3f, Falcon: %.3f' % (function.func_name, py_time, f_time))
-      self.assertEqual(py_result, falcon_result)
+      if falcon:
+        self.assertEqual(py_result, falcon_result)
+
 
   def test_add1(self): self.time_compare(add, 1, 2)
   def test_add2(self): self.time_compare(add, 100, 200)
@@ -78,20 +88,20 @@ class Simple(unittest.TestCase):
     self.time_compare(loop, 100)
     
   def test_loopbig(self):
+    import falcon
     evaluator = falcon.Evaluator()
-    evaluator.evalPython(loop, (1000 * 1000 * 10,))
+    evaluator.eval_python(loop, (1000 * 1000 * 10,))
     evaluator.dumpStatus()
-    
     
   def test_count_threshold(self):
     print "Original bytecode for count_threshold"
     dis.dis(count_threshold)
     self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=5)
     
-#  def test_count_threshold_generator(self):
-#    print "Original bytecode for count_threshold_generator"
-#    dis.dis(count_threshold_generator)
-#    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
+  def test_count_threshold_generator(self):
+    print "Original bytecode for count_threshold_generator"
+    dis.dis(count_threshold_generator)
+    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
 
   def test_global_load(self): 
     self.time_compare(global_math, 1000000, repeat=5)

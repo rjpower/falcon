@@ -195,10 +195,10 @@ public:
   }
 
   PyObject* eval(RegisterFrame* rf);
-  PyObject* evalPython(PyObject* func, PyObject* args);
+  PyObject* eval_python(PyObject* func, PyObject* args);
 
-  RegisterFrame* buildFrameFromPython(PyObject* func, PyObject* args);
-  RegisterFrame* buildFrameFromRegCode(PyObject* code);
+  RegisterFrame* frame_from_python(PyObject* func, PyObject* args);
+  RegisterFrame* frame_from_regcode(PyObject* code);
 
   void dumpStatus();
 };

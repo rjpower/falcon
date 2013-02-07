@@ -700,7 +700,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-//            Log_Info("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
+            Log_Info("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
       return NULL;
       break;
     }
@@ -1184,6 +1184,7 @@ PyObject* compileByteCode(PyCodeObject* code) {
   if (entry_point == NULL) {
     Log_Info("Failed to registerize %s:%d (%s), using stack machine.",
              PyString_AsString(code->co_filename), code->co_firstlineno, PyString_AsString(code->co_name));
+    PyErr_SetString(PyExc_SystemError, "Failed to compile function.");
     return NULL;
   }
 
