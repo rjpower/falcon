@@ -58,9 +58,9 @@ struct BranchOp {
 struct RegOp {
   uint8_t code;
   uint8_t arg;
-  uint16_t reg_1;
-  uint16_t reg_2;
-  uint16_t reg_3;
+  int16_t reg_1;
+  int16_t reg_2;
+  int16_t reg_3;
 };
 
 // A variable size op is at least 8 bytes, but can contain

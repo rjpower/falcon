@@ -104,7 +104,6 @@ CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1) {
   return op;
 }
 
-
 CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2) {
   /* operation with 2 inputs and no destination register */
   CompilerOp* op = _add_op(opcode, arg, 2);
@@ -112,7 +111,6 @@ CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2) {
   op->regs[1] = reg2;
   return op;
 }
-
 
 CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3) {
   /* operation with 3 inputs and no destination register */
@@ -133,9 +131,6 @@ CompilerOp* BasicBlock::add_op(int opcode, int arg, int reg1, int reg2, int reg3
   return op;
 }
 
-
-
-
 CompilerOp* BasicBlock::add_dest_op(int opcode, int arg) {
   /* operation with 0 inputs and a destination register */
   return _add_dest_op(opcode, arg, 0);
@@ -148,7 +143,6 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1) {
   return op;
 }
 
-
 CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2) {
   /* operation with 2 inputs and a destination register */
   CompilerOp* op = _add_dest_op(opcode, arg, 2);
@@ -156,7 +150,6 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2) {
   op->regs[1] = reg2;
   return op;
 }
-
 
 CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3) {
   /* operation with 3 inputs and a destination register */
@@ -180,7 +173,6 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int
 CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
   return _add_dest_op(opcode, arg, num_regs);
 }
-
 
 void RegisterStack::push_frame(int target) {
   assert(num_frames < REG_MAX_FRAMES);
@@ -442,10 +434,8 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case SLICE + 2:
     case SLICE + 3:
       r1 = r2 = r3 = r4 = -1;
-      if ((opcode - SLICE) & 2)
-        r3 = stack->pop_register();
-      if ((opcode - SLICE) & 1)
-        r2 = stack->pop_register();
+      if ((opcode - SLICE) & 2) r3 = stack->pop_register();
+      if ((opcode - SLICE) & 1) r2 = stack->pop_register();
       r1 = stack->pop_register();
       r4 = stack->push_register(state->num_reg++);
 
@@ -464,10 +454,8 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case STORE_SLICE + 2:
     case STORE_SLICE + 3:
       r1 = r2 = r3 = r4 = -1;
-      if ((opcode - STORE_SLICE) & 2)
-        r4 = stack->pop_register();
-      if ((opcode - STORE_SLICE) & 1)
-        r3 = stack->pop_register();
+      if ((opcode - STORE_SLICE) & 2) r4 = stack->pop_register();
+      if ((opcode - STORE_SLICE) & 1) r3 = stack->pop_register();
       r2 = stack->pop_register();
       r1 = stack->pop_register();
       if (r3 == -1) {
@@ -485,10 +473,8 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case DELETE_SLICE + 2:
     case DELETE_SLICE + 3:
       r1 = r2 = r3 = r4 = -1;
-      if ((opcode - DELETE_SLICE) & 2)
-        r4 = stack->pop_register();
-      if ((opcode - DELETE_SLICE) & 1)
-        r3 = stack->pop_register();
+      if ((opcode - DELETE_SLICE) & 2) r4 = stack->pop_register();
+      if ((opcode - DELETE_SLICE) & 1) r3 = stack->pop_register();
       r2 = stack->pop_register();
       r1 = stack->pop_register();
       if (r3 == -1) {
@@ -590,7 +576,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 
       for (r = oparg; r >= 1; --r) {
         Register elt = stack->push_register(state->num_reg++);
-        bb->add_dest_op(CONST_INDEX, r-1, seq, elt);
+        bb->add_dest_op(CONST_INDEX, r - 1, seq, elt);
       }
       break;
     }
@@ -637,6 +623,24 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       }
       break;
     }
+    case PRINT_ITEM:
+      r1 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1);
+      break;
+    case PRINT_ITEM_TO:
+      r1 = stack->pop_register();
+      r2 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1, r2);
+      break;
+    case PRINT_NEWLINE_TO:
+      r1 = stack->pop_register();
+      r2 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1, r2);
+      break;
+    case PRINT_NEWLINE:
+      r1 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1);
+      break;
     case FOR_ITER: {
       RegisterStack a, b;
       r1 = stack->pop_register();
@@ -717,7 +721,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-            Log_Info("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
+      Log_Info("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
       return NULL;
       break;
     }
@@ -728,34 +732,34 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 class CompilerPass {
 protected:
   void remove_dead_ops(BasicBlock* bb) {
-        size_t live_pos = 0;
-        size_t n_ops = bb->code.size();
-        for (size_t i = 0; i < n_ops; ++i) {
-          CompilerOp * op = bb->code[i];
-          if (op->dead) {
-            continue;
-          }
-          bb->code[live_pos++] = op;
-        }
-
-        bb->code.resize(live_pos);
+    size_t live_pos = 0;
+    size_t n_ops = bb->code.size();
+    for (size_t i = 0; i < n_ops; ++i) {
+      CompilerOp * op = bb->code[i];
+      if (op->dead) {
+        continue;
+      }
+      bb->code[live_pos++] = op;
     }
 
-    void remove_dead_code(CompilerState* fn) {
-        size_t i = 0;
-        size_t live_pos = 0;
-        size_t n_bbs = fn->bbs.size();
-        for (i = 0; i < n_bbs; ++i) {
-          BasicBlock* bb = fn->bbs[i];
-          if (bb->dead) {
-            continue;
-          }
+    bb->code.resize(live_pos);
+  }
 
-          this->remove_dead_ops(bb);
-          fn->bbs[live_pos++] = bb;
-        }
-        fn->bbs.resize(live_pos);
+  void remove_dead_code(CompilerState* fn) {
+    size_t i = 0;
+    size_t live_pos = 0;
+    size_t n_bbs = fn->bbs.size();
+    for (i = 0; i < n_bbs; ++i) {
+      BasicBlock* bb = fn->bbs[i];
+      if (bb->dead) {
+        continue;
+      }
+
+      this->remove_dead_ops(bb);
+      fn->bbs[live_pos++] = bb;
     }
+    fn->bbs.resize(live_pos);
+  }
 public:
   virtual void visit_op(CompilerOp* op) {
   }
@@ -787,7 +791,6 @@ public:
     this->remove_dead_code(fn);
   }
 
-
   void operator()(CompilerState* fn) {
     this->visit_fn(fn);
   }
@@ -797,13 +800,12 @@ public:
 
 };
 
-
-class BackwardPass : public CompilerPass {
+class BackwardPass: public CompilerPass {
 
 public:
   void visit_bb(BasicBlock* bb) {
     size_t n_ops = bb->code.size();
-    for (size_t i = n_ops - 1; i-- > 0; ) {
+    for (size_t i = n_ops - 1; i-- > 0;) {
       CompilerOp* op = bb->code[i];
       if (!op->dead) {
         this->visit_op(op);
@@ -817,7 +819,7 @@ public:
       fn->bbs[i]->visited = false;
     }
 
-    for (size_t i = n_bbs - 1; i-- > 0; ) {
+    for (size_t i = n_bbs - 1; i-- > 0;) {
       BasicBlock* bb = fn->bbs[i];
       if (!bb->visited && !bb->dead) {
         this->visit_bb(bb);
@@ -921,69 +923,68 @@ public:
   }
 };
 
-
 class UseCounts {
 protected:
   std::map<Register, int> counts;
 
-   int get_count(Register r) {
-     std::map<Register, int>::iterator iter = counts.find(r);
-     return iter == counts.end() ? 0 : iter->second;
-   }
+  int get_count(Register r) {
+    std::map<Register, int>::iterator iter = counts.find(r);
+    return iter == counts.end() ? 0 : iter->second;
+  }
 
-   void incr_count(Register r) {
-     this->counts[r] = this->get_count(r) + 1;
-   }
+  void incr_count(Register r) {
+    this->counts[r] = this->get_count(r) + 1;
+  }
 
-   void decr_count(Register r) {
-     this->counts[r] = this->get_count(r) - 1;
-   }
+  void decr_count(Register r) {
+    this->counts[r] = this->get_count(r) - 1;
+  }
 
-   bool is_pure(int op_code) {
-     Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
-     switch (op_code) {
-     case LOAD_LOCALS:
-     case LOAD_CONST:
-     case LOAD_NAME:
-     case BUILD_TUPLE:
-     case BUILD_LIST:
-     case BUILD_SET:
-     case BUILD_MAP:
-     case MAKE_CLOSURE:
-     case LOAD_GLOBAL:
-     case LOAD_FAST:
-     case LOAD_DEREF:
-     case LOAD_CLOSURE:
-     case BUILD_SLICE:
-     case CONST_INDEX:
-     case STORE_FAST:
-       return true;
-     default:
-       return false;
-     }
-   }
-   void count_uses(CompilerState* fn) {
-     size_t n_bbs = fn->bbs.size();
-     for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
+  bool is_pure(int op_code) {
+    Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
+    switch (op_code) {
+    case LOAD_LOCALS:
+    case LOAD_CONST:
+    case LOAD_NAME:
+    case BUILD_TUPLE:
+    case BUILD_LIST:
+    case BUILD_SET:
+    case BUILD_MAP:
+    case MAKE_CLOSURE:
+    case LOAD_GLOBAL:
+    case LOAD_FAST:
+    case LOAD_DEREF:
+    case LOAD_CLOSURE:
+    case BUILD_SLICE:
+    case CONST_INDEX:
+    case STORE_FAST:
+      return true;
+    default:
+      return false;
+    }
+  }
+  void count_uses(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
 
-       BasicBlock* bb = fn->bbs[bb_idx];
-       size_t n_ops = bb->code.size();
-       for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
-          CompilerOp* op = bb->code[op_idx];
-          size_t n_inputs = op->num_inputs();
+      BasicBlock* bb = fn->bbs[bb_idx];
+      size_t n_ops = bb->code.size();
+      for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
+        CompilerOp* op = bb->code[op_idx];
+        size_t n_inputs = op->num_inputs();
 
-          if (n_inputs > 0) {
-            for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
-              this->incr_count(op->regs[reg_idx]);
-            }
+        if (n_inputs > 0) {
+          for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
+            this->incr_count(op->regs[reg_idx]);
           }
         }
       }
-   }
+    }
+  }
 
 };
 
-class StoreElim : public CompilerPass, UseCounts {
+class StoreElim: public CompilerPass, UseCounts {
 public:
   void visit_bb(BasicBlock* bb) {
     // map from registers to their last definition in the basic block
@@ -1019,15 +1020,11 @@ public:
     }
   }
 
-
   void visit_fn(CompilerState* fn) {
     this->count_uses(fn);
     CompilerPass::visit_fn(fn);
   }
 };
-
-
-
 
 class DeadCodeElim: public BackwardPass, UseCounts {
 private:
@@ -1040,7 +1037,7 @@ public:
     // printf(" -- n_inputs %d\n", n_inputs);
     // printf(" -- has_dest %d\n", op->has_dest);
     // printf(" -- is pure? %d\n", this->is_pure(op->code));
-    if ((n_inputs > 0) &&  (op->has_dest)) {
+    if ((n_inputs > 0) && (op->has_dest)) {
       Register dest = op->regs[n_inputs];
       // printf(" ** use count %d\n", this->get_count(dest));
       if (this->is_pure(op->code) && this->get_count(dest) == 0) {
@@ -1119,8 +1116,8 @@ void lower_register_code(CompilerState* state, std::string *out) {
   p.num_registers = state->num_reg;
   out->append((char*) &p, sizeof(RegisterPrelude));
 
-  // first, dump all of the operations to the output buffer and record
-  // their positions.
+// first, dump all of the operations to the output buffer and record
+// their positions.
   for (size_t i = 0; i < state->bbs.size(); ++i) {
     BasicBlock* bb = state->bbs[i];
     assert(!bb->dead);
@@ -1138,8 +1135,8 @@ void lower_register_code(CompilerState* state, std::string *out) {
     }
   }
 
-  // now patchup labels in the emitted code to point to the correct
-  // locations.
+// now patchup labels in the emitted code to point to the correct
+// locations.
   Py_ssize_t pos = sizeof(RegisterPrelude);
   for (size_t i = 0; i < state->bbs.size(); ++i) {
     BasicBlock* bb = state->bbs[i];
