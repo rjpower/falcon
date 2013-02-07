@@ -255,7 +255,7 @@ struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF> > {
   }
 };
 
-struct BinaryPower: public Op<RegOp, BinaryPower > {
+struct BinaryPower: public Op<RegOp, BinaryPower> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* r2 = registers[op.reg_2];
@@ -263,6 +263,16 @@ struct BinaryPower: public Op<RegOp, BinaryPower > {
     registers[op.reg_3] = r3;
   }
 };
+
+struct InplacePower: public Op<RegOp, InplacePower> {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* r1 = registers[op.reg_1];
+    PyObject* r2 = registers[op.reg_2];
+    PyObject* r3 = PyNumber_Power(r1, r2, Py_None);
+    registers[op.reg_3] = r3;
+  }
+};
+
 
 struct CompareOp: public Op<RegOp, CompareOp> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
@@ -379,7 +389,6 @@ struct BinarySubscr: public Op<RegOp, BinarySubscr> {
   }
 };
 
-
 struct ConstIndex: public Op<RegOp, ConstIndex> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* list = registers[op.reg_1];
@@ -387,7 +396,6 @@ struct ConstIndex: public Op<RegOp, ConstIndex> {
     registers[op.reg_2] = PyObject_GetItem(list, PyInt_FromLong(key));
   }
 };
-
 
 struct LoadAttr: public Op<RegOp, LoadAttr> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
@@ -538,6 +546,45 @@ struct BuildList: public Op<VarRegOp, BuildList> {
   }
 };
 
+struct PrintItem: public Op<RegOp, PrintItem> {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* v = registers[op.reg_1];
+    PyObject* w = op.reg_2 >= 0 ? registers[op.reg_2] : PySys_GetObject("stdout");
+
+    int err = 0;
+    if (w != NULL && PyFile_SoftSpace(w, 0)) {
+      err = PyFile_WriteString(" ", w);
+    }
+    if (err == 0) {
+      err = PyFile_WriteObject(v, w, Py_PRINT_RAW);
+    }
+    if (err == 0) {
+      /* XXX move into writeobject() ? */
+      if (PyString_Check(v)) {
+        char *s = PyString_AS_STRING(v);
+        Py_ssize_t len = PyString_GET_SIZE(v);
+        if (len == 0 || !isspace(Py_CHARMASK(s[len-1]) ) || s[len - 1] == ' ') PyFile_SoftSpace(w, 1);
+      }
+#ifdef Py_USING_UNICODE
+      else if (PyUnicode_Check(v)) {
+        Py_UNICODE *s = PyUnicode_AS_UNICODE(v);
+        Py_ssize_t len = PyUnicode_GET_SIZE(v);
+        if (len == 0 || !Py_UNICODE_ISSPACE(s[len-1]) || s[len - 1] == ' ') PyFile_SoftSpace(w, 1);
+      }
+#endif
+      else PyFile_SoftSpace(w, 1);
+    }
+  }
+};
+
+struct PrintNewline: public Op<RegOp, PrintNewline> {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* w = op.reg_2 >= 0 ? registers[op.reg_2] : PySys_GetObject("stdout");
+    int err = PyFile_WriteString("\n", w);
+    if (err == 0) PyFile_SoftSpace(w, 0);
+  }
+};
+
 #define CONCAT(...) __VA_ARGS__
 
 #define REGISTER_OP(opname)\
@@ -593,9 +640,9 @@ PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
   PyCodeObject* pycode = state.frame->f_code;
 
   int num_consts = PyTuple_Size(consts);
-  // int num_locals = state.frame->f_code->co_nlocals;
+// int num_locals = state.frame->f_code->co_nlocals;
 
-  // setup const and local register aliases.
+// setup const and local register aliases.
   for (int i = 0; i < state.prelude.num_registers; ++i) {
     registers[i] = NULL;
   }
@@ -804,6 +851,7 @@ BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
 BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
 BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
 BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
+DEFINE_OP(INPLACE_POWER, InplacePower);
 
 
 DEFINE_OP(LOAD_FAST, LoadFast);
@@ -826,6 +874,12 @@ DEFINE_OP(RETURN_VALUE, ReturnValue);
 
 DEFINE_OP(BUILD_TUPLE, BuildTuple);
 DEFINE_OP(BUILD_LIST, BuildList);
+
+DEFINE_OP(PRINT_NEWLINE, PrintNewline);
+DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
+DEFINE_OP(PRINT_ITEM, PrintItem);
+DEFINE_OP(PRINT_ITEM_TO, PrintItem);
+
 
 FALLTHROUGH(CALL_FUNCTION);
 FALLTHROUGH(CALL_FUNCTION_VAR);
@@ -882,12 +936,7 @@ BAD_OP(EXEC_STMT);
 BAD_OP(IMPORT_STAR);
 BAD_OP(WITH_CLEANUP);
 BAD_OP(BREAK_LOOP);
-BAD_OP(PRINT_NEWLINE_TO);
-BAD_OP(PRINT_ITEM_TO);
-BAD_OP(PRINT_NEWLINE);
-BAD_OP(PRINT_ITEM);
 BAD_OP(PRINT_EXPR);
-BAD_OP(INPLACE_POWER);
 BAD_OP(DELETE_SUBSCR);
 BAD_OP(STORE_MAP);
 BAD_OP(DELETE_SLICE);
@@ -907,7 +956,7 @@ BAD_OP(POP_TOP);
 BAD_OP(STOP_CODE);
 op_BADCODE: {
       EVAL_LOG("Jump to invalid opcode!?");
-      throw new EvalError(PyExc_SystemError, "Invalid jump.");
+throw new EvalError(PyExc_SystemError, "Invalid jump.");
     }
   } catch (PyObject* result) {
     return result;
