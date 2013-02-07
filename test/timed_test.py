@@ -12,6 +12,9 @@ logging.basicConfig(
     stream=sys.stderr)
 
 class TimedTest(unittest.TestCase):
+  def timed(self, function, *args, **kw):
+    return self.time_compare(function, *args, **kw)
+
   def time_compare(self, function, *args, **kw):
     try: import falcon
     except: falcon = None
