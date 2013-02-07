@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import dis
-import falcon
 import logging
 import opcode
 import sys
@@ -47,6 +46,7 @@ def unpack_first(x):
     return a
 
 class Simple(TimedTest):
+
   def test_add1(self): self.time_compare(add, 1, 2)
   def test_add2(self): self.time_compare(add, 100, 200)
   def test_add3(self): self.time_compare(add, 10 * 50, 2)
@@ -57,20 +57,20 @@ class Simple(TimedTest):
     self.time_compare(loop, 100)
     
   def test_loopbig(self):
+    import falcon
     evaluator = falcon.Evaluator()
-    evaluator.evalPython(loop, (1000 * 1000 * 10,))
+    evaluator.eval_python(loop, (1000 * 1000 * 10,))
     evaluator.dumpStatus()
-    
     
   def test_count_threshold(self):
     print "Original bytecode for count_threshold"
     dis.dis(count_threshold)
     self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=5)
     
-#  def test_count_threshold_generator(self):
-#    print "Original bytecode for count_threshold_generator"
-#    dis.dis(count_threshold_generator)
-#    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
+  def test_count_threshold_generator(self):
+    print "Original bytecode for count_threshold_generator"
+    dis.dis(count_threshold_generator)
+    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
 
   def test_global_load(self): 
     self.time_compare(global_math, 1000000, repeat=5)

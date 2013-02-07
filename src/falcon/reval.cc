@@ -13,7 +13,8 @@ const char* obj_to_str(PyObject* o) {
 }
 
 #ifdef FALCON_DEBUG
-#define EVAL_LOG(...) fprintf(stderr, __VA_ARGS__); fputs("\n", stderr);
+//#define EVAL_LOG(...) fprintf(stderr, __VA_ARGS__); fputs("\n", stderr);
+#define EVAL_LOG(...)
 #else
 #define EVAL_LOG(...)
 #endif
@@ -54,9 +55,8 @@ struct GilHelper {
   }
 };
 
-RegisterFrame* Evaluator::buildFrameFromPython(PyObject* function, PyObject* args) {
+RegisterFrame* Evaluator::frame_from_python(PyObject* function, PyObject* args) {
   GilHelper h;
-  PyObject* locals = PyDict_New();
   PyObject* globals = PyFunction_GetGlobals(function);
   PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(function);
 
@@ -65,30 +65,44 @@ RegisterFrame* Evaluator::buildFrameFromPython(PyObject* function, PyObject* arg
     return NULL;
   }
 
+  PyFrameObject* frame = PyFrame_New(PyGILState_GetThisThreadState(), code, globals, NULL);
+  PyObject* locals = PyDict_New();
+
   for (int i = 0; i < PyTuple_Size(args); ++i) {
     PyDict_SetItem(locals, PyTuple_GetItem(code->co_varnames, i), PyTuple_GetItem(args, i));
   }
 
-  PyFrameObject* frame = PyFrame_New(PyGILState_GetThisThreadState(), code, globals, NULL);
-  frame->f_locals = locals;
-  PyFrame_LocalsToFast(frame, 0);
+  for (int i = 0; i < PyTuple_Size(code->co_cellvars); ++i) {
+    PyDict_SetItem(locals, PyTuple_GetItem(code->co_cellvars, i), PyCell_New(NULL));
+  }
 
-  return new RegisterFrame(frame, compileByteCode((PyCodeObject*) PyFunction_GetCode(function)));
+  frame->f_locals = locals;
+
+  PyObject* regcode = compileByteCode((PyCodeObject*) PyFunction_GetCode(function));
+  if (!regcode) {
+    return NULL;
+  }
+  return new RegisterFrame(frame, regcode);
 }
 
-RegisterFrame* Evaluator::buildFrameFromRegCode(PyObject* regCode) {
+RegisterFrame* Evaluator::frame_from_regcode(PyObject* regCode) {
   PyObject* locals = PyDict_New();
   PyObject* globals = PyEval_GetGlobals();
   PyCodeObject* code = PyCode_NewEmpty("*register code*", "*register function*", 0);
   PyFrameObject* frame = PyFrame_New(PyGILState_GetThisThreadState(), code, globals, NULL);
+  PyFrame_FastToLocals(frame);
   frame->f_locals = locals;
   PyFrame_LocalsToFast(frame, 0);
 
   return new RegisterFrame(frame, regCode);
 }
 
-PyObject* Evaluator::evalPython(PyObject* func, PyObject* args) {
-  RegisterFrame* frame = buildFrameFromPython(func, args);
+PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
+  RegisterFrame* frame = frame_from_python(func, args);
+  if (!frame) {
+    return NULL;
+  }
+
   PyObject* result = eval(frame);
   delete frame;
   return result;
@@ -216,8 +230,8 @@ struct IntegerOps {
   }
 };
 
-template<int OpCode, PyNumberFunction ObjF, PyNumberFunction IntegerF = (PyNumberFunction*) NULL>
-struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF, IntegerF> > {
+template<int OpCode, PyNumberFunction ObjF, PyNumberFunction IntegerF>
+struct BinaryOpWithSpecialization: public Op<RegOp, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF> > {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* r2 = registers[op.reg_2];
@@ -227,6 +241,25 @@ struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF, IntegerF> > {
       r3 = ObjF(r1, r2);
     }
     Py_XDECREF(registers[op.reg_3]);
+    registers[op.reg_3] = r3;
+  }
+};
+
+template<int OpCode, PyNumberFunction ObjF>
+struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF> > {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* r1 = registers[op.reg_1];
+    PyObject* r2 = registers[op.reg_2];
+    PyObject* r3 = ObjF(r1, r2);
+    registers[op.reg_3] = r3;
+  }
+};
+
+struct BinaryPower: public Op<RegOp, BinaryPower > {
+  f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
+    PyObject* r1 = registers[op.reg_1];
+    PyObject* r2 = registers[op.reg_2];
+    PyObject* r3 = PyNumber_Power(r1, r2, Py_None);
     registers[op.reg_3] = r3;
   }
 };
@@ -521,7 +554,7 @@ struct BuildList: public Op<VarRegOp, BuildList> {
       _DEFINE_OP(opname, impl)
 
 #define _BAD_OP(opname)\
-        { EVAL_LOG("Not implemented: %s", #opname); abort(); }
+        { EVAL_LOG("Not implemented: %s", #opname); throw new EvalError(PyExc_SystemError, "Bad opcode %s", #opname); }
 
 #define BAD_OP(opname)\
     op_##opname: _BAD_OP(opname)
@@ -536,21 +569,31 @@ struct BuildList: public Op<VarRegOp, BuildList> {
         goto slow_path;\
     x = PyInt_FromLong(i);
 
-#define BINARY_OP(opname, objfn, intfn)\
+#define BINARY_OP3(opname, objfn, intfn)\
     op_##opname:\
-      _DEFINE_OP(opname, BinaryOp<CONCAT(opname, objfn, intfn)>)
+      _DEFINE_OP(opname, BinaryOpWithSpecialization<CONCAT(opname, objfn, intfn)>)
+
+#define BINARY_OP2(opname, objfn)\
+    op_##opname:\
+      _DEFINE_OP(opname, BinaryOp<CONCAT(opname, objfn)>)
 
 PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
+  if (reg_frame == NULL) {
+    PyErr_SetString(PyExc_SystemError, "Invalid frame.");
+    return NULL;
+  }
+
   RunState state(reg_frame);
 
   register const char* pc = state.code + sizeof(RegisterPrelude);
   register PyObject* registers[state.prelude.num_registers];
 
+  PyObject* locals = state.locals();
   PyObject* consts = state.consts();
-  PyObject** fastlocals = state.frame->f_localsplus;
+  PyCodeObject* pycode = state.frame->f_code;
 
   int num_consts = PyTuple_Size(consts);
-  int num_locals = state.frame->f_code->co_nlocals;
+  // int num_locals = state.frame->f_code->co_nlocals;
 
   // setup const and local register aliases.
   for (int i = 0; i < state.prelude.num_registers; ++i) {
@@ -561,8 +604,15 @@ PyObject* Evaluator::eval(RegisterFrame *reg_frame) {
     registers[i] = PyTuple_GET_ITEM(consts, i) ;
   }
 
-  for (int i = 0; i < num_locals; ++i) {
-    registers[num_consts + i] = fastlocals[i];
+  int offset = 0;
+  for (int i = 0; i < PyTuple_Size(pycode->co_varnames); ++i) {
+    registers[num_consts + offset] = PyDict_GetItem(locals, PyTuple_GetItem(pycode->co_varnames, i));
+    ++offset;
+  }
+
+  for (int i = 0; i < PyTuple_Size(pycode->co_cellvars); ++i) {
+    registers[num_consts + offset] = PyDict_GetItem(locals, PyTuple_GetItem(pycode->co_cellvars, i));
+    ++offset;
   }
 
   lastClock = rdtsc();
@@ -726,17 +776,35 @@ EVAL_LOG("Jumping to: %d, %s", state.offset(pc), OpUtil::name(state.next_code(pc
 try {
     goto *labels[state.next_code(pc)];
 
-    BINARY_OP(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
-BINARY_OP(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
-BINARY_OP(BINARY_ADD, PyNumber_Add, IntegerOps::add);
-BINARY_OP(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-BINARY_OP(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
+BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
+BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
+BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
+BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
+BINARY_OP3(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
 
-BINARY_OP(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
-BINARY_OP(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
-BINARY_OP(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
-BINARY_OP(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
-BINARY_OP(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
+BINARY_OP2(BINARY_OR, PyNumber_Or);
+BINARY_OP2(BINARY_XOR, PyNumber_Xor);
+BINARY_OP2(BINARY_AND, PyNumber_And);
+BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
+BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
+BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
+BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
+DEFINE_OP(BINARY_POWER, BinaryPower);
+
+BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
+BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
+BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
+BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
+BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
+
+BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
+BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
+BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
+BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
+BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
+BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
+BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
+
 
 DEFINE_OP(LOAD_FAST, LoadFast);
 DEFINE_OP(LOAD_LOCALS, LoadLocals);
@@ -814,32 +882,17 @@ BAD_OP(EXEC_STMT);
 BAD_OP(IMPORT_STAR);
 BAD_OP(WITH_CLEANUP);
 BAD_OP(BREAK_LOOP);
-BAD_OP(INPLACE_OR);
-BAD_OP(INPLACE_XOR);
-BAD_OP(INPLACE_AND);
-BAD_OP(INPLACE_RSHIFT);
-BAD_OP(INPLACE_LSHIFT);
 BAD_OP(PRINT_NEWLINE_TO);
 BAD_OP(PRINT_ITEM_TO);
 BAD_OP(PRINT_NEWLINE);
 BAD_OP(PRINT_ITEM);
 BAD_OP(PRINT_EXPR);
 BAD_OP(INPLACE_POWER);
-BAD_OP(BINARY_OR);
-BAD_OP(BINARY_XOR);
-BAD_OP(BINARY_AND);
-BAD_OP(BINARY_RSHIFT);
-BAD_OP(BINARY_LSHIFT);
 BAD_OP(DELETE_SUBSCR);
 BAD_OP(STORE_MAP);
 BAD_OP(DELETE_SLICE);
 BAD_OP(STORE_SLICE);
 BAD_OP(SLICE);
-BAD_OP(INPLACE_TRUE_DIVIDE);
-BAD_OP(INPLACE_FLOOR_DIVIDE);
-BAD_OP(BINARY_TRUE_DIVIDE);
-BAD_OP(BINARY_FLOOR_DIVIDE);
-BAD_OP(BINARY_POWER);
 BAD_OP(UNARY_INVERT);
 BAD_OP(UNARY_CONVERT);
 BAD_OP(UNARY_NOT);
@@ -853,8 +906,8 @@ BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 BAD_OP(STOP_CODE);
 op_BADCODE: {
-      EVAL_LOG("Bad opcode.");
-abort();
+      EVAL_LOG("Jump to invalid opcode!?");
+      throw new EvalError(PyExc_SystemError, "Invalid jump.");
     }
   } catch (PyObject* result) {
     return result;
