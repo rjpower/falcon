@@ -60,6 +60,27 @@ struct GilHelper {
 
 RegisterFrame* Evaluator::frame_from_python(PyObject* function, PyObject* args) {
   GilHelper h;
+
+  PyObject* regcode = NULL;
+
+  Log_Info("Creating frame for %s", PyEval_GetFuncName(function));
+  if (!PyObject_HasAttrString(function, "_falcon_compiled")) {
+    // don't have a cached copy so need to compile register code
+    regcode = compileByteCode((PyCodeObject*) PyFunction_GetCode(function));
+    if (!PyObject_SetAttrString(function, "_falcon_compiled", regcode)) {
+      Log_Info("Failed to cache bytecode.");
+    }
+  } else {
+    regcode = PyObject_GetAttrString(function, "_falcon_compiled");
+    Log_Info("Retrieved cached bytecode.");
+  }
+  PyErr_Clear();
+  if (!regcode) {
+    Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(function));
+    // compilation failed, abort mission!
+    return NULL;
+  }
+
   PyObject* globals = PyFunction_GetGlobals(function);
   PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(function);
 
@@ -81,10 +102,6 @@ RegisterFrame* Evaluator::frame_from_python(PyObject* function, PyObject* args) 
 
   frame->f_locals = locals;
 
-  PyObject* regcode = compileByteCode((PyCodeObject*) PyFunction_GetCode(function));
-  if (!regcode) {
-    return NULL;
-  }
   return new RegisterFrame(frame, regcode);
 }
 
@@ -108,6 +125,11 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
 
   PyObject* result = eval(frame);
   delete frame;
+  if (!result) {
+    Log_Info("Evaluator failed:");
+    PyErr_Print();
+
+  }
   return result;
 }
 
@@ -257,8 +279,7 @@ struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF> > {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* r2 = registers[op.reg_2];
-    CHECK_VALID(r1);
-    CHECK_VALID(r2);
+    CHECK_VALID(r1); CHECK_VALID(r2);
     PyObject* r3 = ObjF(r1, r2);
     CHECK_VALID(r3);
     Py_XDECREF(registers[op.reg_3]);
@@ -305,8 +326,7 @@ struct BinarySubscr: public Op<RegOp, BinarySubscr> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* list = registers[op.reg_1];
     PyObject* key = registers[op.reg_2];
-    CHECK_VALID(list);
-    CHECK_VALID(key);
+    CHECK_VALID(list); CHECK_VALID(key);
     PyObject* res = NULL;
     if (PyList_CheckExact(list) && PyInt_CheckExact(key)) {
       Py_ssize_t i = PyInt_AsSsize_t(key);
@@ -318,7 +338,8 @@ struct BinarySubscr: public Op<RegOp, BinarySubscr> {
     }
     if (!res) {
       res = PyObject_GetItem(list, key);
-    } if (!res) {
+    }
+    if (!res) {
       throw new EvalError();
     }
 
@@ -353,8 +374,7 @@ struct CompareOp: public Op<RegOp, CompareOp> {
       Py_INCREF(r3);
     } else {
       r3 = PyObject_RichCompare(r2, r1, op.arg);
-    }
-    CHECK_VALID(r3);
+    } CHECK_VALID(r3);
 
     EVAL_LOG("Compare: %s, %s -> %s", obj_to_str(r1), obj_to_str(r2), obj_to_str(r3));
     Py_XDECREF(registers[op.reg_3]);
@@ -462,9 +482,7 @@ struct StoreSubscr: public Op<RegOp, StoreSubscr> {
     PyObject* key = registers[op.reg_1];
     PyObject* list = registers[op.reg_2];
     PyObject* value = registers[op.reg_3];
-    CHECK_VALID(key);
-    CHECK_VALID(list);
-    CHECK_VALID(value);
+    CHECK_VALID(key); CHECK_VALID(list); CHECK_VALID(value);
     PyObject_SetItem(list, key, value);
   }
 };
@@ -516,8 +534,7 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
     if (nk > 0) {
       kwdict = PyDict_New();
       for (i = na; i < nk * 2; i += 2) {
-        CHECK_VALID(registers[op->regs[i]]);
-        CHECK_VALID(registers[op->regs[i+i]]);
+        CHECK_VALID(registers[op->regs[i]]); CHECK_VALID(registers[op->regs[i+i]]);
         PyDict_SetItem(kwdict, registers[op->regs[i]], registers[op->regs[i + 1]]);
       }
     }
@@ -525,6 +542,11 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
     PyObject* res = NULL;
     if (PyCFunction_Check(fn)) {
       res = PyCFunction_Call(fn, args, kwdict);
+    } else if (kwdict == NULL) {
+      res = state->eval->eval_python(fn, args);
+      if (!res) {
+        res = PyObject_Call(fn, args, kwdict);
+      }
     } else {
       res = PyObject_Call(fn, args, kwdict);
     }
@@ -641,7 +663,7 @@ struct BuildList: public Op<VarRegOp, BuildList> {
 struct PrintItem: public Op<RegOp, PrintItem> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
     PyObject* v = registers[op.reg_1];
-    PyObject* w = op.reg_2 != kBadRegister ? registers[op.reg_2] : PySys_GetObject((char*)"stdout");
+    PyObject* w = op.reg_2 != kBadRegister ? registers[op.reg_2] : PySys_GetObject((char*) "stdout");
 
     int err = 0;
     if (w != NULL && PyFile_SoftSpace(w, 0)) {
@@ -671,7 +693,7 @@ struct PrintItem: public Op<RegOp, PrintItem> {
 
 struct PrintNewline: public Op<RegOp, PrintNewline> {
   f_inline void _eval(RegOp op, PyObject** registers, RunState* state) {
-    PyObject* w = op.reg_2 != kBadRegister ? registers[op.reg_2] : PySys_GetObject((char*)"stdout");
+    PyObject* w = op.reg_2 != kBadRegister ? registers[op.reg_2] : PySys_GetObject((char*) "stdout");
     int err = PyFile_WriteString("\n", w);
     if (err == 0) PyFile_SoftSpace(w, 0);
   }
@@ -758,6 +780,7 @@ PyObject * Evaluator::eval(RegisterFrame * reg_frame) {
   }
 
   RunState state(reg_frame);
+  state.eval = this;
 
   register const char* pc = state.code + sizeof(RegisterPrelude);
   register PyObject* registers[state.prelude.num_registers];

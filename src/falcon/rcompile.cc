@@ -1164,6 +1164,11 @@ PyObject * compileRegCode(CompilerState * fn) {
 }
 
 PyObject * compileByteCode(PyCodeObject * code) {
+  if (!code) {
+    Log_Info("No code!!!");
+    PyErr_SetString(PyExc_SystemError, "No code to compile.");
+    return NULL;
+  }
   CompilerState state(code);
   RegisterStack stack;
 

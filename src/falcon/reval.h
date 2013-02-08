@@ -134,11 +134,14 @@ struct RegisterFrame {
   }
 };
 
+class Evaluator;
+
 struct RunState {
   char *code;
   PyFrameObject* frame;
   RegisterPrelude prelude;
   PyObject *call_args;
+  Evaluator* eval;
 
   f_inline PyObject* names() {
     return frame->f_code->co_names;
