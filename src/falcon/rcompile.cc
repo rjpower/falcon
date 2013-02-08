@@ -445,8 +445,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       if ((opcode - STORE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
       value = stack->pop_register();
-      int dst = stack->push_register(state->num_reg++);
-      bb->add_dest_op(STORE_SLICE, 0, list, left, right, value, dst);
+      bb->add_dest_op(STORE_SLICE, 0, list, left, right, value);
       break;
     }
     case DELETE_SLICE + 0:
@@ -458,8 +457,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       if ((opcode - DELETE_SLICE) & 2) right = stack->pop_register();
       if ((opcode - DELETE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
-      int dst = stack->push_register(state->num_reg++);
-      bb->add_dest_op(DELETE_SLICE, 0, list, left, right, dst);
+      bb->add_dest_op(DELETE_SLICE, 0, list, left, right);
       break;
     }
     case LIST_APPEND: {
@@ -984,15 +982,15 @@ public:
       if (op->has_dest) {
         target = op->regs[n_inputs];
         env[target] = op;
-      }
 
-      if (op->code == LOAD_FAST || op->code == STORE_FAST) {
-        source = op->regs[0];
-        auto iter = env.find(source);
-        if (iter != env.end() && this->get_count(source) == 1) {
-          CompilerOp* def = iter->second;
-          def->regs[def->num_inputs()] = target;
-          op->dead = true;
+        if (op->code == LOAD_FAST || op->code == STORE_FAST) {
+          source = op->regs[0];
+          auto iter = env.find(source);
+          if (iter != env.end() && this->get_count(source) == 1) {
+            CompilerOp* def = iter->second;
+            def->regs[def->num_inputs()] = target;
+            op->dead = true;
+          }
         }
       }
     }
