@@ -68,7 +68,7 @@ BasicBlock* CompilerState::alloc_bb(int offset) {
 }
 
 std::string RegisterStack::str() {
-  return StringPrintf("[%s]", StrUtil::join(&regs[0], &regs[stack_pos], ",", &Coerce::t_str<int>).c_str());
+  return StringPrintf("[%s]", StrUtil::join(regs.begin(), regs.end(), ",", &Coerce::t_str<int>).c_str());
 }
 
 CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
@@ -170,48 +170,57 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int
   return op;
 }
 
+CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4, int reg5) {
+  /* operation with 5 inputs and a destination register */
+  CompilerOp* op = _add_op(opcode, arg, 4);
+  op->regs[0] = reg1;
+  op->regs[1] = reg2;
+  op->regs[2] = reg3;
+  op->regs[3] = reg4;
+  op->regs[4] = reg5;
+  return op;
+}
+
 CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
   return _add_dest_op(opcode, arg, num_regs);
 }
 
 void RegisterStack::push_frame(int target) {
   assert(num_frames < REG_MAX_FRAMES);
-  Frame* f = &frames[num_frames++];
-  f->target = target;
-  f->stack_pos = stack_pos;
+  Frame f;
+  f.stack_pos = regs.size();
+  f.target = target;
+  frames.push_back(f);
 }
 
-Frame* RegisterStack::pop_frame() {
+Frame RegisterStack::pop_frame() {
   assert(num_frames > 0);
-  Frame* f = &frames[--num_frames];
-  stack_pos = f->stack_pos;
+  Frame f = frames.back();
+  frames.pop_back();
+  regs.resize(f.stack_pos);
   return f;
 }
 
 int RegisterStack::push_register(int reg) {
   // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
-  assert(stack_pos < REG_MAX_STACK);
-  regs[++stack_pos] = reg;
+  regs.push_back(reg);
   return reg;
 }
 
 int RegisterStack::pop_register() {
-  assert(stack_pos >= 0);
-  int reg = regs[stack_pos--];
-  assert(reg >= -1);
-  // Log_Info("Popped register %d, pos: %d", reg, stack_pos + 1);
+  Log_AssertGt((int)regs.size(), 0);
+  int reg = regs.back();
+  regs.pop_back();
   return reg;
 }
 
-int RegisterStack::peek_register(int reg) {
-  return regs[stack_pos - reg];
+int RegisterStack::peek_register(int offset) {
+  return regs[regs.size() - offset];
 }
 
 void copy_stack(RegisterStack *from, RegisterStack* to) {
-  memcpy(to->regs, from->regs, sizeof(from->regs));
-  to->stack_pos = from->stack_pos;
-  memcpy(to->frames, from->frames, sizeof(from->frames));
-  to->num_frames = from->num_frames;
+  to->frames = from->frames;
+  to->regs = from->regs;
 }
 
 /*
@@ -229,13 +238,12 @@ void copy_stack(RegisterStack *from, RegisterStack* to) {
  *
  * --->
  *
- * r1 = 1 ('push' r1)
- * r2 = 2 ('push' r2)
- * r3 = add r1, r2 ('pop' r1, r2)
+ * int r1 = 1 ('push' r1)
+ * int r2 = 2 ('push' r2)
+ * int r3 = add r1, r2 ('pop' r1, r2)
  */
 BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) {
   Py_ssize_t r;
-  int r1, r2, r3, r4;
   int oparg = 0;
   int opcode = 0;
 
@@ -259,31 +267,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       oparg = GETARG(codestr, offset);
     }
 
-    /* The following routines only affect the register stack, and their
-     * effect can be captured statically.  We therefore do not have to emit
-     * an opcode for them.
-     */
-    switch (opcode) {
-    case NOP:
-      continue;
-    case ROT_TWO:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      stack->push_register(r1);
-      stack->push_register(r2);
-      continue;
-    case ROT_THREE:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      r3 = stack->pop_register();
-      stack->push_register(r1);
-      stack->push_register(r3);
-      stack->push_register(r2);
-      continue;
-    default:
-      break;
-    }
-
+//    Log_Info("%5d: %s %d", offset, OpUtil::name(opcode), oparg);
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     for (size_t i = 0; i < state->bbs.size(); ++i) {
@@ -311,34 +295,38 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 
     case NOP:
       break;
-    case ROT_TWO:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
+    case ROT_TWO: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
       stack->push_register(r1);
       stack->push_register(r2);
       break;
-    case ROT_THREE:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      r3 = stack->pop_register();
+    }
+    case ROT_THREE: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      int r3 = stack->pop_register();
       stack->push_register(r1);
       stack->push_register(r3);
       stack->push_register(r2);
       break;
-    case POP_TOP:
-      r1 = stack->pop_register();
+    }
+    case POP_TOP: {
+      int r1 = stack->pop_register();
       bb->add_op(DECREF, 0, r1);
       break;
-    case DUP_TOP:
-      r1 = stack->pop_register();
+    }
+    case DUP_TOP: {
+      int r1 = stack->pop_register();
       stack->push_register(r1);
       stack->push_register(r1);
       //bb->add_op(INCREF, 0, r1);
       break;
-    case DUP_TOPX:
+    }
+    case DUP_TOPX: {
       if (oparg == 2) {
-        r1 = stack->pop_register();
-        r2 = stack->pop_register();
+        int r1 = stack->pop_register();
+        int r2 = stack->pop_register();
         //bb->add_op(INCREF, 0, r1);
         //bb->add_op(INCREF, 0, r2);
         stack->push_register(r1);
@@ -346,9 +334,9 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
         stack->push_register(r1);
         stack->push_register(r2);
       } else {
-        r1 = stack->pop_register();
-        r2 = stack->pop_register();
-        r3 = stack->pop_register();
+        int r1 = stack->pop_register();
+        int r2 = stack->pop_register();
+        int r3 = stack->pop_register();
         //bb->add_op(INCREF, 0, r1);
         //bb->add_op(INCREF, 0, r2);
         //bb->add_op(INCREF, 0, r3);
@@ -360,154 +348,138 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
         stack->push_register(r1);
       }
       break;
+    }
       // Load operations: push one register onto the stack.
-    case LOAD_CONST:
-      r1 = oparg;
-      r2 = stack->push_register(state->num_reg++);
+    case LOAD_CONST: {
+      int r1 = oparg;
+      int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(LOAD_FAST, 0, r1, r2);
       break;
-    case LOAD_FAST:
-      r1 = state->num_consts + oparg;
-      r2 = stack->push_register(state->num_reg++);
+    }
+    case LOAD_FAST: {
+      int r1 = state->num_consts + oparg;
+      int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(LOAD_FAST, 0, r1, r2);
       break;
+    }
     case LOAD_CLOSURE:
     case LOAD_DEREF:
     case LOAD_GLOBAL:
     case LOAD_LOCALS:
-    case LOAD_NAME:
-      r1 = stack->push_register(state->num_reg++);
+    case LOAD_NAME: {
+      int r1 = stack->push_register(state->num_reg++);
       bb->add_dest_op(opcode, oparg, r1);
       break;
-    case LOAD_ATTR:
-      r1 = stack->pop_register();
-      r2 = stack->push_register(state->num_reg++);
+    }
+    case LOAD_ATTR: {
+      int r1 = stack->pop_register();
+      int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(opcode, oparg, r1, r2);
       break;
-    case STORE_FAST:
-      r1 = stack->pop_register();
+    }
+    case STORE_FAST: {
+      int r1 = stack->pop_register();
       // Decrement the old value.
 //      bb->add_op(DECREF, 0, state->num_consts + oparg);
       bb->add_dest_op(opcode, 0, r1, state->num_consts + oparg);
       break;
+    }
       // Store operations remove one or more registers from the stack.
     case STORE_DEREF:
     case STORE_GLOBAL:
-    case STORE_NAME:
-      r1 = stack->pop_register();
+    case STORE_NAME: {
+      int r1 = stack->pop_register();
       bb->add_op(opcode, oparg, r1);
 //      bb->add_op(DECREF, 0, r1);
       break;
-    case STORE_ATTR:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
+    }
+    case STORE_ATTR: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2);
 //      bb->add_op(DECREF, 0, r1);
 //      bb->add_op(DECREF, 0, r2);
       break;
-    case STORE_MAP:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      r3 = stack->pop_register();
+    }
+    case STORE_MAP: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      int r3 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2, r3);
       stack->push_register(r3);
-      //bb->add_op(DECREF, 0, r1);
-      //bb->add_op(DECREF, 0, r2);
       break;
-    case STORE_SUBSCR:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      r3 = stack->pop_register();
+    }
+    case STORE_SUBSCR: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      int r3 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2, r3);
-//      bb->add_op(DECREF, 0, r1);
-//      bb->add_op(DECREF, 0, r2);
-//      bb->add_op(DECREF, 0, r3);
       break;
-    case GET_ITER:
-      r1 = stack->pop_register();
-      r2 = stack->push_register(state->num_reg++);
+    }
+    case GET_ITER: {
+      int r1 = stack->pop_register();
+      int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(opcode, oparg, r1, r2);
-//      bb->add_op(DECREF, oparg, r1);
       break;
+    }
     case SLICE + 0:
     case SLICE + 1:
     case SLICE + 2:
-    case SLICE + 3:
-      r1 = r2 = r3 = r4 = -1;
-      if ((opcode - SLICE) & 2) r3 = stack->pop_register();
-      if ((opcode - SLICE) & 1) r2 = stack->pop_register();
-      r1 = stack->pop_register();
-      r4 = stack->push_register(state->num_reg++);
-
-      if (r2 == -1) {
-        bb->add_dest_op(opcode, oparg, r1, r4);
-      } else {
-        if (r3 == -1) {
-          bb->add_dest_op(opcode, oparg, r1, r2, r4);
-        } else {
-          bb->add_dest_op(opcode, oparg, r1, r2, r3, r4);
-        }
-      }
+    case SLICE + 3: {
+      int list, left, right;
+      left = right = -1;
+      if ((opcode - SLICE) & 2) right = stack->pop_register();
+      if ((opcode - SLICE) & 1) left = stack->pop_register();
+      list = stack->pop_register();
+      int dst = stack->push_register(state->num_reg++);
+      bb->add_dest_op(SLICE, 0, list, left, right, dst);
       break;
+    }
     case STORE_SLICE + 0:
     case STORE_SLICE + 1:
     case STORE_SLICE + 2:
-    case STORE_SLICE + 3:
-      r1 = r2 = r3 = r4 = -1;
-      if ((opcode - STORE_SLICE) & 2) r4 = stack->pop_register();
-      if ((opcode - STORE_SLICE) & 1) r3 = stack->pop_register();
-      r2 = stack->pop_register();
-      r1 = stack->pop_register();
-      if (r3 == -1) {
-        bb->add_op(opcode, oparg, r1, r2);
-      } else {
-        if (r4 == -1) {
-          bb->add_op(opcode, oparg, r1, r2, r3);
-        } else {
-          bb->add_op(opcode, oparg, r1, r2, r3, r4);
-        }
-      }
+    case STORE_SLICE + 3: {
+      int list, left, right, value;
+      left = right = -1;
+      if ((opcode - STORE_SLICE) & 2) right = stack->pop_register();
+      if ((opcode - STORE_SLICE) & 1) left = stack->pop_register();
+      list = stack->pop_register();
+      value = stack->pop_register();
+      int dst = stack->push_register(state->num_reg++);
+      bb->add_dest_op(STORE_SLICE, 0, list, left, right, value, dst);
       break;
+    }
     case DELETE_SLICE + 0:
     case DELETE_SLICE + 1:
     case DELETE_SLICE + 2:
-    case DELETE_SLICE + 3:
-      r1 = r2 = r3 = r4 = -1;
-      if ((opcode - DELETE_SLICE) & 2) r4 = stack->pop_register();
-      if ((opcode - DELETE_SLICE) & 1) r3 = stack->pop_register();
-      r2 = stack->pop_register();
-      r1 = stack->pop_register();
-      if (r3 == -1) {
-        bb->add_op(opcode, oparg, r1, r2);
-      } else {
-        if (r4 == -1) {
-          bb->add_op(opcode, oparg, r1, r2, r3);
-        } else {
-          bb->add_op(opcode, oparg, r1, r2, r3, r4);
-        }
-      }
+    case DELETE_SLICE + 3: {
+      int list, left, right;
+      left = right = -1;
+      if ((opcode - DELETE_SLICE) & 2) right = stack->pop_register();
+      if ((opcode - DELETE_SLICE) & 1) left = stack->pop_register();
+      list = stack->pop_register();
+      int dst = stack->push_register(state->num_reg++);
+      bb->add_dest_op(DELETE_SLICE, 0, list, left, right, dst);
       break;
-    case LIST_APPEND:
-      r1 = stack->pop_register();
-      r2 = stack->peek_register(oparg);
-      bb->add_op(opcode, oparg, r1, r2);
+    }
+    case LIST_APPEND: {
+      int item = stack->pop_register();
+      int list = stack->peek_register(oparg);
+      bb->add_op(opcode, oparg, list, item);
       break;
-    case UNARY_NOT:
+    }
       // Unary operations: pop 1, push 1.
-      r1 = stack->pop_register();
-      r2 = stack->push_register(state->num_reg++);
-      bb->add_dest_op(opcode, oparg, r1, r2);
-      break;
+    case UNARY_NOT:
     case UNARY_POSITIVE:
     case UNARY_NEGATIVE:
     case UNARY_CONVERT:
-    case UNARY_INVERT:
+    case UNARY_INVERT: {
       // Unary operations: pop 1, push 1.
-      r1 = stack->pop_register();
-      r2 = stack->push_register(state->num_reg++);
+      int r1 = stack->pop_register();
+      int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(opcode, oparg, r1, r2);
-      // bb->add_op(DECREF, 0, r1);
       break;
+    }
     case BINARY_POWER:
     case BINARY_MULTIPLY:
     case BINARY_TRUE_DIVIDE:
@@ -534,15 +506,14 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case INPLACE_AND:
     case INPLACE_XOR:
     case INPLACE_OR:
-    case COMPARE_OP:
+    case COMPARE_OP: {
       // Binary operations: pop 2, push 1.
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      r3 = stack->push_register(state->num_reg++);
-      bb->add_dest_op(opcode, oparg, r1, r2, r3);
-//      bb->add_op(DECREF, 0, r1);
-//      bb->add_op(DECREF, 0, r2);
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      int r3 = stack->push_register(state->num_reg++);
+      bb->add_dest_op(opcode, oparg, r2, r1, r3);
       break;
+    }
     case CALL_FUNCTION:
     case CALL_FUNCTION_VAR:
     case CALL_FUNCTION_KW:
@@ -556,9 +527,29 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       }
       f->regs[n] = stack->pop_register();
       f->regs[n + 1] = stack->push_register(state->num_reg++);
-      assert(f->arg == oparg);
+      Log_AssertEq(f->arg, oparg);
 
 //            for (r = n; r >= 0; --r) { bb->add_op(DECREF, 0, f->regs[r]); }
+      break;
+    }
+    case PRINT_ITEM: {
+      int r1 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1);
+      break;
+    }
+    case PRINT_ITEM_TO: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1, r2);
+      break;
+    }
+    case PRINT_NEWLINE_TO: {
+      int r1 = stack->pop_register();
+      bb->add_op(opcode, oparg, r1);
+      break;
+    }
+    case PRINT_NEWLINE: {
+      bb->add_op(opcode, oparg);
       break;
     }
     case BUILD_LIST:
@@ -582,11 +573,13 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     }
 //        case SETUP_EXCEPT:
 //        case SETUP_FINALLY:
-    case SETUP_LOOP:
+    case SETUP_LOOP: {
       stack->push_frame(offset + CODESIZE(state->py_codestr[offset]) + oparg);
       bb->add_op(opcode, oparg);
       break;
-    case RAISE_VARARGS:
+    }
+    case RAISE_VARARGS: {
+      int r1, r2, r3;
       r1 = r2 = r3 = -1;
       if (oparg == 3) {
         r1 = stack->pop_register();
@@ -600,15 +593,17 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       }
       bb->add_op(opcode, oparg, r1, r2, r3);
       break;
-    case POP_BLOCK:
+    }
+    case POP_BLOCK: {
       stack->pop_frame();
       // bb->add_op(opcode, oparg);
       break;
+    }
       // Control flow instructions - recurse down each branch with a copy of the current stack.
     case BREAK_LOOP: {
-      Frame *f = stack->pop_frame();
+      Frame f = stack->pop_frame();
       bb->add_op(opcode, oparg);
-      bb->exits.push_back(registerize(state, stack, f->target));
+      bb->exits.push_back(registerize(state, stack, f.target));
       if (bb->exits[0] == NULL) {
         return NULL;
       }
@@ -623,31 +618,13 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       }
       break;
     }
-    case PRINT_ITEM:
-      r1 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1);
-      break;
-    case PRINT_ITEM_TO:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1, r2);
-      break;
-    case PRINT_NEWLINE_TO:
-      r1 = stack->pop_register();
-      r2 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1, r2);
-      break;
-    case PRINT_NEWLINE:
-      r1 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1);
-      break;
     case FOR_ITER: {
       RegisterStack a, b;
-      r1 = stack->pop_register();
+      int r1 = stack->pop_register();
       copy_stack(stack, &a);
       copy_stack(stack, &b);
       a.push_register(r1);
-      r2 = a.push_register(state->num_reg++);
+      int r2 = a.push_register(state->num_reg++);
 
       bb->add_dest_op(opcode, 0, r1, r2);
 
@@ -665,7 +642,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case JUMP_IF_TRUE_OR_POP: {
       RegisterStack a, b;
       copy_stack(stack, &a);
-      r1 = stack->pop_register();
+      int r1 = stack->pop_register();
       copy_stack(stack, &b);
       bb->add_op(opcode, oparg, r1);
 
@@ -680,7 +657,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     }
     case POP_JUMP_IF_FALSE:
     case POP_JUMP_IF_TRUE: {
-      r1 = stack->pop_register();
+      int r1 = stack->pop_register();
       RegisterStack a, b;
       copy_stack(stack, &a);
       copy_stack(stack, &b);
@@ -714,10 +691,11 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       }
       return entry_point;
     }
-    case RETURN_VALUE:
-      r1 = stack->pop_register();
+    case RETURN_VALUE: {
+      int r1 = stack->pop_register();
       bb->add_op(opcode, oparg, r1);
       return entry_point;
+    }
     case END_FINALLY:
     case YIELD_VALUE:
     default:
@@ -1053,7 +1031,7 @@ public:
 
   void visit_fn(CompilerState* fn) {
     this->count_uses(fn);
-    Log_Info("%s", Coerce::str(counts).c_str());
+//    Log_Info("%s", Coerce::str(counts).c_str());
     BackwardPass::visit_fn(fn);
   }
 
@@ -1100,10 +1078,11 @@ struct RCompilerUtil {
       // of each instruction.
       dst_op->branch.label = 0;
     } else {
-      assert(op->regs.size() <= 3);
+      Log_AssertLe(op->regs.size(), 4);
       dst_op->reg.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
       dst_op->reg.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
       dst_op->reg.reg_3 = op->regs.size() > 2 ? op->regs[2] : -1;
+      dst_op->reg.reg_4 = op->regs.size() > 3 ? op->regs[3] : -1;
     }
   }
 };
@@ -1166,7 +1145,7 @@ void lower_register_code(CompilerState* state, std::string *out) {
         Log_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx, "One branch must fall-through (%d, %d) != %d",
                    a.idx, b.idx, fallthrough.idx);
         BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
-        Log_Info("%d, %d", a.idx, b.idx);
+//        Log_Info("%d, %d", a.idx, b.idx);
         Log_AssertGt(jmp.reg_offset, 0);
         op->branch.label = jmp.reg_offset;
         Log_AssertEq(op->branch.label, jmp.reg_offset);
@@ -1175,11 +1154,10 @@ void lower_register_code(CompilerState* state, std::string *out) {
   }
 }
 
-PyObject* compileRegCode(CompilerState* fn) {
-
+PyObject * compileRegCode(CompilerState * fn) {
   optimize(fn);
 
-  printf("%s\n", fn->str().c_str());
+//  printf("%s\n", fn->str().c_str());
 
   std::string regcode;
   lower_register_code(fn, &regcode);
@@ -1187,7 +1165,7 @@ PyObject* compileRegCode(CompilerState* fn) {
   return regobj;
 }
 
-PyObject* compileByteCode(PyCodeObject* code) {
+PyObject * compileByteCode(PyCodeObject * code) {
   CompilerState state(code);
   RegisterStack stack;
 

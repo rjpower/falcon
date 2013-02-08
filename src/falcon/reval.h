@@ -29,9 +29,11 @@
 // The first portion of the register file is aliased to the function
 // locals and consts.  This is followed by general registers.
 // [0..#consts][0..#locals][general registers]
-typedef int16_t Register;
-typedef int16_t JumpLoc;
+typedef uint8_t Register;
+typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
+
+static const uint8_t kBadRegister = (uint8_t)-1;
 
 #pragma pack(push, 0)
 struct RegisterPrelude {
@@ -50,17 +52,18 @@ struct OpHeader {
 struct BranchOp {
   uint8_t code;
   uint8_t arg;
-  uint16_t reg_1;
-  uint16_t reg_2;
-  uint16_t label;
+  Register reg_1;
+  Register reg_2;
+  JumpLoc label;
 };
 
 struct RegOp {
   uint8_t code;
   uint8_t arg;
-  int16_t reg_1;
-  int16_t reg_2;
-  int16_t reg_3;
+  Register reg_1;
+  Register reg_2;
+  Register reg_3;
+  Register reg_4;
 };
 
 // A variable size op is at least 8 bytes, but can contain
@@ -68,7 +71,7 @@ struct RegOp {
 struct VarRegOp {
   uint8_t code;
   uint8_t arg;
-  uint16_t num_registers;
+  uint8_t num_registers;
   Register regs[2];
 };
 

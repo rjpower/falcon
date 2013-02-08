@@ -81,6 +81,7 @@ public:
   CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2);
   CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3);
   CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4);
+  CompilerOp* add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4, int reg5);
 
   CompilerOp* add_varargs_op(int opcode, int arg, int num_regs);
 };
@@ -91,25 +92,20 @@ struct Frame {
 };
 
 struct RegisterStack {
-  int regs[REG_MAX_STACK];
-  int stack_pos;
+  std::vector<int> regs;
+  std::vector<Frame> frames;
 
-  Frame frames[REG_MAX_FRAMES];
-  int num_frames;
-
-  RegisterStack() :
-      stack_pos(-1), num_frames(0) {
+  RegisterStack() {
   }
 
   void push_frame(int target);
-  Frame* pop_frame();
+  Frame pop_frame();
 
   int push_register(int reg);
   int pop_register();
   int peek_register(int reg);
 
   std::string str();
-
 };
 
 struct CompilerState {

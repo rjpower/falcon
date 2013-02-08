@@ -215,10 +215,17 @@ void logAtLevel(LogLevel level, const char* file, int line, const char* fmt, ...
 #define Log_Assert(expr, fmt, ...)\
   if(!(expr)) { Log_Fatal(fmt, ##__VA_ARGS__); }
 
-#define Log_AssertEq(a, b)\
-    { decltype(a) a_ = (a); decltype(b) b_ = (b); Log_Assert(a_ == b_, "Expected %s == %s.", #a, #b); }
-#define Log_AssertGt(a, b)\
-    { decltype(a) a_ = (a); decltype(b) b_ = (b); Log_Assert(a_ > b_, "Expected %s > %s.", #a, #b); }
+#define _ASSERT_OP(op, a, b)\
+  { decltype(a) a_ = (a);\
+    decltype(b) b_ = (b);\
+    Log_Assert(a op b, "Expected %s %s %s, got %f, %f", #a, #op, #b, a_, b_);\
+  }
+
+#define Log_AssertLe(a, b) _ASSERT_OP(<=, a, b)
+#define Log_AssertGe(a, b) _ASSERT_OP(>=, a, b)
+#define Log_AssertEq(a, b) _ASSERT_OP(==, a, b)
+#define Log_AssertGt(a, b) _ASSERT_OP(>, a, b)
+#define Log_AssertLt(a, b) _ASSERT_OP(<, a, b)
 
 template<class K, class V>
 inline std::string Coerce::str(const std::map<K, V>& m) {
