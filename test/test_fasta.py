@@ -66,13 +66,13 @@ def randomFasta(table, n):
 
 class TestFasta(TimedTest):
   def test_three_homosapiens(self):
-    self.time_compare(randomFasta, homosapiens, 500)
+    self.time_compare(randomFasta, homosapiens, 1500)
   
   def test_two_iub(self):
-    self.time_compare(randomFasta, iub, 300)
+    self.time_compare(randomFasta, iub, 900)
   
   def test_one_homosapiens(self):
-    self.time_compare(repeatFasta, alu, 200)
+    self.time_compare(repeatFasta, alu, 600)
     
 if __name__ == '__main__':
   unittest.main() 
