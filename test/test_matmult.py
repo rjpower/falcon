@@ -22,9 +22,9 @@ def make_matrix(m,n):
 
 class TestMatMult(TimedTest):
     def test_matmult(self):
-        x = make_matrix(100,100)
-        y = make_matrix(100,100)
-        z = make_matrix(100,100)
+        x = make_matrix(200,200)
+        y = make_matrix(200,200)
+        z = make_matrix(200,200)
         self.time_compare(mm_loops, x, y, z, repeat=5)
 
 if __name__ == '__main__':

@@ -19,8 +19,8 @@ class TimedTest(unittest.TestCase):
     try: import falcon
     except: falcon = None
 
-    print 'Original bytecode:\n'
-    dis.dis(function)
+#    print 'Original bytecode:\n'
+#    dis.dis(function)
     
     repeat = kw.get('repeat', 1)
     if falcon:
