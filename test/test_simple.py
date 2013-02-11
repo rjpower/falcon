@@ -49,7 +49,6 @@ def unpack_first(x):
     return a
 
 class Simple(TimedTest):
-
   def test_add1(self): self.time_compare(add, 1, 2)
   def test_add2(self): self.time_compare(add, 100, 200)
   def test_add3(self): self.time_compare(add, 10 * 50, 2)
@@ -63,7 +62,7 @@ class Simple(TimedTest):
     import falcon
     evaluator = falcon.Evaluator()
     evaluator.eval_python(loop, (1000 * 1000 * 10,))
-    evaluator.dumpStatus()
+    evaluator.dump_status()
     
   def test_count_threshold(self):
     print "Original bytecode for count_threshold"
@@ -76,7 +75,7 @@ class Simple(TimedTest):
     self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
 
   def test_global_load(self): 
-    self.time_compare(global_math, 1000000, repeat=5)
+    self.time_compare(global_math, 1000, repeat=5)
   
   def test_unpack_first(self):
     self.time_compare(unpack_first, (1,2,3), repeat = 1)

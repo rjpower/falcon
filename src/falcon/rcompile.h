@@ -2,10 +2,12 @@
 #define RCOMPILE_H_
 
 #include <cassert>
+#include <string>
+#include <boost/unordered_map.hpp>
 
 #include "util.h"
-#include "reval.h"
-#include "oputil.h"
+#include "rinst.h"
+#include "rexcept.h"
 
 // While compiling, we use an expanded form to represent opcodes.  This
 // is translated to a compact instruction stream as the last compilation
@@ -36,21 +38,21 @@ struct CompilerOp {
     size_t n_regs = this->regs.size();
     assert(n_regs > 0);
     assert(this->has_dest);
-    return this->regs[n_regs-1];
+    return this->regs[n_regs - 1];
   }
 
   size_t num_inputs() {
     size_t n = this->regs.size();
     // if one of the registers is a target for a store, don't count it as an input
-    return this->has_dest ? n-1 : n;
+    return this->has_dest ? n - 1 : n;
   }
 };
 
 struct BasicBlock {
 private:
+  std::vector<CompilerOp*> alloc_;
   CompilerOp* _add_op(int opcode, int arg, int num_regs);
   CompilerOp* _add_dest_op(int opcode, int arg, int num_regs);
-
 public:
 
   int py_offset;
@@ -66,6 +68,11 @@ public:
   int dead;
 
   BasicBlock(int offset, int idx);
+  ~BasicBlock() {
+    for (auto op : alloc_) {
+      delete op;
+    }
+  }
 
   /* operations without a destination register */
   CompilerOp* add_op(int opcode, int arg);
@@ -73,7 +80,6 @@ public:
   CompilerOp* add_op(int opcode, int arg, int reg1, int reg2);
   CompilerOp* add_op(int opcode, int arg, int reg1, int reg2, int reg3);
   CompilerOp* add_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4);
-
 
   /* operations with a destination register */
   CompilerOp* add_dest_op(int opcode, int arg);
@@ -109,6 +115,9 @@ struct RegisterStack {
 };
 
 struct CompilerState {
+private:
+  std::vector<BasicBlock*> alloc_;
+public:
   std::vector<BasicBlock*> bbs;
 
   int num_reg;
@@ -136,7 +145,7 @@ struct CompilerState {
   }
 
   ~CompilerState() {
-    for (auto bb : bbs) {
+    for (auto bb : alloc_) {
       delete bb;
     }
   }
@@ -146,8 +155,15 @@ struct CompilerState {
   void dump(Writer* w);
 };
 
-BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset);
-PyObject* compileByteCode(PyCodeObject* c);
-PyObject* compileRegCode(CompilerState* c);
+struct Compiler {
+private:
+  boost::unordered_map<PyObject*, RegisterCode*> cache_;
+  BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset);
+  RegisterCode* compile_(PyObject* function);
+public:
+  Compiler() {}
+
+  RegisterCode* compile(PyObject* function);
+};
 
 #endif /* RCOMPILE_H_ */

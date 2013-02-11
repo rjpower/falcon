@@ -49,7 +49,7 @@ setup(
               'src/falcon/util.cc',
               'src/falcon/rmodule.i'
               ],
-      swig_opts = ['-Isrc', '-modern', '-O', '-c++',],
+      swig_opts = ['-Isrc', '-modern', '-O', '-c++', '-w312,509'],
       extra_compile_args=['-fno-gcse', '-fno-crossjumping', '-ggdb2', '-std=c++0x'],
       extra_link_args=['-lrt'],
     )

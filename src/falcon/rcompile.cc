@@ -63,6 +63,7 @@ std::string CompilerState::str() {
 
 BasicBlock* CompilerState::alloc_bb(int offset) {
   BasicBlock* bb = new BasicBlock(offset, bbs.size());
+  alloc_.push_back(bb);
   bbs.push_back(bb);
   return bb;
 }
@@ -74,6 +75,7 @@ std::string RegisterStack::str() {
 CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
   CompilerOp* op = new CompilerOp(opcode, arg);
   op->regs.resize(num_regs);
+  alloc_.push_back(op);
   code.push_back(op);
   return op;
 }
@@ -208,7 +210,7 @@ int RegisterStack::push_register(int reg) {
 }
 
 int RegisterStack::pop_register() {
-  Log_AssertGt((int)regs.size(), 0);
+  Reg_AssertGt((int)regs.size(), 0);
   int reg = regs.back();
   regs.pop_back();
   return reg;
@@ -242,7 +244,7 @@ void copy_stack(RegisterStack *from, RegisterStack* to) {
  * int r2 = 2 ('push' r2)
  * int r3 = add r1, r2 ('pop' r1, r2)
  */
-BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) {
+BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, int offset) {
   Py_ssize_t r;
   int oparg = 0;
   int opcode = 0;
@@ -273,8 +275,8 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     for (size_t i = 0; i < state->bbs.size(); ++i) {
       BasicBlock *old = state->bbs[i];
       if (old->py_offset == offset) {
-        assert(entry_point != NULL);
-        assert(last != NULL);
+        Reg_Assert(entry_point != NULL, "Bad entry point.");
+        Reg_Assert(last != NULL, "Bad entry point.");
         last->exits.push_back(old);
         return entry_point;
       }
@@ -313,7 +315,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     }
     case POP_TOP: {
       int r1 = stack->pop_register();
-      bb->add_op(DECREF, 0, r1);
+//      bb->add_op(DECREF, 0, r1);
       break;
     }
     case DUP_TOP: {
@@ -463,7 +465,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case LIST_APPEND: {
       int item = stack->pop_register();
       int list = stack->peek_register(oparg);
-      bb->add_op(opcode, oparg, list, item);
+      bb->add_op(opcode, 0, list, item);
       break;
     }
       // Unary operations: pop 1, push 1.
@@ -525,7 +527,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       }
       f->regs[n] = stack->pop_register();
       f->regs[n + 1] = stack->push_register(state->num_reg++);
-      Log_AssertEq(f->arg, oparg);
+      Reg_AssertEq(f->arg, oparg);
 
 //            for (r = n; r >= 0; --r) { bb->add_op(DECREF, 0, f->regs[r]); }
       break;
@@ -573,7 +575,11 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
 //        case SETUP_FINALLY:
     case SETUP_LOOP: {
       stack->push_frame(offset + CODESIZE(state->py_codestr[offset]) + oparg);
-      bb->add_op(opcode, oparg);
+      break;
+    }
+    case POP_BLOCK: {
+      stack->pop_frame();
+      // bb->add_op(opcode, oparg);
       break;
     }
     case RAISE_VARARGS: {
@@ -589,12 +595,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       } else if (oparg == 1) {
         r1 = stack->pop_register();
       }
-      bb->add_op(opcode, oparg, r1, r2, r3);
-      break;
-    }
-    case POP_BLOCK: {
-      stack->pop_frame();
-      // bb->add_op(opcode, oparg);
+      bb->add_op(opcode, 0, r1, r2, r3);
       break;
     }
       // Control flow instructions - recurse down each branch with a copy of the current stack.
@@ -602,18 +603,12 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       Frame f = stack->pop_frame();
       bb->add_op(opcode, oparg);
       bb->exits.push_back(registerize(state, stack, f.target));
-      if (bb->exits[0] == NULL) {
-        return NULL;
-      }
       return entry_point;
     }
     case CONTINUE_LOOP: {
       stack->pop_frame();
       bb->add_op(opcode, oparg);
       bb->exits.push_back(registerize(state, stack, oparg));
-      if (bb->exits[0] == NULL) {
-        return NULL;
-      }
       break;
     }
     case FOR_ITER: {
@@ -631,9 +626,6 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       BasicBlock* right = registerize(state, &b, offset + CODESIZE(opcode) + oparg);
       bb->exits.push_back(left);
       bb->exits.push_back(right);
-      if (left == NULL || right == NULL) {
-        return NULL;
-      }
       return entry_point;
     }
     case JUMP_IF_FALSE_OR_POP:
@@ -648,9 +640,6 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       BasicBlock* left = registerize(state, &b, offset + CODESIZE(opcode));
       bb->exits.push_back(left);
       bb->exits.push_back(right);
-      if (left == NULL || right == NULL) {
-        return NULL;
-      }
       return entry_point;
     }
     case POP_JUMP_IF_FALSE:
@@ -664,9 +653,6 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       BasicBlock* right = registerize(state, &b, oparg);
       bb->exits.push_back(left);
       bb->exits.push_back(right);
-      if (left == NULL || right == NULL) {
-        return NULL;
-      }
       return entry_point;
     }
     case JUMP_FORWARD: {
@@ -675,18 +661,12 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
       assert(dst <= state->py_codelen);
       BasicBlock* exit = registerize(state, stack, dst);
       bb->exits.push_back(exit);
-      if (exit == NULL) {
-        return NULL;
-      }
       return entry_point;
     }
     case JUMP_ABSOLUTE: {
       bb->add_op(JUMP_ABSOLUTE, oparg);
       BasicBlock* exit = registerize(state, stack, oparg);
       bb->exits.push_back(exit);
-      if (exit == NULL) {
-        return NULL;
-      }
       return entry_point;
     }
     case RETURN_VALUE: {
@@ -697,8 +677,7 @@ BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset) 
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-      Log_Info("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
-      return NULL;
+      throw RException(PyExc_SyntaxError, StringPrintf("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg));
       break;
     }
   }
@@ -711,7 +690,7 @@ protected:
     size_t live_pos = 0;
     size_t n_ops = bb->code.size();
     for (size_t i = 0; i < n_ops; ++i) {
-      CompilerOp * op = bb->code[i];
+      CompilerOp* op = bb->code[i];
       if (op->dead) {
         continue;
       }
@@ -844,30 +823,6 @@ public:
 
   }
 };
-
-/*
-
- // For each basic block, find matching increfs and decrefs, and cancel them out.
- void bb_combine_refs(BasicBlock* bb) {
- for (size_t i = 0; i < bb->code.size(); ++i) {
- CompilerOp * decref = bb->code[i];
- if (decref->dead || decref->code != DECREF) {
- continue;
- }
- for (size_t j = 0; j < i; ++j) {
- CompilerOp* incref = bb->code[j];
- if (!incref->dead && incref->code == INCREF && incref->regs[0] == decref->regs[0]) {
- decref->dead = 1;
- incref->dead = 1;
- }
- }
- }
- }
- void opt_combine_refs(CompilerState* state) {
- apply_bb_pass(state, &bb_combine_refs);
- }
-
- */
 
 class CopyPropagation: public CompilerPass {
 public:
@@ -1076,7 +1031,7 @@ struct RCompilerUtil {
       // of each instruction.
       dst_op->branch.label = 0;
     } else {
-      Log_AssertLe(op->regs.size(), 4);
+      Reg_AssertLe(op->regs.size(), 4);
       dst_op->reg.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
       dst_op->reg.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
       dst_op->reg.reg_3 = op->regs.size() > 2 ? op->regs[2] : -1;
@@ -1086,12 +1041,6 @@ struct RCompilerUtil {
 };
 
 void lower_register_code(CompilerState* state, std::string *out) {
-  RegisterPrelude p;
-  memcpy(&p.magic, REG_MAGIC, 4);
-  p.mapped_registers = 0;
-  p.mapped_labels = 0;
-  p.num_registers = state->num_reg;
-  out->append((char*) &p, sizeof(RegisterPrelude));
 
 // first, dump all of the operations to the output buffer and record
 // their positions.
@@ -1108,13 +1057,13 @@ void lower_register_code(CompilerState* state, std::string *out) {
       RCompilerUtil::write_op(&(*out)[0] + offset, c);
       Log_Debug("Wrote op at offset %d, size: %d, %s", offset, RCompilerUtil::op_size(c), c->str().c_str());
       RMachineOp* rop = (RMachineOp*) (&(*out)[0] + offset);
-      Log_AssertEq(RCompilerUtil::op_size(c), RMachineOp::size(*rop));
+      Reg_AssertEq(RCompilerUtil::op_size(c), RMachineOp::size(*rop));
     }
   }
 
 // now patchup labels in the emitted code to point to the correct
 // locations.
-  Py_ssize_t pos = sizeof(RegisterPrelude);
+  int pos = 0;
   for (size_t i = 0; i < state->bbs.size(); ++i) {
     BasicBlock* bb = state->bbs[i];
     RMachineOp* op = NULL;
@@ -1124,8 +1073,13 @@ void lower_register_code(CompilerState* state, std::string *out) {
       op = (RMachineOp*) (out->data() + pos);
       Log_Debug("Checking op %s at offset %d.", OpUtil::name(op->code()), pos);
 
-      Log_AssertEq(op->code(), bb->code[j]->code);
-      Log_AssertEq(op->arg(), bb->code[j]->arg);
+      Reg_AssertEq(op->code(), bb->code[j]->code);
+      if (OpUtil::has_arg(op->code())) {
+        Reg_AssertEq(op->arg(), bb->code[j]->arg);
+      } else {
+        Reg_Assert(op->arg() == 0 || OpUtil::is_branch(op->code()), "Argument to non-argument op: %s, %d",
+                   OpUtil::name(op->code()), op->arg());
+      }
       pos += RMachineOp::size(*op);
     }
 
@@ -1133,53 +1087,72 @@ void lower_register_code(CompilerState* state, std::string *out) {
       if (bb->exits.size() == 1) {
         BasicBlock& jmp = *bb->exits[0];
         op->branch.label = jmp.reg_offset;
-        Log_AssertGt(jmp.reg_offset, 0);
-        Log_AssertEq(op->branch.label, jmp.reg_offset);
+        Reg_AssertGt(jmp.reg_offset, 0);
+        Reg_AssertEq(op->branch.label, jmp.reg_offset);
       } else {
         // One exit is the fall-through to the next block.
         BasicBlock& a = *bb->exits[0];
         BasicBlock& b = *bb->exits[1];
         BasicBlock& fallthrough = *state->bbs[i + 1];
-        Log_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx, "One branch must fall-through (%d, %d) != %d",
+        Reg_Assert(fallthrough.idx == a.idx || fallthrough.idx == b.idx, "One branch must fall-through (%d, %d) != %d",
                    a.idx, b.idx, fallthrough.idx);
         BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
 //        Log_Info("%d, %d", a.idx, b.idx);
-        Log_AssertGt(jmp.reg_offset, 0);
+        Reg_AssertGt(jmp.reg_offset, 0);
         op->branch.label = jmp.reg_offset;
-        Log_AssertEq(op->branch.label, jmp.reg_offset);
+        Reg_AssertEq(op->branch.label, jmp.reg_offset);
       }
     }
   }
 }
 
-PyObject * compileRegCode(CompilerState * fn) {
-  optimize(fn);
+RegisterCode* Compiler::compile_(PyObject* func) {
 
-//  printf("%s\n", fn->str().c_str());
-
-  std::string regcode;
-  lower_register_code(fn, &regcode);
-  PyObject* regobj = PyString_FromStringAndSize((char*) regcode.data(), regcode.size());
-  return regobj;
-}
-
-PyObject * compileByteCode(PyCodeObject * code) {
-  if (!code) {
-    Log_Info("No code!!!");
-    PyErr_SetString(PyExc_SystemError, "No code to compile.");
-    return NULL;
+  if (!PyFunction_Check(func)) {
+    throw RException(PyExc_SystemError, StringPrintf("Not a function: %s", obj_to_str(func)));
   }
+
+  PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(func);
+  if (!code) {
+    throw RException(PyExc_SystemError, "No code in function object.");
+  }
+
   CompilerState state(code);
   RegisterStack stack;
 
   BasicBlock* entry_point = registerize(&state, &stack, 0);
   if (entry_point == NULL) {
-    Log_Info("Failed to registerize %s:%d (%s), using stack machine.",
-             PyString_AsString(code->co_filename), code->co_firstlineno, PyString_AsString(code->co_name));
-    PyErr_SetString(PyExc_SystemError, "Failed to compile function.");
-    return NULL;
+    throw RException(PyExc_SystemError, "Failed to registerize %s", PyEval_GetFuncName(func));
   }
 
-  return compileRegCode(&state);
+  optimize(&state);
+
+  RegisterCode *regcode = new RegisterCode;
+  lower_register_code(&state, &regcode->instructions);
+  regcode->version = 1;
+  regcode->function = func;
+  regcode->mapped_registers = 0;
+  regcode->mapped_labels = 0;
+  regcode->num_registers = state.num_reg;
+
+  return regcode;
+}
+
+RegisterCode* Compiler::compile(PyObject* func) {
+  if (PyMethod_Check(func)) {
+    func = PyMethod_Function(func);
+  }
+
+  if (cache_.find(func) == cache_.end()) {
+    try {
+      cache_[func] = compile_(func);
+      Log_Info("Compiled: (%s) %p", PyEval_GetFuncName(func), func);
+    } catch (RException& e) {
+      Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(func));
+      cache_[func] = NULL;
+    }
+  }
+
+  return cache_[func];
 }
 

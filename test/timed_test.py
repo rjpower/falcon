@@ -4,8 +4,14 @@ import sys
 import random
 import time
 import unittest 
+import traceback
 
-
+try: 
+  import falcon
+except:
+  print >>sys.stderr, 'Failed to import falcon.'
+  traceback.print_exc()
+  falcon = None
 
 logging.basicConfig(
     format='%(asctime)s %(filename)s:%(funcName)s %(message)s',
@@ -17,9 +23,6 @@ class TimedTest(unittest.TestCase):
     return self.time_compare(function, *args, **kw)
 
   def time_compare(self, function, *args, **kw):
-    try: import falcon
-    except: falcon = None
-    
     print 'Original bytecode, %s:\n' % function.func_name
     dis.dis(function)
     
@@ -27,6 +30,8 @@ class TimedTest(unittest.TestCase):
     if falcon:
       evaluator = falcon.Evaluator()
       frame = evaluator.frame_from_python(function, args)
+      if not frame:
+        raise Exception, 'Failed to compile frame.' 
     
     for i in range(repeat):
       random.seed(10)

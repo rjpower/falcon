@@ -43,6 +43,30 @@ struct OpUtil {
 
     return r.find(opcode) != r.end();
   }
+
+  static bool has_arg(int opcode) {
+    static std::set<int> r;
+    if (r.empty()) {
+      r.insert(COMPARE_OP);
+      r.insert(LOAD_GLOBAL);
+      r.insert(LOAD_NAME);
+      r.insert(LOAD_ATTR);
+      r.insert(STORE_GLOBAL);
+      r.insert(STORE_NAME);
+      r.insert(STORE_ATTR);
+      r.insert(CONST_INDEX);
+      r.insert(CALL_FUNCTION);
+      r.insert(CALL_FUNCTION_KW);
+      r.insert(CALL_FUNCTION_VAR);
+      r.insert(CALL_FUNCTION_VAR_KW);
+      r.insert(BUILD_LIST);
+      r.insert(BUILD_TUPLE);
+      r.insert(BUILD_MAP);
+      r.insert(BUILD_SET);
+    }
+
+    return r.find(opcode) != r.end();
+  }
 };
 
 #endif /* OPUTIL_H_ */

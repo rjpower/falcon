@@ -1,6 +1,7 @@
 %module falcon_core
 
 %{
+#include "rinst.h"
 #include "rcompile.h"
 #include "reval.h"
 %}
@@ -14,10 +15,20 @@
   $1 = ((PyCodeObject*)$input);
 }
 
+%exception {
+  try {
+    $function
+  } catch (RException& e) {
+    e.set_python_err();
+    return NULL;
+  }
+}
+
 %include <std_string.i>
 %include <std_map.i>
 %include <std_vector.i>
 
+%include "rinst.h"
 %include "rcompile.h"
 %include "reval.h"
 

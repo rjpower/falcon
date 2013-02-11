@@ -54,13 +54,13 @@ def gen_random_tuples(n_items, n_features):
           for _ in xrange(n_items)]
 
 class TestDecisionTree(timed_test.TimedTest):
-  def test_gen_features(self):
-    self.timed(gen_random_tuples, 1000,100)
-  def test_gen_tree(self):
-    self.timed(gen_random_tree, 1000, 12)
+#  def test_gen_features(self):
+#    self.timed(gen_random_tuples, 1000,100)
+#  def test_gen_tree(self):
+#    self.timed(gen_random_tree, 1000, 12)
   def test_eval_labels(self):
     tree = gen_random_tree(n_features = 1000, depth = 12)
-    features = gen_random_tuples(5000,1000)
+    features = gen_random_tuples(10000,1000)
     self.timed(predict_labels, features, tree)
 
 if __name__ == '__main__':
