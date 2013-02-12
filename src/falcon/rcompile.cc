@@ -713,7 +713,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case RETURN_VALUE: {
       int r1 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1);
+      bb->add_op(opcode, 0, r1);
       return entry_point;
     }
     case END_FINALLY:
@@ -728,35 +728,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
 
 class CompilerPass {
 protected:
-  void remove_dead_ops(BasicBlock* bb) {
-    size_t live_pos = 0;
-    size_t n_ops = bb->code.size();
-    for (size_t i = 0; i < n_ops; ++i) {
-      CompilerOp* op = bb->code[i];
-      if (op->dead) {
-        continue;
-      }
-      bb->code[live_pos++] = op;
-    }
-
-    bb->code.resize(live_pos);
-  }
-
-  void remove_dead_code(CompilerState* fn) {
-    size_t i = 0;
-    size_t live_pos = 0;
-    size_t n_bbs = fn->bbs.size();
-    for (i = 0; i < n_bbs; ++i) {
-      BasicBlock* bb = fn->bbs[i];
-      if (bb->dead) {
-        continue;
-      }
-
-      this->remove_dead_ops(bb);
-      fn->bbs[live_pos++] = bb;
-    }
-    fn->bbs.resize(live_pos);
-  }
 public:
   virtual void visit_op(CompilerOp* op) {
   }
@@ -785,7 +756,6 @@ public:
         bb->visited = true;
       }
     }
-    this->remove_dead_code(fn);
   }
 
   void operator()(CompilerState* fn) {
@@ -822,7 +792,6 @@ public:
         bb->visited = true;
       }
     }
-    this->remove_dead_code(fn);
   }
 
 };
@@ -1000,6 +969,36 @@ public:
 class DeadCodeElim: public BackwardPass, UseCounts {
 private:
 public:
+  void remove_dead_ops(BasicBlock* bb) {
+    size_t live_pos = 0;
+    size_t n_ops = bb->code.size();
+    for (size_t i = 0; i < n_ops; ++i) {
+      CompilerOp* op = bb->code[i];
+      if (op->dead) {
+        continue;
+      }
+      bb->code[live_pos++] = op;
+    }
+
+    bb->code.resize(live_pos);
+  }
+
+  void remove_dead_code(CompilerState* fn) {
+    size_t i = 0;
+    size_t live_pos = 0;
+    size_t n_bbs = fn->bbs.size();
+    for (i = 0; i < n_bbs; ++i) {
+      BasicBlock* bb = fn->bbs[i];
+      if (bb->dead) {
+        continue;
+      }
+
+      this->remove_dead_ops(bb);
+      fn->bbs[live_pos++] = bb;
+    }
+    fn->bbs.resize(live_pos);
+  }
+
   void visit_op(CompilerOp* op) {
     // printf("visit_op %s (code = %d)\n", op->str().c_str(), op->code);
 
@@ -1023,8 +1022,8 @@ public:
 
   void visit_fn(CompilerState* fn) {
     this->count_uses(fn);
-//    Log_Info("%s", Coerce::str(counts).c_str());
     BackwardPass::visit_fn(fn);
+    remove_dead_code(fn);
   }
 };
 
@@ -1032,17 +1031,31 @@ class RenameRegisters: public CompilerPass, UseCounts {
 private:
   // Mapping from old -> new register names
   boost::unordered_map<int, int> register_map_;
+
 public:
   void visit_op(CompilerOp* op) {
     for (size_t i = 0; i < op->regs.size(); ++i) {
-      op->regs[i] = register_map_[op->regs[i]];
+      int tgt;
+      if (register_map_.find(op->regs[i]) == register_map_.end()) {
+        tgt = -1;
+      } else {
+        tgt = register_map_[op->regs[i]];
+      }
+      op->regs[i] = tgt;
     }
   }
+
   void visit_fn(CompilerState* fn) {
-    this->count_uses(fn);
-    int curr = 0;
-    for (int i = 0; i < fn->num_reg; ++i) {
-      if (counts[i] != 0 || i <= (fn->num_consts + fn->num_locals)) {
+    count_uses(fn);
+
+    // Don't reuse the const/local register aliases.
+    for (int i = 0; i < fn->num_consts + fn->num_locals; ++i) {
+      register_map_[i] = i;
+    }
+
+    int curr = fn->num_consts + fn->num_locals;
+    for (int i = fn->num_consts + fn->num_locals; i < fn->num_reg; ++i) {
+      if (counts[i] != 0) {
         register_map_[i] = curr++;
       }
     }
@@ -1054,9 +1067,9 @@ public:
       }
     }
 
-    Log_Info("Register rename: keeping %d of %d registers. (with arg+const folding: %d)", curr, fn->num_reg, min_count);
     CompilerPass::visit_fn(fn);
-
+    Log_Info("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)", 
+             curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
     fn->num_reg = curr;
   }
 };
@@ -1068,6 +1081,8 @@ void optimize(CompilerState* fn) {
   StoreElim()(fn);
   DeadCodeElim()(fn);
   RenameRegisters()(fn);
+
+  Log_Info(fn->str().c_str());
 }
 
 void lower_register_code(CompilerState* state, std::string *out) {
@@ -1170,7 +1185,7 @@ RegisterCode* Compiler::compile_(PyObject* func) {
 
 RegisterCode* Compiler::compile(PyObject* func) {
   if (PyMethod_Check(func)) {
-    func = PyMethod_Function(func);
+    func = PyMethod_GET_FUNCTION(func);
   }
 
   if (cache_.find(func) == cache_.end()) {
