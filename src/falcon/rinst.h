@@ -42,7 +42,7 @@ struct RegisterCode {
   PyObject* function;
 
   PyCodeObject* code() const {
-    return (PyCodeObject*) PyFunction_GetCode(function);
+    return (PyCodeObject*) PyFunction_GET_CODE(function);
   }
 
   PyObject* names() const {

@@ -71,7 +71,7 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
     registers[i] = NULL;
   }
 
-  int num_consts = PyTuple_Size(consts());
+  int num_consts = PyTuple_GET_SIZE(consts());
 
   for (int i = 0; i < num_consts; ++i) {
     registers[i] = PyTuple_GET_ITEM(consts(), i) ;
@@ -81,8 +81,8 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
   int needed_args = code->code()->co_argcount;
   int offset = num_consts;
   if (PyMethod_Check(obj)) {
-    PyObject* klass = PyMethod_Class(obj);
-    PyObject* self = PyMethod_Self(obj);
+    PyObject* klass = PyMethod_GET_CLASS(obj);
+    PyObject* self = PyMethod_GET_SELF(obj);
 
     Reg_Assert(self != NULL, "Method call without a bound self.");
     registers[offset++] = self;
@@ -91,22 +91,18 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
     needed_args--;
   }
 
-  PyObject* def_args = PyFunction_GetDefaults(code->function);
-  int num_def_args = def_args == NULL ? 0 : PyTuple_Size(def_args);
-  int num_args = PyTuple_Size(args);
+  PyObject* def_args = PyFunction_GET_DEFAULTS(code->function);
+  int num_def_args = def_args == NULL ? 0 : PyTuple_GET_SIZE(def_args);
+  int num_args = PyTuple_GET_SIZE(args);
   if (num_args + num_def_args < needed_args) {
     throw RException(PyExc_TypeError, "Wrong number of arguments for %s, expected %d, got %d.",
                      PyEval_GetFuncName(code->function), needed_args - num_def_args, num_args);
   }
 
   for (int i = 0; i < needed_args; ++i) {
-    if (i < num_args) {
-      registers[offset] = PyTuple_GET_ITEM(args, i) ;
-    } else {
-      registers[offset] = PyTuple_GET_ITEM(def_args, i - num_args);
-    }
-    Py_XINCREF(registers[offset]);
-    ++offset;
+    PyObject* v = (i < num_args) ? PyTuple_GET_ITEM(args, i) : PyTuple_GET_ITEM(def_args, i - num_args);
+    Py_INCREF(v);
+    registers[offset++] = v;
   }
 }
 
@@ -602,9 +598,10 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
     }
 
     int dst = op->regs[n + 1];
-
-    Py_XDECREF(registers[dst]);
-    registers[dst] = res;
+    if (dst != kBadRegister) {
+      Py_XDECREF(registers[dst]);
+      registers[dst] = res;
+    }
   }
 };
 
@@ -820,7 +817,7 @@ struct Slice: public Op<RegOp, Slice> {
 
 PyObject * Evaluator::eval(RegisterFrame* frame) {
   Reg_Assert(frame != NULL, "NULL frame object.");
-  Reg_Assert(PyTuple_Size(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
+  Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
 
   register PyObject** registers = frame->registers;
   const char* pc = frame->instructions;
