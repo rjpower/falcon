@@ -25,34 +25,41 @@ private:
 public:
   PyObject *call_args;
   PyObject** registers;
-  RegisterCode* code;
+  const RegisterCode* code;
 
   const char* instructions;
 
-  f_inline PyObject* globals() {
+  f_inline
+  PyObject* globals() {
     return globals_;
   }
-  f_inline PyObject* builtins() {
+  f_inline
+  PyObject* builtins() {
     return builtins_;
   }
 
-  f_inline PyObject* args() {
+  f_inline
+  PyObject* args() {
     return args_;
   }
 
-  f_inline PyObject* kw() {
+  f_inline
+  PyObject* kw() {
     return kw_;
   }
 
-  f_inline PyObject* consts() {
+  f_inline
+  PyObject* consts() {
     return code->consts();
   }
 
-  f_inline PyObject* names() {
+  f_inline
+  PyObject* names() {
     return code->names();
   }
 
-  f_inline PyObject* locals() {
+  f_inline
+  PyObject* locals() {
     PyObject* consts = code->consts();
     int num_consts = PyTuple_Size(consts);
     int num_locals = PyTuple_Size(code->names());
@@ -65,11 +72,13 @@ public:
     return locals_;
   }
 
-  f_inline int offset(const char* pc) const {
+  f_inline
+  int offset(const char* pc) const {
     return (int) (pc - instructions);
   }
 
-  f_inline int next_code(const char* pc) const {
+  f_inline
+  int next_code(const char* pc) const {
     return ((RMachineOp*) pc)->header.code;
   }
 
@@ -79,7 +88,8 @@ public:
 
 class Evaluator {
 private:
-  f_inline void collect_info(int opcode);
+  f_inline
+  void collect_info(int opcode);
   int32_t op_counts_[256];
   int64_t op_times_[256];
 
@@ -92,7 +102,16 @@ public:
   Evaluator();
 
   PyObject* eval(RegisterFrame* rf);
-  PyObject* eval_python(PyObject* func, PyObject* args);
+  inline PyObject* eval_python(PyObject* func, PyObject* args) {
+    RegisterFrame* frame = frame_from_python(func, args);
+    if (!frame) {
+      return NULL;
+    }
+
+    PyObject* result = eval(frame);
+    delete frame;
+    return result;
+  }
 
   RegisterFrame* frame_from_python(PyObject* func, PyObject* args);
 

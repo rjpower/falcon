@@ -28,6 +28,48 @@
 
 using namespace std;
 
+struct RCompilerUtil {
+  static int op_size(CompilerOp* op) {
+    if (OpUtil::is_varargs(op->code)) {
+      return sizeof(RMachineOp) + sizeof(Register) * max(0, (int) op->regs.size() - 2);
+    }
+    return sizeof(RMachineOp);
+  }
+
+  // Lower an operation from compilerop to instruction stream form.
+  static void lower_op(char* dst, CompilerOp* op) {
+    RMachineOp* dst_op = (RMachineOp*) dst;
+    dst_op->header.code = op->code;
+    dst_op->header.arg = op->arg;
+
+    if (OpUtil::is_varargs(op->code)) {
+      dst_op->varargs.num_registers = op->regs.size();
+      for (size_t i = 0; i < op->regs.size(); ++i) {
+        dst_op->varargs.regs[i] = op->regs[i];
+
+        // Guard against overflowing our register size.
+        assert(dst_op->varargs.regs[i] == op->regs[i]);
+      }
+
+      assert(dst_op->varargs.num_registers == op->regs.size());
+    } else if (OpUtil::is_branch(op->code)) {
+      assert(op->regs.size() < 3);
+      dst_op->branch.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
+      dst_op->branch.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
+
+      // Label be set after the first pass has determined the offset
+      // of each instruction.
+      dst_op->branch.label = 0;
+    } else {
+      Reg_AssertLe(op->regs.size(), 4);
+      dst_op->reg.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
+      dst_op->reg.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
+      dst_op->reg.reg_3 = op->regs.size() > 2 ? op->regs[2] : -1;
+      dst_op->reg.reg_4 = op->regs.size() > 3 ? op->regs[3] : -1;
+    }
+  }
+};
+
 std::string CompilerOp::str() const {
   std::string out;
   out += StringPrintf("%s ", OpUtil::name(code));
@@ -314,7 +356,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case POP_TOP: {
-      int r1 = stack->pop_register();
+      stack->pop_register();
 //      bb->add_op(DECREF, 0, r1);
       break;
     }
@@ -756,7 +798,6 @@ public:
 };
 
 class BackwardPass: public CompilerPass {
-
 public:
   void visit_bb(BasicBlock* bb) {
     size_t n_ops = bb->code.size();
@@ -912,7 +953,6 @@ protected:
       }
     }
   }
-
 };
 
 class StoreElim: public CompilerPass, UseCounts {
@@ -959,7 +999,6 @@ public:
 
 class DeadCodeElim: public BackwardPass, UseCounts {
 private:
-
 public:
   void visit_op(CompilerOp* op) {
     // printf("visit_op %s (code = %d)\n", op->str().c_str(), op->code);
@@ -987,7 +1026,39 @@ public:
 //    Log_Info("%s", Coerce::str(counts).c_str());
     BackwardPass::visit_fn(fn);
   }
+};
 
+class RenameRegisters: public CompilerPass, UseCounts {
+private:
+  // Mapping from old -> new register names
+  boost::unordered_map<int, int> register_map_;
+public:
+  void visit_op(CompilerOp* op) {
+    for (size_t i = 0; i < op->regs.size(); ++i) {
+      op->regs[i] = register_map_[op->regs[i]];
+    }
+  }
+  void visit_fn(CompilerState* fn) {
+    this->count_uses(fn);
+    int curr = 0;
+    for (int i = 0; i < fn->num_reg; ++i) {
+      if (counts[i] != 0 || i <= (fn->num_consts + fn->num_locals)) {
+        register_map_[i] = curr++;
+      }
+    }
+
+    int min_count = 0;
+    for (int i = 0; i < fn->num_reg; ++i) {
+      if (counts[i] != 0) {
+        ++min_count;
+      }
+    }
+
+    Log_Info("Register rename: keeping %d of %d registers. (with arg+const folding: %d)", curr, fn->num_reg, min_count);
+    CompilerPass::visit_fn(fn);
+
+    fn->num_reg = curr;
+  }
 };
 
 void optimize(CompilerState* fn) {
@@ -996,49 +1067,8 @@ void optimize(CompilerState* fn) {
   CopyPropagation()(fn);
   StoreElim()(fn);
   DeadCodeElim()(fn);
-
+  RenameRegisters()(fn);
 }
-
-struct RCompilerUtil {
-  static int op_size(CompilerOp* op) {
-    if (OpUtil::is_varargs(op->code)) {
-      return sizeof(RMachineOp) + sizeof(Register) * max(0, (int) op->regs.size() - 2);
-    }
-    return sizeof(RMachineOp);
-  }
-
-  static void write_op(char* dst, CompilerOp* op) {
-    RMachineOp* dst_op = (RMachineOp*) dst;
-    dst_op->header.code = op->code;
-    dst_op->header.arg = op->arg;
-
-    if (OpUtil::is_varargs(op->code)) {
-      dst_op->varargs.num_registers = op->regs.size();
-      for (size_t i = 0; i < op->regs.size(); ++i) {
-        dst_op->varargs.regs[i] = op->regs[i];
-
-        // Guard against overflowing our register size.
-        assert(dst_op->varargs.regs[i] == op->regs[i]);
-      }
-
-      assert(dst_op->varargs.num_registers == op->regs.size());
-    } else if (OpUtil::is_branch(op->code)) {
-      assert(op->regs.size() < 3);
-      dst_op->branch.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
-      dst_op->branch.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
-
-      // Label be set after the first pass has determined the offset
-      // of each instruction.
-      dst_op->branch.label = 0;
-    } else {
-      Reg_AssertLe(op->regs.size(), 4);
-      dst_op->reg.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
-      dst_op->reg.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
-      dst_op->reg.reg_3 = op->regs.size() > 2 ? op->regs[2] : -1;
-      dst_op->reg.reg_4 = op->regs.size() > 3 ? op->regs[3] : -1;
-    }
-  }
-};
 
 void lower_register_code(CompilerState* state, std::string *out) {
 
@@ -1054,7 +1084,7 @@ void lower_register_code(CompilerState* state, std::string *out) {
 
       size_t offset = out->size();
       out->resize(out->size() + RCompilerUtil::op_size(c));
-      RCompilerUtil::write_op(&(*out)[0] + offset, c);
+      RCompilerUtil::lower_op(&(*out)[0] + offset, c);
       Log_Debug("Wrote op at offset %d, size: %d, %s", offset, RCompilerUtil::op_size(c), c->str().c_str());
       RMachineOp* rop = (RMachineOp*) (&(*out)[0] + offset);
       Reg_AssertEq(RCompilerUtil::op_size(c), RMachineOp::size(*rop));
@@ -1145,8 +1175,9 @@ RegisterCode* Compiler::compile(PyObject* func) {
 
   if (cache_.find(func) == cache_.end()) {
     try {
-      cache_[func] = compile_(func);
-      Log_Info("Compiled: (%s) %p", PyEval_GetFuncName(func), func);
+      RegisterCode* code = compile_(func);
+      cache_[func] = code;
+      Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
     } catch (RException& e) {
       Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(func));
       cache_[func] = NULL;

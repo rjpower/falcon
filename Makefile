@@ -1,5 +1,5 @@
 opt:
-	CFLAGS='-O3' python setup.py build -f -g -q
+	CFLAGS='-O3 -fno-omit-frame-pointer' python setup.py build -f -g -q
 	python setup.py develop
 
 dbg:

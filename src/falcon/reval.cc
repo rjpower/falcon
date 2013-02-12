@@ -8,12 +8,12 @@
 #include "reval.h"
 #include "rcompile.h"
 
+#ifdef FALCON_DEBUG
 static bool logging_enabled() {
   static bool _is_logging = getenv("EVAL_LOG") != NULL;
   return _is_logging;
 }
 
-#ifdef FALCON_DEBUG
 #define EVAL_LOG(...) if (logging_enabled()) { fprintf(stderr, __VA_ARGS__); fputs("\n", stderr); }
 #define CHECK_VALID(obj) { Reg_AssertGt(obj->ob_refcnt, 0); }
 #else
@@ -37,7 +37,7 @@ struct GilHelper {
 };
 
 RegisterFrame* Evaluator::frame_from_python(PyObject* obj, PyObject* args) {
-  GilHelper h;
+//  GilHelper h;
 
   if (args == NULL || !PyTuple_Check(args)) {
     throw RException(PyExc_TypeError, "Expected function argument tuple, got: %s", obj_to_str(PyObject_Type(args)));
@@ -52,8 +52,7 @@ RegisterFrame* Evaluator::frame_from_python(PyObject* obj, PyObject* args) {
   return new RegisterFrame(regcode, obj, args, NULL);
 }
 
-RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, PyObject* kw) {
-  code = func;
+RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, PyObject* kw) : code(func) {
   kw_ = kw;
   instructions = code->instructions.data();
 
@@ -65,8 +64,10 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
 
   registers = new PyObject*[func->num_registers];
 
+  const int num_registers = code->num_registers;
+
   // setup const and local register aliases.
-  for (int i = 0; i < code->num_registers; ++i) {
+  for (int i = 0; i < num_registers; ++i) {
     registers[i] = NULL;
   }
 
@@ -76,7 +77,6 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
     registers[i] = PyTuple_GET_ITEM(consts(), i) ;
     Py_INCREF(registers[i]);
   }
-
 
   int needed_args = code->code()->co_argcount;
   int offset = num_consts;
@@ -99,7 +99,6 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
                      PyEval_GetFuncName(code->function), needed_args - num_def_args, num_args);
   }
 
-
   for (int i = 0; i < needed_args; ++i) {
     if (i < num_args) {
       registers[offset] = PyTuple_GET_ITEM(args, i) ;
@@ -112,8 +111,14 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, PyObject* args, 
 }
 
 RegisterFrame::~RegisterFrame() {
-  delete [] registers;
   Py_XDECREF(call_args);
+
+  const int num_registers = code->num_registers;
+  for (int i = 0; i < num_registers; ++i) {
+    Py_XDECREF(registers[i]);
+  }
+
+  delete[] registers;
 }
 
 Evaluator::Evaluator() {
@@ -122,17 +127,6 @@ Evaluator::Evaluator() {
   total_count_ = 0;
   last_clock_ = 0;
   compiler_ = new Compiler;
-}
-
-PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
-  RegisterFrame* frame = frame_from_python(func, args);
-  if (!frame) {
-    return NULL;
-  }
-
-  PyObject* result = eval(frame);
-  delete frame;
-  return result;
 }
 
 void Evaluator::dump_status() {
@@ -164,8 +158,7 @@ struct Op {
 
 template<class SubType>
 struct Op<RegOp, SubType> {
-  f_inline
-  void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
+  f_inline void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
     RegOp op = *((RegOp*) *pc);
     EVAL_LOG("%5d: %s", state->offset(*pc), op.str().c_str());
     *pc += sizeof(RegOp);
@@ -180,8 +173,7 @@ SubType Op<RegOp, SubType>::instance;
 
 template<class SubType>
 struct Op<VarRegOp, SubType> {
-  f_inline
-  void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
+  f_inline void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
     VarRegOp *op = (VarRegOp*) (*pc);
     EVAL_LOG("%5d: %s", state->offset(*pc), op->str().c_str());
     *pc += RMachineOp::size(*op);
@@ -195,8 +187,7 @@ SubType Op<VarRegOp, SubType>::instance;
 
 template<class SubType>
 struct Op<BranchOp, SubType> {
-  f_inline
-  void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
+  f_inline void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
     BranchOp op = *((BranchOp*) *pc);
     EVAL_LOG("%5d: %s", state->offset(*pc), op.str().c_str());
     ((SubType*) this)->_eval(eval, state, op, pc, registers);
@@ -299,8 +290,7 @@ struct FloatOps {
 
 template<int OpCode, BinaryFunction ObjF, BinaryFunction IntegerF>
 struct BinaryOpWithSpecialization: public Op<RegOp, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF> > {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* r2 = registers[op.reg_2];
     PyObject* r3 = NULL;
@@ -315,8 +305,7 @@ struct BinaryOpWithSpecialization: public Op<RegOp, BinaryOpWithSpecialization<O
 
 template<int OpCode, BinaryFunction ObjF>
 struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF> > {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* r2 = registers[op.reg_2];
     CHECK_VALID(r1);
@@ -330,8 +319,7 @@ struct BinaryOp: public Op<RegOp, BinaryOp<OpCode, ObjF> > {
 
 template<int OpCode, UnaryFunction ObjF>
 struct UnaryOp: public Op<RegOp, UnaryOp<OpCode, ObjF> > {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     CHECK_VALID(r1);
     PyObject* r2 = ObjF(r1);
@@ -342,8 +330,7 @@ struct UnaryOp: public Op<RegOp, UnaryOp<OpCode, ObjF> > {
 };
 
 struct UnaryNot: public Op<RegOp, UnaryNot> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     PyObject* res = PyObject_IsTrue(r1) ? Py_False : Py_True;
     Py_INCREF(res);
@@ -353,8 +340,7 @@ struct UnaryNot: public Op<RegOp, UnaryNot> {
 };
 
 struct BinaryPower: public Op<RegOp, BinaryPower> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg_2];
@@ -367,8 +353,7 @@ struct BinaryPower: public Op<RegOp, BinaryPower> {
 };
 
 struct BinarySubscr: public Op<RegOp, BinarySubscr> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* list = registers[op.reg_1];
     PyObject* key = registers[op.reg_2];
     CHECK_VALID(list);
@@ -397,8 +382,7 @@ struct BinarySubscr: public Op<RegOp, BinarySubscr> {
 };
 
 struct InplacePower: public Op<RegOp, InplacePower> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg_2];
@@ -411,8 +395,7 @@ struct InplacePower: public Op<RegOp, InplacePower> {
 };
 
 struct CompareOp: public Op<RegOp, CompareOp> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg_2];
@@ -436,24 +419,21 @@ struct CompareOp: public Op<RegOp, CompareOp> {
 };
 
 struct IncRef: public Op<RegOp, IncRef> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     CHECK_VALID(registers[op.reg_1]);
     Py_INCREF(registers[op.reg_1]);
   }
 };
 
 struct DecRef: public Op<RegOp, DecRef> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     CHECK_VALID(registers[op.reg_1]);
     Py_DECREF(registers[op.reg_1]);
   }
 };
 
 struct LoadLocals: public Op<RegOp, LoadLocals> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     Py_XDECREF(registers[op.reg_1]);
     Py_INCREF(state->locals());
     registers[op.reg_1] = state->locals();
@@ -461,8 +441,7 @@ struct LoadLocals: public Op<RegOp, LoadLocals> {
 };
 
 struct LoadGlobal: public Op<RegOp, LoadGlobal> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = PyDict_GetItem(state->globals(), r1);
     if (r2 == NULL) {
@@ -479,8 +458,7 @@ struct LoadGlobal: public Op<RegOp, LoadGlobal> {
 };
 
 struct LoadName: public Op<RegOp, LoadName> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = PyDict_GetItem(state->locals(), r1);
     if (r2 == NULL) {
@@ -500,8 +478,7 @@ struct LoadName: public Op<RegOp, LoadName> {
 };
 
 struct LoadFast: public Op<RegOp, LoadFast> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     Py_INCREF(registers[op.reg_1]);
     Py_XDECREF(registers[op.reg_2]);
     CHECK_VALID(registers[op.reg_1]);
@@ -510,8 +487,7 @@ struct LoadFast: public Op<RegOp, LoadFast> {
 };
 
 struct StoreFast: public Op<RegOp, StoreFast> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     Py_XDECREF(registers[op.reg_2]);
     Py_INCREF(registers[op.reg_1]);
     CHECK_VALID(registers[op.reg_1]);
@@ -520,8 +496,7 @@ struct StoreFast: public Op<RegOp, StoreFast> {
 };
 
 struct StoreName: public Op<RegOp, StoreName> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = registers[op.reg_1];
     CHECK_VALID(r1);
@@ -531,8 +506,7 @@ struct StoreName: public Op<RegOp, StoreName> {
 };
 
 struct StoreAttr: public Op<RegOp, StoreAttr> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* t = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* key = registers[op.reg_1];
     PyObject* value = registers[op.reg_2];
@@ -544,8 +518,7 @@ struct StoreAttr: public Op<RegOp, StoreAttr> {
 };
 
 struct StoreSubscr: public Op<RegOp, StoreSubscr> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* key = registers[op.reg_1];
     PyObject* list = registers[op.reg_2];
     PyObject* value = registers[op.reg_3];
@@ -557,8 +530,7 @@ struct StoreSubscr: public Op<RegOp, StoreSubscr> {
 };
 
 struct ConstIndex: public Op<RegOp, ConstIndex> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* list = registers[op.reg_1];
     uint8_t key = op.arg;
     Py_XDECREF(registers[op.reg_2]);
@@ -571,8 +543,7 @@ struct ConstIndex: public Op<RegOp, ConstIndex> {
 };
 
 struct LoadAttr: public Op<RegOp, LoadAttr> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* obj = registers[op.reg_1];
     PyObject* name = PyTuple_GET_ITEM(state->names(), op.arg) ;
     Py_XDECREF(registers[op.reg_2]);
@@ -583,8 +554,7 @@ struct LoadAttr: public Op<RegOp, LoadAttr> {
 };
 
 struct CallFunction: public Op<VarRegOp, CallFunction> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame* state, VarRegOp *op, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame* state, VarRegOp *op, PyObject** registers) {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
@@ -601,6 +571,7 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
     PyObject* args = state->call_args;
     for (i = 0; i < na; ++i) {
       CHECK_VALID(registers[op->regs[i]]);
+      Py_INCREF(registers[op->regs[i]]);
       PyTuple_SET_ITEM(args, i, registers[op->regs[i]]);
     }
 
@@ -610,6 +581,8 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
       for (i = na; i < nk * 2; i += 2) {
         CHECK_VALID(registers[op->regs[i]]);
         CHECK_VALID(registers[op->regs[i+i]]);
+        Py_INCREF(registers[op->regs[i]]);
+        Py_INCREF(registers[op->regs[i+1]]);
         PyDict_SetItem(kwdict, registers[op->regs[i]], registers[op->regs[i + 1]]);
       }
     }
@@ -636,8 +609,7 @@ struct CallFunction: public Op<VarRegOp, CallFunction> {
 };
 
 struct GetIter: public Op<RegOp, GetIter> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* res = PyObject_GetIter(registers[op.reg_1]);
     Py_XDECREF(registers[op.reg_2]);
     registers[op.reg_2] = res;
@@ -645,8 +617,7 @@ struct GetIter: public Op<RegOp, GetIter> {
 };
 
 struct ForIter: public Op<BranchOp, ForIter> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
     CHECK_VALID(registers[op.reg_1]);
     PyObject* r1 = PyIter_Next(registers[op.reg_1]);
     if (r1) {
@@ -661,8 +632,7 @@ struct ForIter: public Op<BranchOp, ForIter> {
 };
 
 struct JumpIfFalseOrPop: public Op<BranchOp, JumpIfFalseOrPop> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
     PyObject *r1 = registers[op.reg_1];
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
 //      EVAL_LOG("Jumping: %s -> %d", obj_to_str(r1), op.label);
@@ -675,8 +645,7 @@ struct JumpIfFalseOrPop: public Op<BranchOp, JumpIfFalseOrPop> {
 };
 
 struct JumpIfTrueOrPop: public Op<BranchOp, JumpIfTrueOrPop> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
     PyObject* r1 = registers[op.reg_1];
     if (r1 == Py_True || (PyObject_IsTrue(r1) == 1)) {
       *pc = state->instructions + op.label;
@@ -688,32 +657,33 @@ struct JumpIfTrueOrPop: public Op<BranchOp, JumpIfTrueOrPop> {
 };
 
 struct JumpAbsolute: public Op<BranchOp, JumpAbsolute> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc, PyObject** registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = state->instructions + op.label;
   }
 };
 
-struct ReturnValue: public Op<RegOp, ReturnValue> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+// Evaluation of RETURN_VALUE is special.  g++ exceptions are excrutiatingly slow, so we
+// can't use the exception mechanism to jump to our exit point.  Instead, we return a value
+// here and jump to the exit of our frame.
+struct ReturnValue {
+  static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
+    RegOp op = *((RegOp*) *pc);
+    EVAL_LOG("%5d: %s", state->offset(*pc), op.str().c_str());
     PyObject* result = registers[op.reg_1];
     Py_INCREF(result);
-    throw result;
+    return result;
   }
 };
 
 struct Nop: public Op<RegOp, Nop> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
 
   }
 };
 
 struct BuildTuple: public Op<VarRegOp, BuildTuple> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame* state, VarRegOp *op, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame* state, VarRegOp *op, PyObject** registers) {
     int i;
     PyObject* t = PyTuple_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
@@ -725,8 +695,7 @@ struct BuildTuple: public Op<VarRegOp, BuildTuple> {
 };
 
 struct BuildList: public Op<VarRegOp, BuildList> {
-  f_inline
-  void _eval(Evaluator* eval, RegisterFrame* state, VarRegOp *op, PyObject** registers) {
+  f_inline void _eval(Evaluator* eval, RegisterFrame* state, VarRegOp *op, PyObject** registers) {
     int i;
     PyObject* t = PyList_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
@@ -737,8 +706,7 @@ struct BuildList: public Op<VarRegOp, BuildList> {
 };
 
 struct PrintItem: public Op<RegOp, PrintItem> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* v = registers[op.reg_1];
     PyObject* w = op.reg_2 != kBadRegister ? registers[op.reg_2] : PySys_GetObject((char*) "stdout");
 
@@ -769,8 +737,7 @@ struct PrintItem: public Op<RegOp, PrintItem> {
 };
 
 struct PrintNewline: public Op<RegOp, PrintNewline> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* w = op.reg_2 != kBadRegister ? registers[op.reg_2] : PySys_GetObject((char*) "stdout");
     int err = PyFile_WriteString("\n", w);
     if (err == 0) PyFile_SoftSpace(w, 0);
@@ -778,8 +745,7 @@ struct PrintNewline: public Op<RegOp, PrintNewline> {
 };
 
 struct ListAppend: public Op<RegOp, ListAppend> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyList_Append(registers[op.reg_1], registers[op.reg_2]);
   }
 };
@@ -805,8 +771,7 @@ static PyObject * apply_slice(PyObject *u, PyObject *v, PyObject *w) {
 }
 
 struct Slice: public Op<RegOp, Slice> {
-  f_inline
-  void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
+  f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp op, PyObject** registers) {
     PyObject* list = registers[op.reg_1];
     PyObject* left = op.reg_2 != kBadRegister ? registers[op.reg_2] : NULL;
     PyObject* right = op.reg_3 != kBadRegister ? registers[op.reg_3] : NULL;
@@ -859,10 +824,11 @@ PyObject * Evaluator::eval(RegisterFrame* frame) {
 
   register PyObject** registers = frame->registers;
   const char* pc = frame->instructions;
+  PyObject* result = Py_None;
 
-  last_clock_ = rdtsc();
+//  last_clock_ = rdtsc();
 
-const void* const labels[] = {
+static const void* const labels[] = {
   &&op_STOP_CODE,
   &&op_POP_TOP,
   &&op_ROT_TWO,
@@ -1074,7 +1040,11 @@ DEFINE_OP(CONST_INDEX, ConstIndex);
 
 DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);
-DEFINE_OP(RETURN_VALUE, ReturnValue);
+
+op_RETURN_VALUE: {
+  result = ReturnValue::eval(this, frame, &pc, registers);
+  goto done;
+}
 
 DEFINE_OP(BUILD_TUPLE, BuildTuple);
 DEFINE_OP(BUILD_LIST, BuildList);
@@ -1155,15 +1125,13 @@ op_BADCODE: {
       EVAL_LOG("Jump to invalid opcode!?");
 throw RException(PyExc_SystemError, "Invalid jump.");
 }
-} catch (PyObject* result) {
-  EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
-return result;
 } catch (RException &error) {
   EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
 Reg_Assert(error.exception != NULL, "Error without exception set.");
 error.set_python_err();
   return NULL;
 }
-Log_Fatal("Shouldn't reach here.");
-return NULL;
+done:
+EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
+return result;
 }

@@ -9,9 +9,9 @@
 #if defined(SWIG)
 #define f_inline
 #elif defined(FALCON_DEBUG)
-#define f_inline
+#define f_inline __attribute__((noinline))
 #else
-#define f_inline __attribute__((always_inline)) inline
+#define f_inline __attribute__((always_inline))
 #endif
 
 static inline const char* obj_to_str(PyObject* o) {
