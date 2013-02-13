@@ -6,17 +6,21 @@ import time
 import unittest 
 import traceback
 
-try: 
-  import falcon
-except:
-  print >>sys.stderr, 'Failed to import falcon.'
-  traceback.print_exc()
-  falcon = None
-
+import logging
 logging.basicConfig(
     format='%(asctime)s %(filename)s:%(funcName)s %(message)s',
     level=logging.INFO, 
     stream=sys.stderr)
+
+def function_name(f):
+  if sys.version_info.major >= 3: return f.__name__
+  return f.func_name
+
+try: 
+  import falcon
+except:
+  logging.warn('Failed to import falcon.', exc_info=1)
+  falcon = None
 
 class TimedTest(unittest.TestCase):
   def timed(self, function, *args, **kw):
@@ -31,7 +35,7 @@ class TimedTest(unittest.TestCase):
       evaluator = falcon.Evaluator()
       frame = evaluator.frame_from_python(function, args)
       if not frame:
-        raise Exception, 'Failed to compile frame.' 
+        raise Exception('Failed to compile frame.')
     
     for i in range(repeat):
       random.seed(10)
@@ -47,7 +51,7 @@ class TimedTest(unittest.TestCase):
       else:
         f_time = 0
       
-      logging.info('%s : Python: %.3f, Falcon: %.3f' % (function.func_name, py_time, f_time))
+      logging.info('%s : Python: %.3f, Falcon: %.3f' % (function_name(function), py_time, f_time))
       if falcon:
           if isinstance(py_result, list):
               # long lists seem to take a bizarrely long time for assertEqual

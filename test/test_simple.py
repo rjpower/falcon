@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import dis
-import logging
 import opcode
 import sys
 import time

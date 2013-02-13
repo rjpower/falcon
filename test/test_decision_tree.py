@@ -50,8 +50,8 @@ def predict_labels(feature_list, tree):
   return [tree.predict(v) for v in feature_list]
 
 def gen_random_tuples(n_items, n_features):
-  return [tuple([random.random() for _ in xrange(n_features)]) 
-          for _ in xrange(n_items)]
+  return [tuple([random.random() for _ in range(n_features)]) 
+          for _ in range(n_items)]
 
 class TestDecisionTree(timed_test.TimedTest):
 #  def test_gen_features(self):
