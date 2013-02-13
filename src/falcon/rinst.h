@@ -29,7 +29,7 @@ typedef uint8_t Register;
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
-static const uint8_t kBadRegister = (uint8_t) -1;
+static const uint8_t kInvalidRegister = (uint8_t) -1;
 
 struct RegisterCode {
   int16_t num_registers;
@@ -68,113 +68,68 @@ struct OpHeader {
 struct BranchOp {
   uint8_t code;
   uint8_t arg;
-  Register reg_1;
-  Register reg_2;
   JumpLoc label;
+  Register reg[2];
 
   std::string str() const {
     StringWriter w;
     w.printf("%s (", OpUtil::name(code));
-    if (reg_1 != kBadRegister) {
-      w.printf("%d, ", reg_1);
+    if (reg[0] != kInvalidRegister) {
+      w.printf("%d, ", reg[0]);
     }
-    if (reg_2 != kBadRegister) {
-      w.printf("%d, ", reg_2);
+    if (reg[1] != kInvalidRegister) {
+      w.printf("%d, ", reg[1]);
     }
     w.printf(")");
     w.printf(" -> [%d]", label);
     return w.str();
   }
+
+  f_inline size_t size() const {
+    return sizeof(*this);
+  }
 };
 
+template <int num_registers>
 struct RegOp {
   uint8_t code;
   uint8_t arg;
-  Register reg_1;
-  Register reg_2;
-  Register reg_3;
-  Register reg_4;
+  Register reg[num_registers];
 
   std::string str() const {
     StringWriter w;
     w.printf("%s[%d] (", OpUtil::name(code), arg);
-    if (reg_1 != kBadRegister) {
-      w.printf("%d, ", reg_1);
-    }
-    if (reg_2 != kBadRegister) {
-      w.printf("%d, ", reg_2);
-    }
-    if (reg_3 != kBadRegister) {
-      w.printf("%d, ", reg_3);
-    }
-    if (reg_4 != kBadRegister) {
-      w.printf("%d, ", reg_4);
+    for (int i = 0; i < num_registers; ++i) {
+      w.printf("%d,", reg[i]);
     }
     w.printf(")");
     return w.str();
   }
+
+  f_inline size_t size() const {
+    return sizeof(*this);
+  }
 };
 
-// A variable size op is at least 8 bytes, but can contain
-// addition registers off the end of the structure.
+// A variable size can contain any number of registers off the end
+// of the structure.
 struct VarRegOp {
   uint8_t code;
   uint8_t arg;
   uint8_t num_registers;
-  Register regs[2];
+  Register regs[0];
 
   std::string str() const {
     StringWriter w;
     w.printf("%s[%d] (%s)", OpUtil::name(code), arg, StrUtil::join(&regs[0], &regs[num_registers]).c_str());
     return w.str();
   }
-};
 
-struct RMachineOp {
-  union {
-    OpHeader header;
-    BranchOp branch;
-    RegOp reg;
-    VarRegOp varargs;
-  };
-
-  inline uint8_t code() {
-    return header.code;
-  }
-
-  inline uint8_t arg() {
-    return header.arg;
-  }
-
-  inline int size() {
-    return size(*this);
-  }
-
-  static f_inline Py_ssize_t size(const VarRegOp& op) {
-    return sizeof(RMachineOp) + sizeof(Register) * std::max(0, op.num_registers - 2);
-  }
-
-  static f_inline Py_ssize_t size(const RegOp& op) {
-    return sizeof(RMachineOp);
-  }
-
-  static f_inline Py_ssize_t size(const BranchOp& op) {
-    return sizeof(RMachineOp);
-  }
-
-  static f_inline Py_ssize_t size(const RMachineOp& op) {
-    assert(sizeof(RMachineOp) == 8);
-    assert(sizeof(VarRegOp) == sizeof(RMachineOp));
-
-    if (OpUtil::is_varargs(op.header.code)) {
-      return size(op.varargs);
-    }
-    if (OpUtil::is_branch(op.header.code)) {
-      return sizeof(RMachineOp);
-    }
-    return sizeof(RMachineOp);
+  f_inline size_t size() const {
+    return sizeof(VarRegOp) + num_registers * sizeof(Register);
   }
 };
+
 #pragma pack(pop)
 
 #endif /* RINST_H_ */

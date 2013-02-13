@@ -31,41 +31,55 @@ using namespace std;
 struct RCompilerUtil {
   static int op_size(CompilerOp* op) {
     if (OpUtil::is_varargs(op->code)) {
-      return sizeof(RMachineOp) + sizeof(Register) * max(0, (int) op->regs.size() - 2);
+      return sizeof(VarRegOp) + sizeof(Register) * op->regs.size();
+    } else if (OpUtil::is_branch(op->code)) {
+      return sizeof(BranchOp);
+    } else if (op->regs.size() == 0) {
+      return sizeof(RegOp<0> );
+    } else if (op->regs.size() == 1) {
+      return sizeof(RegOp<1> );
+    } else if (op->regs.size() == 2) {
+      return sizeof(RegOp<2> );
+    } else if (op->regs.size() == 3) {
+      return sizeof(RegOp<3> );
+    } else if (op->regs.size() == 4) {
+      return sizeof(RegOp<4> );
     }
-    return sizeof(RMachineOp);
+    throw RException(PyExc_AssertionError, "Invalid op type.");
+    return -1;
   }
 
   // Lower an operation from compilerop to instruction stream form.
-  static void lower_op(char* dst, CompilerOp* op) {
-    RMachineOp* dst_op = (RMachineOp*) dst;
-    dst_op->header.code = op->code;
-    dst_op->header.arg = op->arg;
+  static void lower_op(char* dst, CompilerOp* src) {
+    OpHeader* header = (OpHeader*) dst;
+    header->code = src->code;
+    header->arg = src->arg;
 
-    if (OpUtil::is_varargs(op->code)) {
-      dst_op->varargs.num_registers = op->regs.size();
-      for (size_t i = 0; i < op->regs.size(); ++i) {
-        dst_op->varargs.regs[i] = op->regs[i];
+    if (OpUtil::is_varargs(src->code)) {
+      VarRegOp* op = (VarRegOp*) dst;
+      op->num_registers = src->regs.size();
+      for (size_t i = 0; i < src->regs.size(); ++i) {
+        op->regs[i] = src->regs[i];
 
         // Guard against overflowing our register size.
-        assert(dst_op->varargs.regs[i] == op->regs[i]);
+        Reg_AssertEq(op->regs[i], src->regs[i]);
       }
-
-      assert(dst_op->varargs.num_registers == op->regs.size());
-    } else if (OpUtil::is_branch(op->code)) {
-      assert(op->regs.size() < 3);
-      dst_op->branch.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
-      dst_op->branch.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
+      Reg_AssertEq(op->num_registers, src->regs.size());
+    } else if (OpUtil::is_branch(src->code)) {
+      BranchOp* op = (BranchOp*) dst;
+      assert(src->regs.size() < 3);
+      op->reg[0] = src->regs.size() > 0 ? src->regs[0] : -1;
+      op->reg[1] = src->regs.size() > 1 ? src->regs[1] : -1;
 
       // Label be set after the first pass has determined the offset
       // of each instruction.
-      dst_op->branch.label = 0;
+      op->label = 0;
     } else {
-      Reg_AssertLe(op->regs.size(), 4);
-      dst_op->reg.reg_1 = op->regs.size() > 0 ? op->regs[0] : -1;
-      dst_op->reg.reg_2 = op->regs.size() > 1 ? op->regs[1] : -1;
-      dst_op->reg.reg_3 = op->regs.size() > 2 ? op->regs[2] : -1;
-      dst_op->reg.reg_4 = op->regs.size() > 3 ? op->regs[3] : -1;
+      Reg_AssertLe(src->regs.size(), 4);
+      RegOp<0>* op = (RegOp<0>*) dst;
+      for (size_t i = 0; i < src->regs.size(); ++i) {
+        op->reg[i] = src->regs[i];
+      }
     }
   }
 };
@@ -576,7 +590,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case PRINT_ITEM: {
       int r1 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1);
+      bb->add_op(opcode, oparg, r1, -1);
       break;
     }
     case PRINT_ITEM_TO: {
@@ -591,7 +605,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case PRINT_NEWLINE: {
-      bb->add_op(opcode, oparg);
+      bb->add_op(opcode, oparg, -1);
       break;
     }
     case BUILD_LIST:
@@ -1068,7 +1082,7 @@ public:
     }
 
     CompilerPass::visit_fn(fn);
-    Log_Info("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)", 
+    Log_Info("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)",
              curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
     fn->num_reg = curr;
   }
@@ -1101,8 +1115,6 @@ void lower_register_code(CompilerState* state, std::string *out) {
       out->resize(out->size() + RCompilerUtil::op_size(c));
       RCompilerUtil::lower_op(&(*out)[0] + offset, c);
       Log_Debug("Wrote op at offset %d, size: %d, %s", offset, RCompilerUtil::op_size(c), c->str().c_str());
-      RMachineOp* rop = (RMachineOp*) (&(*out)[0] + offset);
-      Reg_AssertEq(RCompilerUtil::op_size(c), RMachineOp::size(*rop));
     }
   }
 
@@ -1111,29 +1123,29 @@ void lower_register_code(CompilerState* state, std::string *out) {
   int pos = 0;
   for (size_t i = 0; i < state->bbs.size(); ++i) {
     BasicBlock* bb = state->bbs[i];
-    RMachineOp* op = NULL;
+    OpHeader* op = NULL;
 
     // Skip to the end of the basic block.
     for (size_t j = 0; j < bb->code.size(); ++j) {
-      op = (RMachineOp*) (out->data() + pos);
-      Log_Debug("Checking op %s at offset %d.", OpUtil::name(op->code()), pos);
+      op = (OpHeader*) (out->data() + pos);
+      Log_Debug("Checking op %s at offset %d.", OpUtil::name(op->code), pos);
 
-      Reg_AssertEq(op->code(), bb->code[j]->code);
-      if (OpUtil::has_arg(op->code())) {
-        Reg_AssertEq(op->arg(), bb->code[j]->arg);
+      Reg_AssertEq(op->code, bb->code[j]->code);
+      if (OpUtil::has_arg(op->code)) {
+        Reg_AssertEq(op->arg, bb->code[j]->arg);
       } else {
-        Reg_Assert(op->arg() == 0 || OpUtil::is_branch(op->code()), "Argument to non-argument op: %s, %d",
-                   OpUtil::name(op->code()), op->arg());
+        Reg_Assert(op->arg == 0 || OpUtil::is_branch(op->code), "Argument to non-argument op: %s, %d",
+                   OpUtil::name(op->code), op->arg);
       }
-      pos += RMachineOp::size(*op);
+      pos += RCompilerUtil::op_size(bb->code[j]);
     }
 
-    if (OpUtil::is_branch(op->code()) && op->code() != RETURN_VALUE) {
+    if (OpUtil::is_branch(op->code) && op->code != RETURN_VALUE) {
       if (bb->exits.size() == 1) {
         BasicBlock& jmp = *bb->exits[0];
-        op->branch.label = jmp.reg_offset;
+        ((BranchOp*) op)->label = jmp.reg_offset;
         Reg_AssertGt(jmp.reg_offset, 0);
-        Reg_AssertEq(op->branch.label, jmp.reg_offset);
+        Reg_AssertEq(((BranchOp*)op)->label, jmp.reg_offset);
       } else {
         // One exit is the fall-through to the next block.
         BasicBlock& a = *bb->exits[0];
@@ -1144,8 +1156,8 @@ void lower_register_code(CompilerState* state, std::string *out) {
         BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
 //        Log_Info("%d, %d", a.idx, b.idx);
         Reg_AssertGt(jmp.reg_offset, 0);
-        op->branch.label = jmp.reg_offset;
-        Reg_AssertEq(op->branch.label, jmp.reg_offset);
+        ((BranchOp*) op)->label = jmp.reg_offset;
+        Reg_AssertEq(((BranchOp*)op)->label, jmp.reg_offset);
       }
     }
   }
@@ -1195,6 +1207,8 @@ RegisterCode* Compiler::compile(PyObject* func) {
       Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
     } catch (RException& e) {
       Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(func));
+      e.set_python_err();
+      PyErr_Print();
       cache_[func] = NULL;
     }
   }
