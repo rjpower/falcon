@@ -80,6 +80,7 @@ struct RCompilerUtil {
       for (size_t i = 0; i < src->regs.size(); ++i) {
         op->reg[i] = src->regs[i];
       }
+      op->hint = kInvalidHint;
     }
   }
 };
@@ -244,7 +245,6 @@ CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
 }
 
 void RegisterStack::push_frame(int target) {
-  assert(num_frames < REG_MAX_FRAMES);
   Frame f;
   f.stack_pos = regs.size();
   f.target = target;
@@ -252,7 +252,6 @@ void RegisterStack::push_frame(int target) {
 }
 
 Frame RegisterStack::pop_frame() {
-  assert(num_frames > 0);
   Frame f = frames.back();
   frames.pop_back();
   regs.resize(f.stack_pos);

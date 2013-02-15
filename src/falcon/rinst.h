@@ -6,6 +6,23 @@
 #include "oputil.h"
 #include "util.h"
 
+// This file defines the format used by the register evalulator.
+//
+// Operation types:
+//
+// There are 3 basic operatoin types: branch, register and varargs.
+//
+// The register form is used by most operations and is templatized
+// on the number of registers used by the operation.
+//
+// Register layout:
+//
+// Each function call pushes a new set of registers for evaluation.
+//
+// The first portion of the register file is aliased to the function
+// locals and consts.  This is followed by general registers.
+// [0..#consts][0..#locals][general registers]
+
 #if defined(SWIG)
 #define f_inline
 #elif defined(FALCON_DEBUG)
@@ -18,18 +35,19 @@ static inline const char* obj_to_str(PyObject* o) {
   return PyString_AsString(PyObject_Str(o));
 }
 
-// Register layout --
-//
-// Each function call pushes a new set of registers for evaluation.
-//
-// The first portion of the register file is aliased to the function
-// locals and consts.  This is followed by general registers.
-// [0..#consts][0..#locals][general registers]
 typedef uint8_t Register;
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
 static const uint8_t kInvalidRegister = (uint8_t) -1;
+
+typedef uint16_t HintOffset;
+static const uint16_t kMaxHints = 1024;
+static const uint16_t kInvalidHint = kMaxHints;
+
+static inline size_t hint_offset(void* obj, void* name) {
+  return ((size_t(obj) ^ size_t(name)) >> 4) % kMaxHints;
+}
 
 struct RegisterCode {
   int16_t num_registers;
@@ -38,11 +56,11 @@ struct RegisterCode {
   int16_t mapped_registers :1;
   int16_t reserved :14;
 
-  // The function this code is derived from.
+  // The Python function object this
   PyObject* function;
 
   PyCodeObject* code() const {
-    return (PyCodeObject*) PyFunction_GET_CODE(function);
+    return (PyCodeObject*) PyFunction_GET_CODE(function) ;
   }
 
   PyObject* names() const {
@@ -90,10 +108,15 @@ struct BranchOp {
   }
 };
 
-template <int num_registers>
+template<int num_registers>
 struct RegOp {
   uint8_t code;
   uint8_t arg;
+
+  // The hint field is used by certain operations to cache information
+  // at runtime.  It is default initialized to kInvalidHint;
+  HintOffset hint;
+
   Register reg[num_registers];
 
   std::string str() const {

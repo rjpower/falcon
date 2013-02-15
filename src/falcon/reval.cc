@@ -52,7 +52,8 @@ struct RefHelper {
 
 RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector* args, const ObjVector* kw) :
     code(func) {
-  instructions = code->instructions.data();
+  instructions_ = code->instructions.data();
+  current_hint = -1;
 
   globals_ = PyFunction_GetGlobals(func->function);
   builtins_ = PyEval_GetBuiltins();
@@ -79,7 +80,7 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector*
   int needed_args = code->code()->co_argcount;
   int offset = num_consts;
   if (PyMethod_Check(obj)) {
-    PyObject* klass = PyMethod_GET_CLASS(obj);
+//    PyObject* klass = PyMethod_GET_CLASS(obj);
     PyObject* self = PyMethod_GET_SELF(obj);
 
     Reg_Assert(self != NULL, "Method call without a bound self.");
@@ -122,6 +123,11 @@ Evaluator::Evaluator() {
   total_count_ = 0;
   last_clock_ = 0;
   compiler_ = new Compiler;
+  bzero(hints, sizeof(Hint) * kMaxHints);
+}
+
+Evaluator::~Evaluator() {
+  delete compiler_;
 }
 
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
@@ -181,7 +187,7 @@ void Evaluator::collect_info(int opcode) {
 template<class OpType, class SubType>
 struct RegOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
-    OpType op = *((OpType*) *pc);
+    OpType& op = *((OpType*) *pc);
     EVAL_LOG("%5d: %s", state->offset(*pc), op.str().c_str());
     *pc += op.size();
     SubType::_eval(eval, state, op, registers);
@@ -201,7 +207,7 @@ struct VarArgsOpImpl {
 template<class SubType>
 struct BranchOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
-    BranchOp op = *((BranchOp*) *pc);
+    BranchOp& op = *((BranchOp*) *pc);
     EVAL_LOG("%5d: %s", state->offset(*pc), op.str().c_str());
     SubType::_eval(eval, state, op, pc, registers);
   }
@@ -298,7 +304,7 @@ struct FloatOps {
 
 template<int OpCode, BinaryFunction ObjF, BinaryFunction IntegerF>
 struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF> > {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     PyObject* r2 = registers[op.reg[1]];
     PyObject* r3 = NULL;
@@ -313,7 +319,7 @@ struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecia
 
 template<int OpCode, BinaryFunction ObjF>
 struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     PyObject* r2 = registers[op.reg[1]];
     CHECK_VALID(r1);
@@ -327,7 +333,7 @@ struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
 
 template<int OpCode, UnaryFunction ObjF>
 struct UnaryOp: public RegOpImpl<RegOp<2>, UnaryOp<OpCode, ObjF> > {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     CHECK_VALID(r1);
     PyObject* r2 = ObjF(r1);
@@ -338,7 +344,7 @@ struct UnaryOp: public RegOpImpl<RegOp<2>, UnaryOp<OpCode, ObjF> > {
 };
 
 struct UnaryNot: public RegOpImpl<RegOp<2>, UnaryNot> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     PyObject* res = PyObject_IsTrue(r1) ? Py_False : Py_True;
     Py_INCREF(res);
@@ -348,7 +354,7 @@ struct UnaryNot: public RegOpImpl<RegOp<2>, UnaryNot> {
 };
 
 struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg[1]];
@@ -361,7 +367,7 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
 };
 
 struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* list = registers[op.reg[0]];
     PyObject* key = registers[op.reg[1]];
     CHECK_VALID(list);
@@ -390,7 +396,7 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
 };
 
 struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg[1]];
@@ -403,7 +409,7 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
 };
 
 struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg[1]];
@@ -427,21 +433,21 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
 };
 
 struct IncRef: public RegOpImpl<RegOp<1>, IncRef> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     CHECK_VALID(registers[op.reg[0]]);
     Py_INCREF(registers[op.reg[0]]);
   }
 };
 
 struct DecRef: public RegOpImpl<RegOp<1>, DecRef> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     CHECK_VALID(registers[op.reg[0]]);
     Py_DECREF(registers[op.reg[0]]);
   }
 };
 
 struct LoadLocals: public RegOpImpl<RegOp<1>, LoadLocals> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     Py_XDECREF(registers[op.reg[0]]);
     Py_INCREF(state->locals());
     registers[op.reg[0]] = state->locals();
@@ -449,7 +455,7 @@ struct LoadLocals: public RegOpImpl<RegOp<1>, LoadLocals> {
 };
 
 struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = PyDict_GetItem(state->globals(), r1);
     if (r2 == NULL) {
@@ -466,7 +472,7 @@ struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
 };
 
 struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = PyDict_GetItem(state->locals(), r1);
     if (r2 == NULL) {
@@ -486,7 +492,7 @@ struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
 };
 
 struct LoadFast: public RegOpImpl<RegOp<2>, LoadFast> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     Py_INCREF(registers[op.reg[0]]);
     Py_XDECREF(registers[op.reg[1]]);
     CHECK_VALID(registers[op.reg[0]]);
@@ -495,7 +501,7 @@ struct LoadFast: public RegOpImpl<RegOp<2>, LoadFast> {
 };
 
 struct StoreFast: public RegOpImpl<RegOp<2>, StoreFast> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     Py_XDECREF(registers[op.reg[1]]);
     Py_INCREF(registers[op.reg[0]]);
     CHECK_VALID(registers[op.reg[0]]);
@@ -504,7 +510,7 @@ struct StoreFast: public RegOpImpl<RegOp<2>, StoreFast> {
 };
 
 struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* r2 = registers[op.reg[0]];
     CHECK_VALID(r1);
@@ -514,7 +520,7 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
 };
 
 struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* t = PyTuple_GET_ITEM(state->names(), op.arg) ;
     PyObject* key = registers[op.reg[0]];
     PyObject* value = registers[op.reg[1]];
@@ -526,7 +532,7 @@ struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
 };
 
 struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<3>& op, PyObject** registers) {
     PyObject* key = registers[op.reg[0]];
     PyObject* list = registers[op.reg[1]];
     PyObject* value = registers[op.reg[2]];
@@ -538,7 +544,7 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
 };
 
 struct ConstIndex: public RegOpImpl<RegOp<2>, ConstIndex> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* list = registers[op.reg[0]];
     uint8_t key = op.arg;
     if (op.reg[1] == kInvalidRegister) {
@@ -553,12 +559,119 @@ struct ConstIndex: public RegOpImpl<RegOp<2>, ConstIndex> {
   }
 };
 
+static PyObject* obj_getdictptr(PyObject* obj, PyTypeObject* type) {
+  Py_ssize_t dictoffset;
+  PyObject **dictptr;
+
+  dictoffset = type->tp_dictoffset;
+  if (dictoffset != 0) {
+    if (dictoffset < 0) {
+      Py_ssize_t tsize;
+      size_t size;
+
+      tsize = ((PyVarObject *) obj)->ob_size;
+      if (tsize < 0) tsize = -tsize;
+      size = _PyObject_VAR_SIZE(type, tsize);
+
+      dictoffset += (long) size;
+      assert(dictoffset > 0);
+      assert(dictoffset % SIZEOF_VOID_P == 0);
+    }
+    dictptr = (PyObject **) ((char *) obj + dictoffset);
+    return *dictptr;
+  }
+  return NULL;
+}
+
+// LOAD_ATTR is common enough to warrant inlining some common code.
+// Most of this is taken from _PyObject_GenericGetAttrWithDict
+static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyObject *name, PyObject *dict) {
+  PyTypeObject *type = Py_TYPE(obj);
+  PyObject *res = NULL;
+
+  if (!PyString_Check(name)) {
+    throw RException(PyExc_SystemError,
+                     StringPrintf("attribute name must be string, not '%.200s'", Py_TYPE(name) ->tp_name));
+  }
+
+  if (type->tp_dict == NULL) {
+    if (PyType_Ready(type) < 0) {
+      throw RException();
+    }
+  }
+
+  static int op_hits = 0;
+  static int key_hits = 0;
+  static int count = 0;
+  ++count;
+  if (op.hint != kInvalidHint) {
+    ++op_hits;
+  }
+
+  EVERY_N(100000, Log_Info("%d/%d/%d", key_hits, op_hits, count));
+
+  if (op.hint != kInvalidHint) {
+    Hint h = eval->hints[op.hint];
+    if (h.obj == obj && h.key == name) {
+      ++key_hits;
+      Py_INCREF(h.value);
+      return h.value;
+    }
+  }
+
+  PyObject* descr = _PyType_Lookup(type, name);
+  descrgetfunc getter = NULL;
+  if (descr != NULL && PyType_HasFeature(descr->ob_type, Py_TPFLAGS_HAVE_CLASS)) {
+    getter = descr->ob_type->tp_descr_get;
+    if (getter != NULL && PyDescr_IsData(descr)) {
+      res = getter(descr, obj, (PyObject*) type);
+      return res;
+    }
+  }
+
+  if (dict == NULL) {
+    dict = obj_getdictptr(obj, type);
+  }
+
+  if (dict != NULL) {
+    res = PyDict_GetItem(dict, name);
+  }
+
+  if (res != NULL) {
+    size_t hint_pos = hint_offset(obj, name);
+    eval->hints[hint_pos] = {obj, name, res, 0};
+    op.hint = hint_pos;
+    Py_INCREF(res);
+    return res;
+  }
+
+  if (getter != NULL) {
+    res = getter(descr, obj, (PyObject*) type);
+  }
+
+  if (res != NULL) {
+    if (PyType_HasFeature(type, Py_TPFLAGS_HAVE_VERSION_TAG)) {
+      size_t hint_pos = hint_offset(type, name);
+      eval->hints[hint_pos] = {(PyObject*)type, name, descr, type->tp_version_tag};
+      op.hint = hint_pos;
+    }
+    return res;
+  }
+
+  if (descr != NULL) {
+    return descr;
+  }
+
+  throw RException(PyExc_AttributeError, "'%.50s' object has no attribute '%.400s'", type->tp_name,
+               PyString_AS_STRING(name));
+}
+
 struct LoadAttr: public RegOpImpl<RegOp<2>, LoadAttr> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* obj = registers[op.reg[0]];
     PyObject* name = PyTuple_GET_ITEM(state->names(), op.arg) ;
     Py_XDECREF(registers[op.reg[1]]);
-    registers[op.reg[1]] = PyObject_GetAttr(obj, name);
+    registers[op.reg[1]] = obj_getattr(eval, op, obj, name, NULL);
     CHECK_VALID(registers[op.reg[1]]);
 //    Py_INCREF(registers[op.reg[1]]);
   }
@@ -632,7 +745,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
 };
 
 struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* res = PyObject_GetIter(registers[op.reg[0]]);
     Py_XDECREF(registers[op.reg[1]]);
     registers[op.reg[1]] = res;
@@ -649,7 +762,7 @@ struct ForIter: public BranchOpImpl<ForIter> {
       registers[op.reg[1]] = r1;
       *pc += sizeof(BranchOp);
     } else {
-      *pc = state->instructions + op.label;
+      *pc = state->instructions() + op.label;
     }
 
   }
@@ -661,7 +774,7 @@ struct JumpIfFalseOrPop: public BranchOpImpl<JumpIfFalseOrPop> {
     PyObject *r1 = registers[op.reg[0]];
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
 //      EVAL_LOG("Jumping: %s -> %d", obj_to_str(r1), op.label);
-      *pc = state->instructions + op.label;
+      *pc = state->instructions() + op.label;
     } else {
       *pc += sizeof(BranchOp);
     }
@@ -674,7 +787,7 @@ struct JumpIfTrueOrPop: public BranchOpImpl<JumpIfTrueOrPop> {
                              PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     if (r1 == Py_True || (PyObject_IsTrue(r1) == 1)) {
-      *pc = state->instructions + op.label;
+      *pc = state->instructions() + op.label;
     } else {
       *pc += sizeof(BranchOp);
     }
@@ -686,7 +799,7 @@ struct JumpAbsolute: public BranchOpImpl<JumpAbsolute> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame *state, BranchOp op, const char **pc,
                              PyObject** registers) {
     EVAL_LOG("Jumping to: %d", op.label);
-    *pc = state->instructions + op.label;
+    *pc = state->instructions() + op.label;
   }
 };
 
@@ -695,7 +808,7 @@ struct JumpAbsolute: public BranchOpImpl<JumpAbsolute> {
 // here and jump to the exit of our frame.
 struct ReturnValue {
   static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* state, const char** pc, PyObject** registers) {
-    RegOp<1> op = *((RegOp<1>*) *pc);
+    RegOp<1>& op = *((RegOp<1>*) *pc);
     EVAL_LOG("%5d: %s", state->offset(*pc), op.str().c_str());
     PyObject* result = registers[op.reg[0]];
     Py_INCREF(result);
@@ -704,7 +817,7 @@ struct ReturnValue {
 };
 
 struct Nop: public RegOpImpl<RegOp<0>, Nop> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<0> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<0>& op, PyObject** registers) {
 
   }
 };
@@ -733,7 +846,7 @@ struct BuildList: public VarArgsOpImpl<BuildList> {
 };
 
 struct PrintItem: public RegOpImpl<RegOp<2>, PrintItem> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyObject* v = registers[op.reg[0]];
     PyObject* w = op.reg[1] != kInvalidRegister ? registers[op.reg[1]] : PySys_GetObject((char*) "stdout");
 
@@ -764,7 +877,7 @@ struct PrintItem: public RegOpImpl<RegOp<2>, PrintItem> {
 };
 
 struct PrintNewline: public RegOpImpl<RegOp<1>, PrintNewline> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<1>& op, PyObject** registers) {
     PyObject* w = op.reg[0] != kInvalidRegister ? registers[op.reg[0]] : PySys_GetObject((char*) "stdout");
     int err = PyFile_WriteString("\n", w);
     if (err == 0) PyFile_SoftSpace(w, 0);
@@ -772,7 +885,7 @@ struct PrintNewline: public RegOpImpl<RegOp<1>, PrintNewline> {
 };
 
 struct ListAppend: public RegOpImpl<RegOp<2>, ListAppend> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<2>& op, PyObject** registers) {
     PyList_Append(registers[op.reg[0]], registers[op.reg[1]]);
   }
 };
@@ -798,7 +911,7 @@ static PyObject * apply_slice(PyObject *u, PyObject *v, PyObject *w) {
 }
 
 struct Slice: public RegOpImpl<RegOp<4>, Slice> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<4> op, PyObject** registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* state, RegOp<4>& op, PyObject** registers) {
     PyObject* list = registers[op.reg[0]];
     PyObject* left = op.reg[1] != kInvalidRegister ? registers[op.reg[1]] : NULL;
     PyObject* right = op.reg[2] != kInvalidRegister ? registers[op.reg[2]] : NULL;
@@ -856,315 +969,315 @@ PyObject * Evaluator::eval(RegisterFrame* frame) {
   Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
 
   register PyObject** registers = frame->registers;
-  const char* pc = frame->instructions;
+  const char* pc = frame->instructions();
   PyObject* result = Py_None;
 
 //  last_clock_ = rdtsc();
 
-  static const void* const labels[] = {
-    &&op_STOP_CODE,
-    &&op_POP_TOP,
-    &&op_ROT_TWO,
-    &&op_ROT_THREE,
-    &&op_DUP_TOP,
-    &&op_ROT_FOUR,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_NOP,
-    &&op_UNARY_POSITIVE,
-    &&op_UNARY_NEGATIVE,
-    &&op_UNARY_NOT,
-    &&op_UNARY_CONVERT,
-    &&op_BADCODE,
-    &&op_UNARY_INVERT,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BINARY_POWER,
-    &&op_BINARY_MULTIPLY,
-    &&op_BINARY_DIVIDE,
-    &&op_BINARY_MODULO,
-    &&op_BINARY_ADD,
-    &&op_BINARY_SUBTRACT,
-    &&op_BINARY_SUBSCR,
-    &&op_BINARY_FLOOR_DIVIDE,
-    &&op_BINARY_TRUE_DIVIDE,
-    &&op_INPLACE_FLOOR_DIVIDE,
-    &&op_INPLACE_TRUE_DIVIDE,
-    &&op_SLICE,
-    &&op_SLICE,
-    &&op_SLICE,
-    &&op_SLICE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_STORE_SLICE,
-    &&op_STORE_SLICE,
-    &&op_STORE_SLICE,
-    &&op_STORE_SLICE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_DELETE_SLICE,
-    &&op_DELETE_SLICE,
-    &&op_DELETE_SLICE,
-    &&op_DELETE_SLICE,
-    &&op_STORE_MAP,
-    &&op_INPLACE_ADD,
-    &&op_INPLACE_SUBTRACT,
-    &&op_INPLACE_MULTIPLY,
-    &&op_INPLACE_DIVIDE,
-    &&op_INPLACE_MODULO,
-    &&op_STORE_SUBSCR,
-    &&op_DELETE_SUBSCR,
-    &&op_BINARY_LSHIFT,
-    &&op_BINARY_RSHIFT,
-    &&op_BINARY_AND,
-    &&op_BINARY_XOR,
-    &&op_BINARY_OR,
-    &&op_INPLACE_POWER,
-    &&op_GET_ITER,
-    &&op_BADCODE,
-    &&op_PRINT_EXPR,
-    &&op_PRINT_ITEM,
-    &&op_PRINT_NEWLINE,
-    &&op_PRINT_ITEM_TO,
-    &&op_PRINT_NEWLINE_TO,
-    &&op_INPLACE_LSHIFT,
-    &&op_INPLACE_RSHIFT,
-    &&op_INPLACE_AND,
-    &&op_INPLACE_XOR,
-    &&op_INPLACE_OR,
-    &&op_BREAK_LOOP,
-    &&op_WITH_CLEANUP,
-    &&op_LOAD_LOCALS,
-    &&op_RETURN_VALUE,
-    &&op_IMPORT_STAR,
-    &&op_EXEC_STMT,
-    &&op_YIELD_VALUE,
-    &&op_POP_BLOCK,
-    &&op_END_FINALLY,
-    &&op_BUILD_CLASS,
-    &&op_STORE_NAME,
-    &&op_DELETE_NAME,
-    &&op_UNPACK_SEQUENCE,
-    &&op_FOR_ITER,
-    &&op_LIST_APPEND,
-    &&op_STORE_ATTR,
-    &&op_DELETE_ATTR,
-    &&op_STORE_GLOBAL,
-    &&op_DELETE_GLOBAL,
-    &&op_DUP_TOPX,
-    &&op_LOAD_CONST,
-    &&op_LOAD_NAME,
-    &&op_BUILD_TUPLE,
-    &&op_BUILD_LIST,
-    &&op_BUILD_SET,
-    &&op_BUILD_MAP,
-    &&op_LOAD_ATTR,
-    &&op_COMPARE_OP,
-    &&op_IMPORT_NAME,
-    &&op_IMPORT_FROM,
-    &&op_JUMP_FORWARD,
-    &&op_JUMP_IF_FALSE_OR_POP,
-    &&op_JUMP_IF_TRUE_OR_POP,
-    &&op_JUMP_ABSOLUTE,
-    &&op_POP_JUMP_IF_FALSE,
-    &&op_POP_JUMP_IF_TRUE,
-    &&op_LOAD_GLOBAL,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_CONTINUE_LOOP,
-    &&op_SETUP_LOOP,
-    &&op_SETUP_EXCEPT,
-    &&op_SETUP_FINALLY,
-    &&op_BADCODE,
-    &&op_LOAD_FAST,
-    &&op_STORE_FAST,
-    &&op_DELETE_FAST,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_RAISE_VARARGS,
-    &&op_CALL_FUNCTION,
-    &&op_MAKE_FUNCTION,
-    &&op_BUILD_SLICE,
-    &&op_MAKE_CLOSURE,
-    &&op_LOAD_CLOSURE,
-    &&op_LOAD_DEREF,
-    &&op_STORE_DEREF,
-    &&op_BADCODE,
-    &&op_BADCODE,
-    &&op_CALL_FUNCTION_VAR,
-    &&op_CALL_FUNCTION_KW,
-    &&op_CALL_FUNCTION_VAR_KW,
-    &&op_SETUP_WITH,
-    &&op_BADCODE,
-    &&op_EXTENDED_ARG,
-    &&op_SET_ADD,
-    &&op_MAP_ADD,
-    &&op_INCREF,
-    &&op_DECREF,
-    &&op_CONST_INDEX
-  }
-  ;
+static const void* const labels[] = {
+  &&op_STOP_CODE,
+  &&op_POP_TOP,
+  &&op_ROT_TWO,
+  &&op_ROT_THREE,
+  &&op_DUP_TOP,
+  &&op_ROT_FOUR,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_NOP,
+  &&op_UNARY_POSITIVE,
+  &&op_UNARY_NEGATIVE,
+  &&op_UNARY_NOT,
+  &&op_UNARY_CONVERT,
+  &&op_BADCODE,
+  &&op_UNARY_INVERT,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BINARY_POWER,
+  &&op_BINARY_MULTIPLY,
+  &&op_BINARY_DIVIDE,
+  &&op_BINARY_MODULO,
+  &&op_BINARY_ADD,
+  &&op_BINARY_SUBTRACT,
+  &&op_BINARY_SUBSCR,
+  &&op_BINARY_FLOOR_DIVIDE,
+  &&op_BINARY_TRUE_DIVIDE,
+  &&op_INPLACE_FLOOR_DIVIDE,
+  &&op_INPLACE_TRUE_DIVIDE,
+  &&op_SLICE,
+  &&op_SLICE,
+  &&op_SLICE,
+  &&op_SLICE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_STORE_SLICE,
+  &&op_STORE_SLICE,
+  &&op_STORE_SLICE,
+  &&op_STORE_SLICE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_DELETE_SLICE,
+  &&op_DELETE_SLICE,
+  &&op_DELETE_SLICE,
+  &&op_DELETE_SLICE,
+  &&op_STORE_MAP,
+  &&op_INPLACE_ADD,
+  &&op_INPLACE_SUBTRACT,
+  &&op_INPLACE_MULTIPLY,
+  &&op_INPLACE_DIVIDE,
+  &&op_INPLACE_MODULO,
+  &&op_STORE_SUBSCR,
+  &&op_DELETE_SUBSCR,
+  &&op_BINARY_LSHIFT,
+  &&op_BINARY_RSHIFT,
+  &&op_BINARY_AND,
+  &&op_BINARY_XOR,
+  &&op_BINARY_OR,
+  &&op_INPLACE_POWER,
+  &&op_GET_ITER,
+  &&op_BADCODE,
+  &&op_PRINT_EXPR,
+  &&op_PRINT_ITEM,
+  &&op_PRINT_NEWLINE,
+  &&op_PRINT_ITEM_TO,
+  &&op_PRINT_NEWLINE_TO,
+  &&op_INPLACE_LSHIFT,
+  &&op_INPLACE_RSHIFT,
+  &&op_INPLACE_AND,
+  &&op_INPLACE_XOR,
+  &&op_INPLACE_OR,
+  &&op_BREAK_LOOP,
+  &&op_WITH_CLEANUP,
+  &&op_LOAD_LOCALS,
+  &&op_RETURN_VALUE,
+  &&op_IMPORT_STAR,
+  &&op_EXEC_STMT,
+  &&op_YIELD_VALUE,
+  &&op_POP_BLOCK,
+  &&op_END_FINALLY,
+  &&op_BUILD_CLASS,
+  &&op_STORE_NAME,
+  &&op_DELETE_NAME,
+  &&op_UNPACK_SEQUENCE,
+  &&op_FOR_ITER,
+  &&op_LIST_APPEND,
+  &&op_STORE_ATTR,
+  &&op_DELETE_ATTR,
+  &&op_STORE_GLOBAL,
+  &&op_DELETE_GLOBAL,
+  &&op_DUP_TOPX,
+  &&op_LOAD_CONST,
+  &&op_LOAD_NAME,
+  &&op_BUILD_TUPLE,
+  &&op_BUILD_LIST,
+  &&op_BUILD_SET,
+  &&op_BUILD_MAP,
+  &&op_LOAD_ATTR,
+  &&op_COMPARE_OP,
+  &&op_IMPORT_NAME,
+  &&op_IMPORT_FROM,
+  &&op_JUMP_FORWARD,
+  &&op_JUMP_IF_FALSE_OR_POP,
+  &&op_JUMP_IF_TRUE_OR_POP,
+  &&op_JUMP_ABSOLUTE,
+  &&op_POP_JUMP_IF_FALSE,
+  &&op_POP_JUMP_IF_TRUE,
+  &&op_LOAD_GLOBAL,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_CONTINUE_LOOP,
+  &&op_SETUP_LOOP,
+  &&op_SETUP_EXCEPT,
+  &&op_SETUP_FINALLY,
+  &&op_BADCODE,
+  &&op_LOAD_FAST,
+  &&op_STORE_FAST,
+  &&op_DELETE_FAST,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_RAISE_VARARGS,
+  &&op_CALL_FUNCTION,
+  &&op_MAKE_FUNCTION,
+  &&op_BUILD_SLICE,
+  &&op_MAKE_CLOSURE,
+  &&op_LOAD_CLOSURE,
+  &&op_LOAD_DEREF,
+  &&op_STORE_DEREF,
+  &&op_BADCODE,
+  &&op_BADCODE,
+  &&op_CALL_FUNCTION_VAR,
+  &&op_CALL_FUNCTION_KW,
+  &&op_CALL_FUNCTION_VAR_KW,
+  &&op_SETUP_WITH,
+  &&op_BADCODE,
+  &&op_EXTENDED_ARG,
+  &&op_SET_ADD,
+  &&op_MAP_ADD,
+  &&op_INCREF,
+  &&op_DECREF,
+  &&op_CONST_INDEX
+}
+;
 
-  EVAL_LOG("New frame: %s", PyEval_GetFuncName(frame->code->function));
-  try {
+EVAL_LOG("New frame: %s", PyEval_GetFuncName(frame->code->function));
+try {
     goto *labels[frame->next_code(pc)];
 
     BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
-    BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
-    BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
-    BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-    BINARY_OP3(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
+BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
+BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
+BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
+BINARY_OP3(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
 
-    BINARY_OP2(BINARY_OR, PyNumber_Or);
-    BINARY_OP2(BINARY_XOR, PyNumber_Xor);
-    BINARY_OP2(BINARY_AND, PyNumber_And);
-    BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
-    BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
-    BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
-    BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
-    DEFINE_OP(BINARY_POWER, BinaryPower);
-    DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
+BINARY_OP2(BINARY_OR, PyNumber_Or);
+BINARY_OP2(BINARY_XOR, PyNumber_Xor);
+BINARY_OP2(BINARY_AND, PyNumber_And);
+BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
+BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
+BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
+BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
+DEFINE_OP(BINARY_POWER, BinaryPower);
+DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
 
-    BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
-    BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
-    BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
-    BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
-    BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
+BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
+BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
+BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
+BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
+BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
 
-    BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
-    BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
-    BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
-    BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
-    BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
-    BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
-    BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
-    DEFINE_OP(INPLACE_POWER, InplacePower);
+BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
+BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
+BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
+BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
+BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
+BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
+BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
+DEFINE_OP(INPLACE_POWER, InplacePower);
 
-    UNARY_OP2(UNARY_INVERT, PyNumber_Invert);
-    UNARY_OP2(UNARY_CONVERT, PyObject_Repr);
-    UNARY_OP2(UNARY_NEGATIVE, PyNumber_Negative);
-    UNARY_OP2(UNARY_POSITIVE, PyNumber_Positive);
+UNARY_OP2(UNARY_INVERT, PyNumber_Invert);
+UNARY_OP2(UNARY_CONVERT, PyObject_Repr);
+UNARY_OP2(UNARY_NEGATIVE, PyNumber_Negative);
+UNARY_OP2(UNARY_POSITIVE, PyNumber_Positive);
 
-    DEFINE_OP(UNARY_NOT, UnaryNot);
+DEFINE_OP(UNARY_NOT, UnaryNot);
 
-    DEFINE_OP(LOAD_FAST, LoadFast);
-    DEFINE_OP(LOAD_LOCALS, LoadLocals);
-    DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
-    DEFINE_OP(LOAD_NAME, LoadName);
-    DEFINE_OP(LOAD_ATTR, LoadAttr);
+DEFINE_OP(LOAD_FAST, LoadFast);
+DEFINE_OP(LOAD_LOCALS, LoadLocals);
+DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
+DEFINE_OP(LOAD_NAME, LoadName);
+DEFINE_OP(LOAD_ATTR, LoadAttr);
 
-    DEFINE_OP(STORE_NAME, StoreName);
-    DEFINE_OP(STORE_ATTR, StoreAttr);
-    DEFINE_OP(STORE_SUBSCR, StoreSubscr);
-    DEFINE_OP(STORE_FAST, StoreFast);
+DEFINE_OP(STORE_NAME, StoreName);
+DEFINE_OP(STORE_ATTR, StoreAttr);
+DEFINE_OP(STORE_SUBSCR, StoreSubscr);
+DEFINE_OP(STORE_FAST, StoreFast);
 
-    DEFINE_OP(CONST_INDEX, ConstIndex);
+DEFINE_OP(CONST_INDEX, ConstIndex);
 
-    DEFINE_OP(GET_ITER, GetIter);
-    DEFINE_OP(FOR_ITER, ForIter);
+DEFINE_OP(GET_ITER, GetIter);
+DEFINE_OP(FOR_ITER, ForIter);
 
-    op_RETURN_VALUE: {
+op_RETURN_VALUE: {
       result = ReturnValue::eval(this, frame, &pc, registers);
       goto done;
     }
 
     DEFINE_OP(BUILD_TUPLE, BuildTuple);
-    DEFINE_OP(BUILD_LIST, BuildList);
+DEFINE_OP(BUILD_LIST, BuildList);
 
-    DEFINE_OP(PRINT_NEWLINE, PrintNewline);
-    DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
-    DEFINE_OP(PRINT_ITEM, PrintItem);
-    DEFINE_OP(PRINT_ITEM_TO, PrintItem);
+DEFINE_OP(PRINT_NEWLINE, PrintNewline);
+DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
+DEFINE_OP(PRINT_ITEM, PrintItem);
+DEFINE_OP(PRINT_ITEM_TO, PrintItem);
 
-    FALLTHROUGH(CALL_FUNCTION);
-    FALLTHROUGH(CALL_FUNCTION_VAR);
-    FALLTHROUGH(CALL_FUNCTION_KW);
-    DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunction);
+FALLTHROUGH(CALL_FUNCTION);
+FALLTHROUGH(CALL_FUNCTION_VAR);
+FALLTHROUGH(CALL_FUNCTION_KW);
+DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunction);
 
-    FALLTHROUGH(POP_JUMP_IF_FALSE);
-    DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
+FALLTHROUGH(POP_JUMP_IF_FALSE);
+DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
 
-    FALLTHROUGH(POP_JUMP_IF_TRUE);
-    DEFINE_OP(JUMP_IF_TRUE_OR_POP, JumpIfTrueOrPop);
+FALLTHROUGH(POP_JUMP_IF_TRUE);
+DEFINE_OP(JUMP_IF_TRUE_OR_POP, JumpIfTrueOrPop);
 
-    DEFINE_OP(JUMP_ABSOLUTE, JumpAbsolute);
-    DEFINE_OP(COMPARE_OP, CompareOp);
-    DEFINE_OP(INCREF, IncRef);
-    DEFINE_OP(DECREF, DecRef);
+DEFINE_OP(JUMP_ABSOLUTE, JumpAbsolute);
+DEFINE_OP(COMPARE_OP, CompareOp);
+DEFINE_OP(INCREF, IncRef);
+DEFINE_OP(DECREF, DecRef);
 
-    DEFINE_OP(LIST_APPEND, ListAppend);
-    DEFINE_OP(SLICE, Slice);
+DEFINE_OP(LIST_APPEND, ListAppend);
+DEFINE_OP(SLICE, Slice);
 
-    BAD_OP(SETUP_LOOP);
-    BAD_OP(POP_BLOCK);
-    BAD_OP(LOAD_CONST);
-    BAD_OP(JUMP_FORWARD);
-    BAD_OP(MAP_ADD);
-    BAD_OP(SET_ADD);
-    BAD_OP(EXTENDED_ARG);
-    BAD_OP(SETUP_WITH);
-    BAD_OP(STORE_DEREF);
-    BAD_OP(LOAD_DEREF);
-    BAD_OP(LOAD_CLOSURE);
-    BAD_OP(MAKE_CLOSURE);
-    BAD_OP(BUILD_SLICE);
-    BAD_OP(MAKE_FUNCTION);
-    BAD_OP(RAISE_VARARGS);
-    BAD_OP(DELETE_FAST);
-    BAD_OP(SETUP_FINALLY);
-    BAD_OP(SETUP_EXCEPT);
-    BAD_OP(CONTINUE_LOOP);
-    BAD_OP(IMPORT_FROM);
-    BAD_OP(IMPORT_NAME);
-    BAD_OP(BUILD_MAP);
-    BAD_OP(BUILD_SET);
-    BAD_OP(DUP_TOPX);
-    BAD_OP(DELETE_GLOBAL);
-    BAD_OP(STORE_GLOBAL);
-    BAD_OP(DELETE_ATTR);
-    BAD_OP(UNPACK_SEQUENCE);
-    BAD_OP(DELETE_NAME);
-    BAD_OP(BUILD_CLASS);
-    BAD_OP(END_FINALLY);
-    BAD_OP(YIELD_VALUE);
-    BAD_OP(EXEC_STMT);
-    BAD_OP(IMPORT_STAR);
-    BAD_OP(WITH_CLEANUP);
-    BAD_OP(BREAK_LOOP);
-    BAD_OP(PRINT_EXPR);
-    BAD_OP(DELETE_SUBSCR);
-    BAD_OP(STORE_MAP);
-    BAD_OP(DELETE_SLICE);
-    BAD_OP(STORE_SLICE);
-    BAD_OP(NOP);
-    BAD_OP(ROT_FOUR);
-    BAD_OP(DUP_TOP);
-    BAD_OP(ROT_THREE);
-    BAD_OP(ROT_TWO);
-    BAD_OP(POP_TOP);
-    BAD_OP(STOP_CODE);
-    op_BADCODE: {
+BAD_OP(SETUP_LOOP);
+BAD_OP(POP_BLOCK);
+BAD_OP(LOAD_CONST);
+BAD_OP(JUMP_FORWARD);
+BAD_OP(MAP_ADD);
+BAD_OP(SET_ADD);
+BAD_OP(EXTENDED_ARG);
+BAD_OP(SETUP_WITH);
+BAD_OP(STORE_DEREF);
+BAD_OP(LOAD_DEREF);
+BAD_OP(LOAD_CLOSURE);
+BAD_OP(MAKE_CLOSURE);
+BAD_OP(BUILD_SLICE);
+BAD_OP(MAKE_FUNCTION);
+BAD_OP(RAISE_VARARGS);
+BAD_OP(DELETE_FAST);
+BAD_OP(SETUP_FINALLY);
+BAD_OP(SETUP_EXCEPT);
+BAD_OP(CONTINUE_LOOP);
+BAD_OP(IMPORT_FROM);
+BAD_OP(IMPORT_NAME);
+BAD_OP(BUILD_MAP);
+BAD_OP(BUILD_SET);
+BAD_OP(DUP_TOPX);
+BAD_OP(DELETE_GLOBAL);
+BAD_OP(STORE_GLOBAL);
+BAD_OP(DELETE_ATTR);
+BAD_OP(UNPACK_SEQUENCE);
+BAD_OP(DELETE_NAME);
+BAD_OP(BUILD_CLASS);
+BAD_OP(END_FINALLY);
+BAD_OP(YIELD_VALUE);
+BAD_OP(EXEC_STMT);
+BAD_OP(IMPORT_STAR);
+BAD_OP(WITH_CLEANUP);
+BAD_OP(BREAK_LOOP);
+BAD_OP(PRINT_EXPR);
+BAD_OP(DELETE_SUBSCR);
+BAD_OP(STORE_MAP);
+BAD_OP(DELETE_SLICE);
+BAD_OP(STORE_SLICE);
+BAD_OP(NOP);
+BAD_OP(ROT_FOUR);
+BAD_OP(DUP_TOP);
+BAD_OP(ROT_THREE);
+BAD_OP(ROT_TWO);
+BAD_OP(POP_TOP);
+BAD_OP(STOP_CODE);
+op_BADCODE: {
       EVAL_LOG("Jump to invalid opcode!?");
-      throw RException(PyExc_SystemError, "Invalid jump.");
+throw RException(PyExc_SystemError, "Invalid jump.");
     }
   } catch (RException &error) {
     EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
-    Reg_Assert(error.exception != NULL, "Error without exception set.");
-    error.set_python_err();
+Reg_Assert(error.exception != NULL, "Error without exception set.");
+error.set_python_err();
     return NULL;
   }
   done:
   EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
-  return result;
+return result;
 }

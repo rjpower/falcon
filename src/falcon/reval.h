@@ -16,11 +16,19 @@
 
 typedef std::vector<PyObject*> ObjVector;
 
+struct Hint {
+  PyObject* obj;
+  PyObject* key;
+  PyObject* value;
+  unsigned int version;
+};
+
 struct RegisterFrame: private boost::noncopyable {
 private:
   PyObject* builtins_;
   PyObject* globals_;
   PyObject* locals_;
+  const char* instructions_;
 
 public:
   PyObject* py_call_args;
@@ -28,7 +36,11 @@ public:
   PyObject** registers;
   const RegisterCode* code;
 
-  const char* instructions;
+  size_t current_hint;
+
+  f_inline const char* instructions() {
+    return instructions_;
+  }
 
   f_inline PyObject* globals() {
     return globals_;
@@ -59,7 +71,7 @@ public:
   }
 
   f_inline int offset(const char* pc) const {
-    return (int) (pc - instructions);
+    return (int) (pc - instructions_);
   }
 
   f_inline int next_code(const char* pc) const {
@@ -82,6 +94,7 @@ private:
   Compiler *compiler_;
 public:
   Evaluator();
+  ~Evaluator();
   void dump_status();
 
   RegisterCode* compile(PyObject* f);
@@ -89,6 +102,8 @@ public:
   PyObject* eval(RegisterFrame* rf);
   PyObject* eval_python(PyObject* func, PyObject* args);
   RegisterFrame* frame_from_python(PyObject* func, PyObject* args);
+
+  Hint hints[kMaxHints];
 };
 
 #endif /* REVAL_H_ */
