@@ -28,6 +28,9 @@ private:
   PyObject* builtins_;
   PyObject* globals_;
   PyObject* locals_;
+  PyObject* consts_;
+  PyObject* names_;
+
   const char* instructions_;
 
 public:
@@ -50,16 +53,15 @@ public:
   }
 
   f_inline PyObject* consts() {
-    return code->consts();
+    return consts_;
   }
 
   f_inline PyObject* names() {
-    return code->names();
+    return names_;
   }
 
   f_inline PyObject* locals() {
-    PyObject* consts = code->consts();
-    int num_consts = PyTuple_Size(consts);
+    int num_consts = PyTuple_Size(consts());
     int num_locals = PyTuple_Size(code->names());
     if (!locals_) {
       locals_ = PyDict_New();
@@ -97,7 +99,7 @@ public:
   ~Evaluator();
   void dump_status();
 
-  RegisterCode* compile(PyObject* f);
+  inline RegisterCode* compile(PyObject* f);
 
   PyObject* eval(RegisterFrame* rf);
   PyObject* eval_python(PyObject* func, PyObject* args);
@@ -105,5 +107,9 @@ public:
 
   Hint hints[kMaxHints];
 };
+
+RegisterCode* Evaluator::compile(PyObject* obj) {
+  return compiler_->compile(obj);
+}
 
 #endif /* REVAL_H_ */

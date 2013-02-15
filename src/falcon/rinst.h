@@ -23,12 +23,13 @@
 // locals and consts.  This is followed by general registers.
 // [0..#consts][0..#locals][general registers]
 
-#if defined(SWIG)
-#define f_inline
-#elif defined(FALCON_DEBUG)
+#if defined(FALCON_DEBUG)
 #define f_inline __attribute__((noinline))
+#define n_inline __attribute__((noinline))
 #else
+// #define f_inline __attribute__((noinline))
 #define f_inline __attribute__((always_inline))
+#define n_inline __attribute__((noinline))
 #endif
 
 static inline const char* obj_to_str(PyObject* o) {
@@ -103,7 +104,7 @@ struct BranchOp {
     return w.str();
   }
 
-  f_inline size_t size() const {
+  inline size_t size() const {
     return sizeof(*this);
   }
 };
@@ -129,7 +130,7 @@ struct RegOp {
     return w.str();
   }
 
-  f_inline size_t size() const {
+  inline size_t size() const {
     return sizeof(*this);
   }
 };
@@ -148,7 +149,7 @@ struct VarRegOp {
     return w.str();
   }
 
-  f_inline size_t size() const {
+  inline size_t size() const {
     return sizeof(VarRegOp) + num_registers * sizeof(Register);
   }
 };

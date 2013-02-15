@@ -189,3 +189,43 @@ const char* strnstr(const char* haystack, const char* needle, int len) {
   return NULL;
 }
 
+std::string Coerce::str(const std::string& v) {
+  return v;
+}
+
+std::string Coerce::str(const double& v) {
+  return StringPrintf("%f", v);
+}
+
+std::string Coerce::str(const int& v) {
+  return StringPrintf("%d", v);
+}
+
+std::string Coerce::str(const short & v) {
+  return StringPrintf("%d", v);
+}
+
+void Writer::printf(const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  std::string res = VStringPrintf(fmt, args);
+  va_end(args);
+  this->write(res);
+}
+
+void Writer::write(const char* str) {
+  write(std::string(str));
+}
+
+void StringWriter::write(const std::string& data) {
+  buffer_.append(data);
+}
+
+const std::string& StringWriter::str() {
+  return buffer_;
+}
+
+void FileWriter::write(const std::string& data) {
+  int result = ::write(fd_, data.data(), data.size());
+  Log_Assert(result == (int)data.size(), "Failed to write to file.");
+}

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-static inline void breakpoint() {
+static __attribute__((always_inline)) inline void breakpoint() {
   struct sigaction oldAct;
   struct sigaction newAct;
   newAct.sa_handler = SIG_IGN;
@@ -241,22 +241,6 @@ inline std::string Coerce::str(const T* t) {
   return t->str();
 }
 
-inline std::string Coerce::str(const std::string& v) {
-  return v;
-}
-
-inline std::string Coerce::str(const double& v) {
-  return StringPrintf("%f", v);
-}
-
-inline std::string Coerce::str(const int& v) {
-  return StringPrintf("%d", v);
-}
-
-inline std::string Coerce::str(const short & v) {
-  return StringPrintf("%d", v);
-}
-
 template<class Iterator>
 inline std::string StrUtil::join(Iterator start, Iterator end, std::string delim) {
   std::string out;
@@ -287,31 +271,6 @@ inline std::string StrUtil::join(Iterator start, Iterator end, std::string delim
 template<class ValueType>
 inline std::string StrUtil::join(const std::vector<ValueType>& v, std::string delim) {
   return join(v.begin(), v.end(), delim);
-}
-
-inline void Writer::printf(const char* fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  std::string res = VStringPrintf(fmt, args);
-  va_end(args);
-  this->write(res);
-}
-
-inline void Writer::write(const char* str) {
-  write(std::string(str));
-}
-
-inline void StringWriter::write(const std::string& data) {
-  buffer_.append(data);
-}
-
-inline const std::string& StringWriter::str() {
-  return buffer_;
-}
-
-inline void FileWriter::write(const std::string& data) {
-  int result = ::write(fd_, data.data(), data.size());
-  Log_Assert(result == (int)data.size(), "Failed to write to file.");
 }
 
 #endif

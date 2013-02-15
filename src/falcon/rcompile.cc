@@ -78,7 +78,8 @@ struct RCompilerUtil {
       Reg_AssertLe(src->regs.size(), 4);
       RegOp<0>* op = (RegOp<0>*) dst;
       for (size_t i = 0; i < src->regs.size(); ++i) {
-        op->reg[i] = src->regs[i];
+//        op->reg.set(i, src->regs[i]);
+         op->reg[i] = src->regs[i];
       }
       op->hint = kInvalidHint;
     }
@@ -1043,9 +1044,13 @@ public:
 class RenameRegisters: public CompilerPass, UseCounts {
 private:
   // Mapping from old -> new register names
-  boost::unordered_map<int, int> register_map_;
+  google::dense_hash_map<int, int> register_map_;
 
 public:
+  RenameRegisters() {
+    register_map_.set_empty_key(-1);
+  }
+
   void visit_op(CompilerOp* op) {
     for (size_t i = 0; i < op->regs.size(); ++i) {
       int tgt;
@@ -1194,24 +1199,4 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   return regcode;
 }
 
-RegisterCode* Compiler::compile(PyObject* func) {
-  if (PyMethod_Check(func)) {
-    func = PyMethod_GET_FUNCTION(func);
-  }
-
-  if (cache_.find(func) == cache_.end()) {
-    try {
-      RegisterCode* code = compile_(func);
-      cache_[func] = code;
-      Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
-    } catch (RException& e) {
-      Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(func));
-      e.set_python_err();
-      PyErr_Print();
-      cache_[func] = NULL;
-    }
-  }
-
-  return cache_[func];
-}
 

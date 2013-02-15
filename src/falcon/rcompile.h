@@ -3,7 +3,7 @@
 
 #include <cassert>
 #include <string>
-#include <boost/unordered_map.hpp>
+#include <google/dense_hash_map>
 
 #include "util.h"
 #include "rinst.h"
@@ -157,13 +157,42 @@ public:
 
 struct Compiler {
 private:
-  boost::unordered_map<PyObject*, RegisterCode*> cache_;
+  typedef google::dense_hash_map<PyObject*, RegisterCode*> CodeCache;
+  CodeCache cache_;
   BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset);
   RegisterCode* compile_(PyObject* function);
 public:
-  Compiler() {}
+  Compiler() {
+    cache_.set_empty_key(NULL);
+  }
 
-  RegisterCode* compile(PyObject* function);
+  inline RegisterCode* compile(PyObject* function);
 };
+
+RegisterCode* Compiler::compile(PyObject* func) {
+  if (PyMethod_Check(func)) {
+    func = PyMethod_GET_FUNCTION(func);
+  }
+
+  CodeCache::iterator i = cache_.find(func);
+
+  if (i != cache_.end()) {
+    return i->second;
+  }
+
+
+  try {
+    RegisterCode* code = compile_(func);
+    cache_[func] = code;
+    Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
+  } catch (RException& e) {
+    Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(func));
+    e.set_python_err();
+    PyErr_Print();
+    cache_[func] = NULL;
+  }
+
+  return cache_[func];
+}
 
 #endif /* RCOMPILE_H_ */
