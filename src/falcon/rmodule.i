@@ -1,5 +1,6 @@
 %module falcon_core
 
+
 %{
 #include "rinst.h"
 #include "rcompile.h"

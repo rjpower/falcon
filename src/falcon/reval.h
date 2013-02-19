@@ -61,12 +61,16 @@ public:
   }
 
   f_inline PyObject* locals() {
-    int num_consts = PyTuple_Size(consts());
-    int num_locals = PyTuple_Size(code->names());
     if (!locals_) {
+      const int num_consts = PyTuple_Size(consts());
+      const int num_locals = PyTuple_Size(code->names());
       locals_ = PyDict_New();
       for (int i = 0; i < num_locals; ++i) {
-        PyDict_SetItem(locals_, PyTuple_GetItem(code->names(), i), registers[num_consts + i]);
+        PyObject* v = registers[num_consts + i];
+        if (v != NULL) {
+          Py_INCREF(v);
+          PyDict_SetItem(locals_, PyTuple_GetItem(code->names(), i), v);
+        }
       }
     }
     return locals_;
@@ -103,7 +107,9 @@ public:
 
   PyObject* eval(RegisterFrame* rf);
   PyObject* eval_python(PyObject* func, PyObject* args);
+
   RegisterFrame* frame_from_python(PyObject* func, PyObject* args);
+  RegisterFrame* frame_from_codeobj(PyObject* code);
 
   Hint hints[kMaxHints];
 };

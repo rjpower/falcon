@@ -23,7 +23,10 @@
 // locals and consts.  This is followed by general registers.
 // [0..#consts][0..#locals][general registers]
 
-#if defined(FALCON_DEBUG)
+#if defined(SWIG)
+#define f_inline
+#define n_inline
+#elif defined(FALCON_DEBUG)
 #define f_inline __attribute__((noinline))
 #define n_inline __attribute__((noinline))
 #else
@@ -57,11 +60,14 @@ struct RegisterCode {
   int16_t mapped_registers :1;
   int16_t reserved :14;
 
-  // The Python function object this
+  // The Python function object this code object was built from (NULL if
+  // compiled directly from a code object).
   PyObject* function;
 
+  PyObject* code_;
+
   PyCodeObject* code() const {
-    return (PyCodeObject*) PyFunction_GET_CODE(function) ;
+    return (PyCodeObject*) code_;
   }
 
   PyObject* names() const {
@@ -75,6 +81,7 @@ struct RegisterCode {
   PyObject* consts() const {
     return code()->co_consts;
   }
+
   std::string instructions;
 };
 

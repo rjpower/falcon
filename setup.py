@@ -43,6 +43,7 @@ setup(
     Extension('_falcon_core',
       include_dirs=['./src'],
       sources=[
+              'src/falcon/rexcept.cc',
               'src/falcon/reval.cc',
               'src/falcon/rcompile.cc',
               'src/falcon/oputil.cc',

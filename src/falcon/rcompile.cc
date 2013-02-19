@@ -79,7 +79,7 @@ struct RCompilerUtil {
       RegOp<0>* op = (RegOp<0>*) dst;
       for (size_t i = 0; i < src->regs.size(); ++i) {
 //        op->reg.set(i, src->regs[i]);
-         op->reg[i] = src->regs[i];
+        op->reg[i] = src->regs[i];
       }
       op->hint = kInvalidHint;
     }
@@ -103,6 +103,10 @@ std::string CompilerOp::str() const {
 
 void CompilerState::dump(Writer* w) {
   for (BasicBlock* bb : bbs) {
+    if (bb->dead) {
+      continue;
+    }
+
     w->printf("bb_%d: \n  ", bb->idx);
     w->write(StrUtil::join(bb->code, "\n  "));
     w->write(" -> ");
@@ -261,6 +265,7 @@ Frame RegisterStack::pop_frame() {
 
 int RegisterStack::push_register(int reg) {
   // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
+  Reg_AssertNe(reg, kInvalidRegister);
   regs.push_back(reg);
   return reg;
 }
@@ -268,12 +273,13 @@ int RegisterStack::push_register(int reg) {
 int RegisterStack::pop_register() {
   Reg_AssertGt((int)regs.size(), 0);
   int reg = regs.back();
+  Reg_AssertNe(reg, kInvalidRegister);
   regs.pop_back();
   return reg;
 }
 
 int RegisterStack::peek_register(int offset) {
-  return regs[regs.size() - offset];
+  return regs[regs.size() - offset - 1];
 }
 
 void copy_stack(RegisterStack *from, RegisterStack* to) {
@@ -325,7 +331,11 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-//    Log_Info("%5d: %s %d", offset, OpUtil::name(opcode), oparg);
+    const char* name = NULL;
+    if (oparg < PyTuple_Size(state->names)) {
+      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+    }
+    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     for (size_t i = 0; i < state->bbs.size(); ++i) {
@@ -608,6 +618,34 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_op(opcode, oparg, -1);
       break;
     }
+    case IMPORT_STAR: {
+      int module = stack->pop_register();
+      bb->add_op(opcode, oparg, module);
+      break;
+    }
+    case IMPORT_FROM: {
+      int module = stack->peek_register(0);
+      int tgt = stack->push_register(state->num_reg++);
+      bb->add_dest_op(opcode, oparg, module, tgt);
+      break;
+    }
+    case IMPORT_NAME: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      int tgt = stack->push_register(state->num_reg++);
+      bb->add_dest_op(opcode, oparg, r1, r2, tgt);
+      break;
+    }
+    case MAKE_FUNCTION: {
+      int code = stack->pop_register();
+      CompilerOp* op = bb->add_varargs_op(opcode, oparg, oparg + 2);
+      op->regs[0]  = code;
+      for (int i = 0; i < oparg; ++i) {
+        op->regs[i + 1] = stack->pop_register();
+      }
+      op->regs[oparg + 1] = stack->push_register(state->num_reg++);
+      break;
+    }
     case BUILD_LIST:
     case BUILD_SET:
     case BUILD_TUPLE: {
@@ -616,6 +654,14 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
         f->regs[r] = stack->pop_register();
       }
       f->regs[oparg] = stack->push_register(state->num_reg++);
+      break;
+    }
+    case BUILD_CLASS: {
+      int r1 = stack->pop_register();
+      int r2 = stack->pop_register();
+      int r3 = stack->pop_register();
+      int tgt = stack->push_register(state->num_reg++);
+      bb->add_dest_op(opcode, oparg, r1, r2, r3, tgt);
       break;
     }
     case UNPACK_SEQUENCE: {
@@ -733,7 +779,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-      throw RException(PyExc_SyntaxError, StringPrintf("Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg));
+      throw RException(PyExc_SyntaxError, "Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
       break;
     }
   }
@@ -837,6 +883,7 @@ public:
       bb->code.insert(bb->code.end(), next->code.begin(), next->code.end());
 
       next->dead = next->visited = true;
+      next->code.clear();
       bb->exits = next->exits;
 
       if (bb->exits.size() != 1) {
@@ -1048,14 +1095,15 @@ private:
 
 public:
   RenameRegisters() {
-    register_map_.set_empty_key(-1);
+    register_map_.set_empty_key(kInvalidRegister);
   }
 
   void visit_op(CompilerOp* op) {
     for (size_t i = 0; i < op->regs.size(); ++i) {
       int tgt;
       if (register_map_.find(op->regs[i]) == register_map_.end()) {
-        tgt = -1;
+        tgt = kInvalidRegister;
+        Log_Fatal("No mapping for register: %s, [%d]", op->str().c_str(), op->regs[i]);
       } else {
         tgt = register_map_[op->regs[i]];
       }
@@ -1098,7 +1146,7 @@ void optimize(CompilerState* fn) {
   CopyPropagation()(fn);
   StoreElim()(fn);
   DeadCodeElim()(fn);
-  RenameRegisters()(fn);
+//  RenameRegisters()(fn);
 
   Log_Info(fn->str().c_str());
 }
@@ -1168,12 +1216,15 @@ void lower_register_code(CompilerState* state, std::string *out) {
 }
 
 RegisterCode* Compiler::compile_(PyObject* func) {
-
-  if (!PyFunction_Check(func)) {
-    throw RException(PyExc_SystemError, StringPrintf("Not a function: %s", obj_to_str(func)));
+  PyCodeObject* code = NULL;
+  if (PyFunction_Check(func)) {
+    code = (PyCodeObject*) PyFunction_GET_CODE(func);
+  } else if (PyCode_Check(func)) {
+    code = (PyCodeObject*) func;
+  } else {
+    throw RException(PyExc_SystemError, "Not a function: %s", obj_to_str(func));
   }
 
-  PyCodeObject* code = (PyCodeObject*) PyFunction_GetCode(func);
   if (!code) {
     throw RException(PyExc_SystemError, "No code in function object.");
   }
@@ -1190,13 +1241,17 @@ RegisterCode* Compiler::compile_(PyObject* func) {
 
   RegisterCode *regcode = new RegisterCode;
   lower_register_code(&state, &regcode->instructions);
+  regcode->code_ = (PyObject*)code;
   regcode->version = 1;
-  regcode->function = func;
+  if (PyFunction_Check(func)) {
+    regcode->function = func;
+  } else {
+    regcode->function = NULL;
+  }
   regcode->mapped_registers = 0;
   regcode->mapped_labels = 0;
   regcode->num_registers = state.num_reg;
 
   return regcode;
 }
-
 

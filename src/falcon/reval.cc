@@ -82,12 +82,17 @@ struct PyObjHelper {
   }
 };
 
-RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector* args, const ObjVector* kw) :
-    code(func) {
+RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector* args, const ObjVector* kw) :
+    code(rcode) {
   instructions_ = code->instructions.data();
   current_hint = -1;
 
-  globals_ = PyFunction_GetGlobals(func->function);
+  if (rcode->function) {
+    globals_ = PyFunction_GetGlobals(rcode->function);
+  } else {
+    globals_ = PyEval_GetGlobals();
+  }
+
   builtins_ = PyEval_GetBuiltins();
 
   py_call_args = NULL;
@@ -95,7 +100,7 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector*
   names_ = code->names();
   consts_ = code->consts();
 
-  registers = new PyObject*[func->num_registers];
+  registers = new PyObject*[rcode->num_registers];
   const int num_registers = code->num_registers;
 
   // setup const and local register aliases.
@@ -109,7 +114,6 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector*
   int needed_args = code->code()->co_argcount;
   int offset = num_consts;
   if (PyMethod_Check(obj)) {
-//    PyObject* klass = PyMethod_GET_CLASS(obj);
     PyObject* self = PyMethod_GET_SELF(obj);
 
     Reg_Assert(self != NULL, "Method call without a bound self.");
@@ -119,18 +123,20 @@ RegisterFrame::RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector*
     needed_args--;
   }
 
-  PyObject* def_args = PyFunction_GET_DEFAULTS(code->function);
-  int num_def_args = def_args == NULL ? 0 : PyTuple_GET_SIZE(def_args);
-  int num_args = args->size();
-  if (num_args + num_def_args < needed_args) {
-    throw RException(PyExc_TypeError, "Wrong number of arguments for %s, expected %d, got %d.",
-                     PyEval_GetFuncName(code->function), needed_args - num_def_args, num_args);
-  }
+  if (code->function) {
+    PyObject* def_args = PyFunction_GET_DEFAULTS(code->function);
+    int num_def_args = def_args == NULL ? 0 : PyTuple_GET_SIZE(def_args);
+    int num_args = args->size();
+    if (num_args + num_def_args < needed_args) {
+      throw RException(PyExc_TypeError, "Wrong number of arguments for %s, expected %d, got %d.",
+                       PyEval_GetFuncName(code->function), needed_args - num_def_args, num_args);
+    }
 
-  for (int i = 0; i < needed_args; ++i) {
-    PyObject* v = (i < num_args) ? args->at(i) : PyTuple_GET_ITEM(def_args, i - num_args) ;
-    Py_INCREF(v);
-    registers[offset++] = v;
+    for (int i = 0; i < needed_args; ++i) {
+      PyObject* v = (i < num_args) ? args->at(i) : PyTuple_GET_ITEM(def_args, i - num_args) ;
+      Py_INCREF(v);
+      registers[offset++] = v;
+    }
   }
 
   bzero(registers + offset, (num_registers - offset) * sizeof(PyObject*));
@@ -163,9 +169,6 @@ Evaluator::~Evaluator() {
 
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
   RegisterFrame* frame = frame_from_python(func, args);
-  if (!frame) {
-    return NULL;
-  }
   PyObject* result = eval(frame);
   delete frame;
   return result;
@@ -177,9 +180,6 @@ RegisterFrame* Evaluator::frame_from_python(PyObject* obj, PyObject* args) {
   }
 
   RegisterCode* regcode = compile(obj);
-  if (!regcode) {
-    return NULL;
-  }
 
   ObjVector v_args;
   for (int i = 0; i < PyTuple_GET_SIZE(args) ; ++i) {
@@ -187,6 +187,13 @@ RegisterFrame* Evaluator::frame_from_python(PyObject* obj, PyObject* args) {
   }
 
   return new RegisterFrame(regcode, obj, &v_args, NULL);
+}
+
+RegisterFrame* Evaluator::frame_from_codeobj(PyObject* code) {
+  ObjVector args, kw;
+  RegisterCode *regcode = compile(code);
+
+  return new RegisterFrame(regcode, code, &args, &kw);
 }
 
 void Evaluator::dump_status() {
@@ -201,16 +208,23 @@ void Evaluator::dump_status() {
 
 void Evaluator::collect_info(int opcode) {
   ++total_count_;
-  //  ++op_counts_[opcode];
+//  ++op_counts_[opcode];
 //    if (total_count_ % 113 == 0) {
-  //    op_times_[opcode] += rdtsc() - last_clock_;
-  //    last_clock_ = rdtsc();
-  //  }
+//    op_times_[opcode] += rdtsc() - last_clock_;
+//    last_clock_ = rdtsc();
+//  }
   if (total_count_ > 1e9) {
     dump_status();
     throw RException(PyExc_SystemError, "Execution entered infinite loop.");
   }
 }
+
+#define SET_REGISTER(regnum, val)\
+    Py_XDECREF(registers[regnum]);\
+    CHECK_VALID(val);\
+    registers[regnum] = val;
+
+
 template<class OpType, class SubType>
 struct RegOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
@@ -543,6 +557,10 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
     CHECK_VALID(r1);
     CHECK_VALID(r2);
     PyObject_SetItem(frame->locals(), r1, r2);
+    const int num_consts = PyTuple_Size(frame->consts());
+    Py_INCREF(r2);
+    Py_XDECREF(registers[num_consts + op.arg]);
+    registers[num_consts + op.arg] = r2;
   }
 };
 
@@ -651,8 +669,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
   }
 
   if (!PyString_Check(name)) {
-    throw RException(PyExc_SystemError,
-                     StringPrintf("attribute name must be string, not '%.200s'", Py_TYPE(name) ->tp_name));
+    throw RException(PyExc_SystemError, "attribute name must be string, not '%.200s'", Py_TYPE(name) ->tp_name);
   }
 
   if (type->tp_dict == NULL) {
@@ -682,7 +699,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
     size_t hint_pos = hint_offset(type, name);
     size_t dict_pos = dict_getoffset(dict, name);
 
-    eval->hints[hint_pos] = {type, name, NULL, dict_pos};
+    eval->hints[hint_pos] = {type, name, NULL, (unsigned int)dict_pos};
     op.hint = hint_pos;
     Py_INCREF(res);
     return res;
@@ -710,10 +727,21 @@ struct LoadAttr: public RegOpImpl<RegOp<2>, LoadAttr> {
     PyObject* obj = registers[op.reg[0]];
     PyObject* name = PyTuple_GET_ITEM(frame->names(), op.arg) ;
     PyObject* res = obj_getattr(eval, op, obj, name);
-    Py_XDECREF(registers[op.reg[1]]);
-    registers[op.reg[1]] = res;
-    CHECK_VALID(registers[op.reg[1]]);
+    SET_REGISTER(op.reg[1], res);
 //    Py_INCREF(registers[op.reg[1]]);
+  }
+};
+
+struct MakeFunction: public VarArgsOpImpl<MakeFunction> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
+    PyObject* code = registers[op->regs[0]];
+    PyObject* func =  PyFunction_New(code, frame->globals());
+    PyObject* defaults = PyTuple_New(op->arg);
+    for (int i = 0; i < op->arg; ++i) {
+      PyTuple_SetItem(defaults, i, registers[op->regs[i + 1]]);
+    }
+    PyFunction_SetDefaults(func, defaults);
+    SET_REGISTER(op->regs[op->arg + 1], func);
   }
 };
 
@@ -729,7 +757,12 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     PyObject* res = NULL;
     RegisterCode* code = NULL;
     if (!PyCFunction_Check(fn)) {
-      code = eval->compile(fn);
+      try {
+        code = eval->compile(fn);
+      } catch (RException& e) {
+        Log_Info("Failed to compile function, executing using ceval: %s", obj_to_str(e.value));
+        code = NULL;
+      }
     }
 
     if (code == NULL || nk > 0) {
@@ -963,7 +996,86 @@ template<int Opcode>
 struct BadOp {
   static n_inline void eval(Evaluator *eval, RegisterFrame* frame, PyObject** registers) {
     const char* name = OpUtil::name(Opcode);
-    throw RException(PyExc_SystemError, StringPrintf("Bad opcode %s", name));
+    throw RException(PyExc_SystemError, "Bad opcode %s", name);
+  }
+};
+
+// Imports
+
+struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, PyObject** registers) {
+    PyObject* name = PyTuple_GET_ITEM(frame->names(), op.arg) ;
+    PyObject* import = PyDict_GetItemString(frame->builtins(), "__import__");
+    if (import == NULL) {
+      throw RException(PyExc_ImportError, "__import__ not found in builtins.");
+    }
+
+    PyObject* args = NULL;
+    PyObject* v = registers[op.reg[0]];
+    PyObject* u = registers[op.reg[1]];
+    if (PyInt_AsLong(u) != -1 || PyErr_Occurred()) {
+      PyErr_Clear();
+      args = PyTuple_Pack(5, name, frame->globals(), frame->locals(), v, u);
+    } else {
+      args = PyTuple_Pack(4, name, frame->globals(), frame->locals(), v);
+    }
+
+    PyObject* res = PyEval_CallObject(import, args);
+    Py_XDECREF(registers[op.reg[2]]);
+    registers[op.reg[2]] = res;
+    CHECK_VALID(registers[op.reg[2]]);
+  }
+};
+
+struct ImportStar: public RegOpImpl<RegOp<1>, ImportStar> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    PyObject* module = registers[op.reg[0]];
+    PyObject *all = PyObject_GetAttrString(module, "__all__");
+    bool skip_leading_underscores = (all == NULL);
+    if (all == NULL) {
+      PyObject* dict = PyObject_GetAttrString(module, "__dict__");
+      all = PyMapping_Keys(dict);
+    }
+
+    for (int pos = 0, err = 0;; pos++) {
+      PyObject* name = PySequence_GetItem(all, pos);
+      if (name == NULL) {
+        if (!PyErr_ExceptionMatches(PyExc_IndexError)) err = -1;
+        else PyErr_Clear();
+        break;
+      }
+      if (skip_leading_underscores && PyString_Check(name) && PyString_AS_STRING(name) [0] == '_') {
+        Py_DECREF(name);
+        continue;
+      }
+
+      PyObject* value = PyObject_GetAttr(module, name);
+      if (value == NULL) err = -1;
+      else {
+        PyObject_SetItem(frame->locals(), name, value);
+      }
+      Py_DECREF(name);
+      Py_XDECREF(value);
+      if (err != 0) break;
+    }
+  }
+};
+
+struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
+    PyObject* name = PyTuple_GetItem(frame->names(), op.arg);
+    PyObject* module = registers[op.reg[0]];
+    Py_XDECREF(registers[op.reg[1]]);
+    PyObject* val = PyObject_GetAttr(module, name);
+    if (val == NULL) {
+      if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
+        throw RException(PyExc_ImportError, "cannot import name %.230s", PyString_AsString(name));
+      } else {
+        throw RException();
+      }
+    }
+
+    registers[op.reg[1]] = val;
   }
 };
 
@@ -1012,312 +1124,316 @@ PyObject * Evaluator::eval(RegisterFrame* f) {
 
 //  last_clock_ = rdtsc();
 
-  // #define OFFSET(opname) ((int64_t)&&op_##opname) - ((int64_t)&&op_STOP_CODE)
-  #define OFFSET(opname) &&op_##opname
+// #define OFFSET(opname) ((int64_t)&&op_##opname) - ((int64_t)&&op_STOP_CODE)
+#define OFFSET(opname) &&op_##opname
 
-  static const void* labels[] = {
-                                OFFSET(STOP_CODE),
-                                OFFSET(POP_TOP),
-                                OFFSET(ROT_TWO),
-                                OFFSET(ROT_THREE),
-                                OFFSET(DUP_TOP),
-                                OFFSET(ROT_FOUR),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(NOP),
-                                OFFSET(UNARY_POSITIVE),
-                                OFFSET(UNARY_NEGATIVE),
-                                OFFSET(UNARY_NOT),
-                                OFFSET(UNARY_CONVERT),
-                                OFFSET(BADCODE),
-                                OFFSET(UNARY_INVERT),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BINARY_POWER),
-                                OFFSET(BINARY_MULTIPLY),
-                                OFFSET(BINARY_DIVIDE),
-                                OFFSET(BINARY_MODULO),
-                                OFFSET(BINARY_ADD),
-                                OFFSET(BINARY_SUBTRACT),
-                                OFFSET(BINARY_SUBSCR),
-                                OFFSET(BINARY_FLOOR_DIVIDE),
-                                OFFSET(BINARY_TRUE_DIVIDE),
-                                OFFSET(INPLACE_FLOOR_DIVIDE),
-                                OFFSET(INPLACE_TRUE_DIVIDE),
-                                OFFSET(SLICE),
-                                OFFSET(SLICE),
-                                OFFSET(SLICE),
-                                OFFSET(SLICE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(STORE_SLICE),
-                                OFFSET(STORE_SLICE),
-                                OFFSET(STORE_SLICE),
-                                OFFSET(STORE_SLICE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(DELETE_SLICE),
-                                OFFSET(DELETE_SLICE),
-                                OFFSET(DELETE_SLICE),
-                                OFFSET(DELETE_SLICE),
-                                OFFSET(STORE_MAP),
-                                OFFSET(INPLACE_ADD),
-                                OFFSET(INPLACE_SUBTRACT),
-                                OFFSET(INPLACE_MULTIPLY),
-                                OFFSET(INPLACE_DIVIDE),
-                                OFFSET(INPLACE_MODULO),
-                                OFFSET(STORE_SUBSCR),
-                                OFFSET(DELETE_SUBSCR),
-                                OFFSET(BINARY_LSHIFT),
-                                OFFSET(BINARY_RSHIFT),
-                                OFFSET(BINARY_AND),
-                                OFFSET(BINARY_XOR),
-                                OFFSET(BINARY_OR),
-                                OFFSET(INPLACE_POWER),
-                                OFFSET(GET_ITER),
-                                OFFSET(BADCODE),
-                                OFFSET(PRINT_EXPR),
-                                OFFSET(PRINT_ITEM),
-                                OFFSET(PRINT_NEWLINE),
-                                OFFSET(PRINT_ITEM_TO),
-                                OFFSET(PRINT_NEWLINE_TO),
-                                OFFSET(INPLACE_LSHIFT),
-                                OFFSET(INPLACE_RSHIFT),
-                                OFFSET(INPLACE_AND),
-                                OFFSET(INPLACE_XOR),
-                                OFFSET(INPLACE_OR),
-                                OFFSET(BREAK_LOOP),
-                                OFFSET(WITH_CLEANUP),
-                                OFFSET(LOAD_LOCALS),
-                                OFFSET(RETURN_VALUE),
-                                OFFSET(IMPORT_STAR),
-                                OFFSET(EXEC_STMT),
-                                OFFSET(YIELD_VALUE),
-                                OFFSET(POP_BLOCK),
-                                OFFSET(END_FINALLY),
-                                OFFSET(BUILD_CLASS),
-                                OFFSET(STORE_NAME),
-                                OFFSET(DELETE_NAME),
-                                OFFSET(UNPACK_SEQUENCE),
-                                OFFSET(FOR_ITER),
-                                OFFSET(LIST_APPEND),
-                                OFFSET(STORE_ATTR),
-                                OFFSET(DELETE_ATTR),
-                                OFFSET(STORE_GLOBAL),
-                                OFFSET(DELETE_GLOBAL),
-                                OFFSET(DUP_TOPX),
-                                OFFSET(LOAD_CONST),
-                                OFFSET(LOAD_NAME),
-                                OFFSET(BUILD_TUPLE),
-                                OFFSET(BUILD_LIST),
-                                OFFSET(BUILD_SET),
-                                OFFSET(BUILD_MAP),
-                                OFFSET(LOAD_ATTR),
-                                OFFSET(COMPARE_OP),
-                                OFFSET(IMPORT_NAME),
-                                OFFSET(IMPORT_FROM),
-                                OFFSET(JUMP_FORWARD),
-                                OFFSET(JUMP_IF_FALSE_OR_POP),
-                                OFFSET(JUMP_IF_TRUE_OR_POP),
-                                OFFSET(JUMP_ABSOLUTE),
-                                OFFSET(POP_JUMP_IF_FALSE),
-                                OFFSET(POP_JUMP_IF_TRUE),
-                                OFFSET(LOAD_GLOBAL),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(CONTINUE_LOOP),
-                                OFFSET(SETUP_LOOP),
-                                OFFSET(SETUP_EXCEPT),
-                                OFFSET(SETUP_FINALLY),
-                                OFFSET(BADCODE),
-                                OFFSET(LOAD_FAST),
-                                OFFSET(STORE_FAST),
-                                OFFSET(DELETE_FAST),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(RAISE_VARARGS),
-                                OFFSET(CALL_FUNCTION),
-                                OFFSET(MAKE_FUNCTION),
-                                OFFSET(BUILD_SLICE),
-                                OFFSET(MAKE_CLOSURE),
-                                OFFSET(LOAD_CLOSURE),
-                                OFFSET(LOAD_DEREF),
-                                OFFSET(STORE_DEREF),
-                                OFFSET(BADCODE),
-                                OFFSET(BADCODE),
-                                OFFSET(CALL_FUNCTION_VAR),
-                                OFFSET(CALL_FUNCTION_KW),
-                                OFFSET(CALL_FUNCTION_VAR_KW),
-                                OFFSET(SETUP_WITH),
-                                OFFSET(BADCODE),
-                                OFFSET(EXTENDED_ARG),
-                                OFFSET(SET_ADD),
-                                OFFSET(MAP_ADD),
-                                OFFSET(INCREF),
-                                OFFSET(DECREF),
-                                OFFSET(CONST_INDEX), };
+static const void* labels[] = {
+  OFFSET(STOP_CODE),
+  OFFSET(POP_TOP),
+  OFFSET(ROT_TWO),
+  OFFSET(ROT_THREE),
+  OFFSET(DUP_TOP),
+  OFFSET(ROT_FOUR),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(NOP),
+  OFFSET(UNARY_POSITIVE),
+  OFFSET(UNARY_NEGATIVE),
+  OFFSET(UNARY_NOT),
+  OFFSET(UNARY_CONVERT),
+  OFFSET(BADCODE),
+  OFFSET(UNARY_INVERT),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BINARY_POWER),
+  OFFSET(BINARY_MULTIPLY),
+  OFFSET(BINARY_DIVIDE),
+  OFFSET(BINARY_MODULO),
+  OFFSET(BINARY_ADD),
+  OFFSET(BINARY_SUBTRACT),
+  OFFSET(BINARY_SUBSCR),
+  OFFSET(BINARY_FLOOR_DIVIDE),
+  OFFSET(BINARY_TRUE_DIVIDE),
+  OFFSET(INPLACE_FLOOR_DIVIDE),
+  OFFSET(INPLACE_TRUE_DIVIDE),
+  OFFSET(SLICE),
+  OFFSET(SLICE),
+  OFFSET(SLICE),
+  OFFSET(SLICE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(STORE_SLICE),
+  OFFSET(STORE_SLICE),
+  OFFSET(STORE_SLICE),
+  OFFSET(STORE_SLICE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(DELETE_SLICE),
+  OFFSET(DELETE_SLICE),
+  OFFSET(DELETE_SLICE),
+  OFFSET(DELETE_SLICE),
+  OFFSET(STORE_MAP),
+  OFFSET(INPLACE_ADD),
+  OFFSET(INPLACE_SUBTRACT),
+  OFFSET(INPLACE_MULTIPLY),
+  OFFSET(INPLACE_DIVIDE),
+  OFFSET(INPLACE_MODULO),
+  OFFSET(STORE_SUBSCR),
+  OFFSET(DELETE_SUBSCR),
+  OFFSET(BINARY_LSHIFT),
+  OFFSET(BINARY_RSHIFT),
+  OFFSET(BINARY_AND),
+  OFFSET(BINARY_XOR),
+  OFFSET(BINARY_OR),
+  OFFSET(INPLACE_POWER),
+  OFFSET(GET_ITER),
+  OFFSET(BADCODE),
+  OFFSET(PRINT_EXPR),
+  OFFSET(PRINT_ITEM),
+  OFFSET(PRINT_NEWLINE),
+  OFFSET(PRINT_ITEM_TO),
+  OFFSET(PRINT_NEWLINE_TO),
+  OFFSET(INPLACE_LSHIFT),
+  OFFSET(INPLACE_RSHIFT),
+  OFFSET(INPLACE_AND),
+  OFFSET(INPLACE_XOR),
+  OFFSET(INPLACE_OR),
+  OFFSET(BREAK_LOOP),
+  OFFSET(WITH_CLEANUP),
+  OFFSET(LOAD_LOCALS),
+  OFFSET(RETURN_VALUE),
+  OFFSET(IMPORT_STAR),
+  OFFSET(EXEC_STMT),
+  OFFSET(YIELD_VALUE),
+  OFFSET(POP_BLOCK),
+  OFFSET(END_FINALLY),
+  OFFSET(BUILD_CLASS),
+  OFFSET(STORE_NAME),
+  OFFSET(DELETE_NAME),
+  OFFSET(UNPACK_SEQUENCE),
+  OFFSET(FOR_ITER),
+  OFFSET(LIST_APPEND),
+  OFFSET(STORE_ATTR),
+  OFFSET(DELETE_ATTR),
+  OFFSET(STORE_GLOBAL),
+  OFFSET(DELETE_GLOBAL),
+  OFFSET(DUP_TOPX),
+  OFFSET(LOAD_CONST),
+  OFFSET(LOAD_NAME),
+  OFFSET(BUILD_TUPLE),
+  OFFSET(BUILD_LIST),
+  OFFSET(BUILD_SET),
+  OFFSET(BUILD_MAP),
+  OFFSET(LOAD_ATTR),
+  OFFSET(COMPARE_OP),
+  OFFSET(IMPORT_NAME),
+  OFFSET(IMPORT_FROM),
+  OFFSET(JUMP_FORWARD),
+  OFFSET(JUMP_IF_FALSE_OR_POP),
+  OFFSET(JUMP_IF_TRUE_OR_POP),
+  OFFSET(JUMP_ABSOLUTE),
+  OFFSET(POP_JUMP_IF_FALSE),
+  OFFSET(POP_JUMP_IF_TRUE),
+  OFFSET(LOAD_GLOBAL),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(CONTINUE_LOOP),
+  OFFSET(SETUP_LOOP),
+  OFFSET(SETUP_EXCEPT),
+  OFFSET(SETUP_FINALLY),
+  OFFSET(BADCODE),
+  OFFSET(LOAD_FAST),
+  OFFSET(STORE_FAST),
+  OFFSET(DELETE_FAST),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(RAISE_VARARGS),
+  OFFSET(CALL_FUNCTION),
+  OFFSET(MAKE_FUNCTION),
+  OFFSET(BUILD_SLICE),
+  OFFSET(MAKE_CLOSURE),
+  OFFSET(LOAD_CLOSURE),
+  OFFSET(LOAD_DEREF),
+  OFFSET(STORE_DEREF),
+  OFFSET(BADCODE),
+  OFFSET(BADCODE),
+  OFFSET(CALL_FUNCTION_VAR),
+  OFFSET(CALL_FUNCTION_KW),
+  OFFSET(CALL_FUNCTION_VAR_KW),
+  OFFSET(SETUP_WITH),
+  OFFSET(BADCODE),
+  OFFSET(EXTENDED_ARG),
+  OFFSET(SET_ADD),
+  OFFSET(MAP_ADD),
+  OFFSET(INCREF),
+  OFFSET(DECREF),
+  OFFSET(CONST_INDEX)}
+;
 
-  EVAL_LOG("New frame: %s"- &&op_STOP_CODE, PyEval_GetFuncName(frame->code->function));
-  try {
+EVAL_LOG("New frame: %p", frame->code);
+try {
     JUMP_TO(frame->next_code(pc));
 
-    BAD_OP(STOP_CODE);
+BAD_OP(STOP_CODE);
 
-    BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
-    BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
-    BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
-    BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-    BINARY_OP3(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
+BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
+BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
+BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
+BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
+BINARY_OP3(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
 
-    BINARY_OP2(BINARY_OR, PyNumber_Or);
-    BINARY_OP2(BINARY_XOR, PyNumber_Xor);
-    BINARY_OP2(BINARY_AND, PyNumber_And);
-    BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
-    BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
-    BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
-    BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
-    DEFINE_OP(BINARY_POWER, BinaryPower);
-    DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
+BINARY_OP2(BINARY_OR, PyNumber_Or);
+BINARY_OP2(BINARY_XOR, PyNumber_Xor);
+BINARY_OP2(BINARY_AND, PyNumber_And);
+BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
+BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
+BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
+BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
+DEFINE_OP(BINARY_POWER, BinaryPower);
+DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
 
-    BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
-    BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
-    BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
-    BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
-    BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
+BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
+BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
+BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
+BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
+BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
 
-    BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
-    BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
-    BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
-    BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
-    BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
-    BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
-    BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
-    DEFINE_OP(INPLACE_POWER, InplacePower);
+BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
+BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
+BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
+BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
+BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
+BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
+BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
+DEFINE_OP(INPLACE_POWER, InplacePower);
 
-    UNARY_OP2(UNARY_INVERT, PyNumber_Invert);
-    UNARY_OP2(UNARY_CONVERT, PyObject_Repr);
-    UNARY_OP2(UNARY_NEGATIVE, PyNumber_Negative);
-    UNARY_OP2(UNARY_POSITIVE, PyNumber_Positive);
+UNARY_OP2(UNARY_INVERT, PyNumber_Invert);
+UNARY_OP2(UNARY_CONVERT, PyObject_Repr);
+UNARY_OP2(UNARY_NEGATIVE, PyNumber_Negative);
+UNARY_OP2(UNARY_POSITIVE, PyNumber_Positive);
 
-    DEFINE_OP(UNARY_NOT, UnaryNot);
+DEFINE_OP(UNARY_NOT, UnaryNot);
 
-    DEFINE_OP(LOAD_FAST, LoadFast);
-    DEFINE_OP(LOAD_LOCALS, LoadLocals);
-    DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
-    DEFINE_OP(LOAD_NAME, LoadName);
-    DEFINE_OP(LOAD_ATTR, LoadAttr);
+DEFINE_OP(LOAD_FAST, LoadFast);
+DEFINE_OP(LOAD_LOCALS, LoadLocals);
+DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
+DEFINE_OP(LOAD_NAME, LoadName);
+DEFINE_OP(LOAD_ATTR, LoadAttr);
 
-    DEFINE_OP(STORE_NAME, StoreName);
-    DEFINE_OP(STORE_ATTR, StoreAttr);
-    DEFINE_OP(STORE_SUBSCR, StoreSubscr);
-    DEFINE_OP(STORE_FAST, StoreFast);
+DEFINE_OP(STORE_NAME, StoreName);
+DEFINE_OP(STORE_ATTR, StoreAttr);
+DEFINE_OP(STORE_SUBSCR, StoreSubscr);
+DEFINE_OP(STORE_FAST, StoreFast);
 
-    DEFINE_OP(CONST_INDEX, ConstIndex);
+DEFINE_OP(CONST_INDEX, ConstIndex);
 
-    DEFINE_OP(GET_ITER, GetIter);
-    DEFINE_OP(FOR_ITER, ForIter);
+DEFINE_OP(GET_ITER, GetIter);
+DEFINE_OP(FOR_ITER, ForIter);
 
-    op_RETURN_VALUE: {
+op_RETURN_VALUE: {
       result = ReturnValue::eval(this, frame, &pc, registers);
       goto done;
     }
 
     DEFINE_OP(BUILD_TUPLE, BuildTuple);
-    DEFINE_OP(BUILD_LIST, BuildList);
+DEFINE_OP(BUILD_LIST, BuildList);
 
-    DEFINE_OP(PRINT_NEWLINE, PrintNewline);
-    DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
-    DEFINE_OP(PRINT_ITEM, PrintItem);
-    DEFINE_OP(PRINT_ITEM_TO, PrintItem);
+DEFINE_OP(PRINT_NEWLINE, PrintNewline);
+DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
+DEFINE_OP(PRINT_ITEM, PrintItem);
+DEFINE_OP(PRINT_ITEM_TO, PrintItem);
 
-    FALLTHROUGH(CALL_FUNCTION);
-    FALLTHROUGH(CALL_FUNCTION_VAR);
-    FALLTHROUGH(CALL_FUNCTION_KW);
-    DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunction);
+FALLTHROUGH(CALL_FUNCTION);
+FALLTHROUGH(CALL_FUNCTION_VAR);
+FALLTHROUGH(CALL_FUNCTION_KW);
+DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunction);
 
-    FALLTHROUGH(POP_JUMP_IF_FALSE);
-    DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
+FALLTHROUGH(POP_JUMP_IF_FALSE);
+DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
 
-    FALLTHROUGH(POP_JUMP_IF_TRUE);
-    DEFINE_OP(JUMP_IF_TRUE_OR_POP, JumpIfTrueOrPop);
+FALLTHROUGH(POP_JUMP_IF_TRUE);
+DEFINE_OP(JUMP_IF_TRUE_OR_POP, JumpIfTrueOrPop);
 
-    DEFINE_OP(JUMP_ABSOLUTE, JumpAbsolute);
-    DEFINE_OP(COMPARE_OP, CompareOp);
-    DEFINE_OP(INCREF, IncRef);
-    DEFINE_OP(DECREF, DecRef);
+DEFINE_OP(JUMP_ABSOLUTE, JumpAbsolute);
+DEFINE_OP(COMPARE_OP, CompareOp);
+DEFINE_OP(INCREF, IncRef);
+DEFINE_OP(DECREF, DecRef);
 
-    DEFINE_OP(LIST_APPEND, ListAppend);
-    DEFINE_OP(SLICE, Slice);
+DEFINE_OP(LIST_APPEND, ListAppend);
+DEFINE_OP(SLICE, Slice);
 
-    BAD_OP(SETUP_LOOP);
-    BAD_OP(POP_BLOCK);
-    BAD_OP(LOAD_CONST);
-    BAD_OP(JUMP_FORWARD);
-    BAD_OP(MAP_ADD);
-    BAD_OP(SET_ADD);
-    BAD_OP(EXTENDED_ARG);
-    BAD_OP(SETUP_WITH);
-    BAD_OP(STORE_DEREF);
-    BAD_OP(LOAD_DEREF);
-    BAD_OP(LOAD_CLOSURE);
-    BAD_OP(MAKE_CLOSURE);
-    BAD_OP(BUILD_SLICE);
-    BAD_OP(MAKE_FUNCTION);
-    BAD_OP(RAISE_VARARGS);
-    BAD_OP(DELETE_FAST);
-    BAD_OP(SETUP_FINALLY);
-    BAD_OP(SETUP_EXCEPT);
-    BAD_OP(CONTINUE_LOOP);
-    BAD_OP(IMPORT_FROM);
-    BAD_OP(IMPORT_NAME);
-    BAD_OP(BUILD_MAP);
-    BAD_OP(BUILD_SET);
-    BAD_OP(DUP_TOPX);
-    BAD_OP(DELETE_GLOBAL);
-    BAD_OP(STORE_GLOBAL);
-    BAD_OP(DELETE_ATTR);
-    BAD_OP(UNPACK_SEQUENCE);
-    BAD_OP(DELETE_NAME);
-    BAD_OP(BUILD_CLASS);
-    BAD_OP(END_FINALLY);
-    BAD_OP(YIELD_VALUE);
-    BAD_OP(EXEC_STMT);
-    BAD_OP(IMPORT_STAR);
-    BAD_OP(WITH_CLEANUP);
-    BAD_OP(BREAK_LOOP);
-    BAD_OP(PRINT_EXPR);
-    BAD_OP(DELETE_SUBSCR);
-    BAD_OP(STORE_MAP);
-    BAD_OP(DELETE_SLICE);
-    BAD_OP(STORE_SLICE);
-    BAD_OP(NOP);
-    BAD_OP(ROT_FOUR);
-    BAD_OP(DUP_TOP);
-    BAD_OP(ROT_THREE);
-    BAD_OP(ROT_TWO);
-    BAD_OP(POP_TOP);
+DEFINE_OP(IMPORT_STAR, ImportStar);
+DEFINE_OP(IMPORT_FROM, ImportFrom);
+DEFINE_OP(IMPORT_NAME, ImportName);
 
-    op_BADCODE: {
+DEFINE_OP(MAKE_FUNCTION, MakeFunction);
+
+BAD_OP(SETUP_LOOP);
+BAD_OP(POP_BLOCK);
+BAD_OP(LOAD_CONST);
+BAD_OP(JUMP_FORWARD);
+BAD_OP(MAP_ADD);
+BAD_OP(SET_ADD);
+BAD_OP(EXTENDED_ARG);
+BAD_OP(SETUP_WITH);
+BAD_OP(STORE_DEREF);
+BAD_OP(LOAD_DEREF);
+BAD_OP(LOAD_CLOSURE);
+BAD_OP(MAKE_CLOSURE);
+BAD_OP(BUILD_SLICE);
+BAD_OP(RAISE_VARARGS);
+BAD_OP(DELETE_FAST);
+BAD_OP(SETUP_FINALLY);
+BAD_OP(SETUP_EXCEPT);
+BAD_OP(CONTINUE_LOOP);
+BAD_OP(BUILD_MAP);
+BAD_OP(BUILD_SET);
+BAD_OP(DUP_TOPX);
+BAD_OP(DELETE_GLOBAL);
+BAD_OP(STORE_GLOBAL);
+BAD_OP(DELETE_ATTR);
+BAD_OP(UNPACK_SEQUENCE);
+BAD_OP(DELETE_NAME);
+BAD_OP(BUILD_CLASS);
+BAD_OP(END_FINALLY);
+BAD_OP(YIELD_VALUE);
+BAD_OP(EXEC_STMT);
+BAD_OP(WITH_CLEANUP);
+BAD_OP(BREAK_LOOP);
+BAD_OP(PRINT_EXPR);
+BAD_OP(DELETE_SUBSCR);
+BAD_OP(STORE_MAP);
+BAD_OP(DELETE_SLICE);
+BAD_OP(STORE_SLICE);
+BAD_OP(NOP);
+BAD_OP(ROT_FOUR);
+BAD_OP(DUP_TOP);
+BAD_OP(ROT_THREE);
+BAD_OP(ROT_TWO);
+BAD_OP(POP_TOP);
+
+op_BADCODE: {
       EVAL_LOG("Jump to invalid opcode!?");
-      throw RException(PyExc_SystemError, "Invalid jump.");
+throw RException(PyExc_SystemError, "Invalid jump.");
     }
   } catch (RException &error) {
-    EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
-    Reg_Assert(error.exception != NULL, "Error without exception set.");
-    error.set_python_err();
+    EVAL_LOG("Leaving frame: %p", frame->code);
+Reg_Assert(error.exception != NULL, "Error without exception set.");
+error.set_python_err();
     return NULL;
   }
-  done: EVAL_LOG("Leaving frame: %s", PyEval_GetFuncName(frame->code->function));
-  return result;
+  done:
+  EVAL_LOG("Leaving frame: %p", frame->code);
+return result;
 }

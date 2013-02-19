@@ -21,6 +21,11 @@
 							<builder id="cdt.managedbuild.target.gnu.builder.base.1687809254" incrementalBuildTarget="opt" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder" parallelBuildOn="true" parallelizationNumber="optimal" superClass="cdt.managedbuild.target.gnu.builder.base"/>
 							<tool id="cdt.managedbuild.tool.gnu.archiver.base.2116426657" name="GCC Archiver" superClass="cdt.managedbuild.tool.gnu.archiver.base"/>
 							<tool id="cdt.managedbuild.tool.gnu.cpp.compiler.base.864515767" name="GCC C++ Compiler" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.base">
+								<option id="gnu.cpp.compiler.option.include.paths.733818342" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/peregrine-falcon/src/falcon}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/peregrine-falcon/src/sparsehash-2.0.2/src}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/peregrine-falcon/include/python2.7}&quot;"/>
+								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.1671588673" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.c.compiler.base.1749381192" name="GCC C Compiler" superClass="cdt.managedbuild.tool.gnu.c.compiler.base">
@@ -48,10 +53,10 @@
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 	<storageModule moduleId="refreshScope" versionNumber="2">
-		<configuration configurationName="Default">
+		<configuration configurationName="Release">
 			<resource resourceType="PROJECT" workspacePath="/peregrine-falcon"/>
 		</configuration>
-		<configuration configurationName="Release">
+		<configuration configurationName="Default">
 			<resource resourceType="PROJECT" workspacePath="/peregrine-falcon"/>
 		</configuration>
 		<configuration configurationName="Opt">

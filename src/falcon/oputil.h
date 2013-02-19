@@ -24,6 +24,7 @@ struct OpUtil {
       r.insert(BUILD_TUPLE);
       r.insert(BUILD_MAP);
       r.insert(BUILD_SET);
+      r.insert(MAKE_FUNCTION);
     }
 
     return r.find(opcode) != r.end();
@@ -59,10 +60,13 @@ struct OpUtil {
       r.insert(CALL_FUNCTION_KW);
       r.insert(CALL_FUNCTION_VAR);
       r.insert(CALL_FUNCTION_VAR_KW);
+      r.insert(MAKE_FUNCTION);
       r.insert(BUILD_LIST);
       r.insert(BUILD_TUPLE);
       r.insert(BUILD_MAP);
       r.insert(BUILD_SET);
+      r.insert(IMPORT_NAME);
+      r.insert(IMPORT_FROM);
     }
 
     return r.find(opcode) != r.end();

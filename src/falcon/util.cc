@@ -68,10 +68,6 @@ double get_processor_frequency() {
 }
 
 void logAtLevel(LogLevel level, const char* path, int line, const char* fmt, ...) {
-  if (level < currentLogLevel) {
-    return;
-  }
-
   char buffer[4096];
   va_list args;
   va_start(args, fmt);

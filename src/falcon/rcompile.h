@@ -124,11 +124,14 @@ public:
   int num_consts;
   int num_locals;
 
+
   unsigned char* py_codestr;
   Py_ssize_t py_codelen;
 
+  PyObject* names;
+
   CompilerState() :
-      num_reg(0), num_consts(0), num_locals(0), py_codestr(NULL), py_codelen(0) {
+      num_reg(0), num_consts(0), num_locals(0), py_codestr(NULL), py_codelen(0), names(NULL) {
   }
 
   CompilerState(PyCodeObject* code) {
@@ -142,6 +145,8 @@ public:
 
     py_codelen = codelen;
     py_codestr = (unsigned char*) PyString_AsString(code->co_code);
+
+    names = code->co_names;
   }
 
   ~CompilerState() {
@@ -187,9 +192,8 @@ RegisterCode* Compiler::compile(PyObject* func) {
     Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
   } catch (RException& e) {
     Log_Info("Failed to compile bytecode for %s", PyEval_GetFuncName(func));
-    e.set_python_err();
-    PyErr_Print();
     cache_[func] = NULL;
+    throw e;
   }
 
   return cache_[func];

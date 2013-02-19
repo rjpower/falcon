@@ -115,6 +115,14 @@ struct TimerBlock {
 };
 
 struct Coerce {
+  static std::string str(const size_t& v) {
+    return str((int)v);
+  }
+
+  static std::string str(const long& v) {
+    return StringPrintf("%ld", v);
+  }
+
   static std::string str(const short & v);
   static std::string str(const int& v);
   static std::string str(const double& v);
@@ -200,11 +208,18 @@ double get_processor_frequency();
 
 void logAtLevel(LogLevel level, const char* file, int line, const char* fmt, ...);
 
-#define Log_Debug(fmt, ...) logAtLevel(kLogDebug, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
-#define Log_Info(fmt, ...) logAtLevel(kLogInfo, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
-#define Log_Warn(fmt, ...) logAtLevel(kLogWarn, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
-#define Log_Error(fmt, ...) logAtLevel(kLogError, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
-#define Log_Fatal(fmt, ...) logAtLevel(kLogFatal, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
+#define LOG_IF(level, fmt, ...)\
+  do {\
+    if (level >= currentLogLevel) {\
+      logAtLevel(level, __FILE__, __LINE__, fmt, ##__VA_ARGS__);\
+    }\
+  } while (0)
+
+#define Log_Debug(fmt, ...) LOG_IF(kLogDebug, fmt, ##__VA_ARGS__)
+#define Log_Info(fmt, ...) LOG_IF(kLogInfo, fmt, ##__VA_ARGS__)
+#define Log_Warn(fmt, ...) LOG_IF(kLogWarn, fmt, ##__VA_ARGS__)
+#define Log_Error(fmt, ...) LOG_IF(kLogError, fmt, ##__VA_ARGS__)
+#define Log_Fatal(fmt, ...) LOG_IF(kLogFatal, fmt, ##__VA_ARGS__)
 
 #define Log_Perror(fmt, ...)\
   Log_Warn("%s :: (System error: %s)", StringPrintf(fmt, ##__VA_ARGS__).c_str(), strerror(errno));

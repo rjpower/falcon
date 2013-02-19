@@ -1,7 +1,7 @@
+from falcon_core import *
+import falcon_core
 import os
 import sys
-import falcon_core
-from falcon_core import *
 
 def run_function(f, *args):
   evaluator = Evaluator()
