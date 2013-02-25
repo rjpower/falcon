@@ -49,6 +49,16 @@ def unpack_first(x):
     a,b,c = x
     return a
 
+def nested(x):
+  def f(y):
+    return y+y
+  return f(x)
+
+def nested_closure(x):
+  def f(y):
+    return x + y
+  return f(x)
+
 class Simple(TimedTest):
   def test_add1(self): self.time_compare(add, 1, 2)
   def test_add2(self): self.time_compare(add, 100, 200)
@@ -76,6 +86,12 @@ class Simple(TimedTest):
   
   def test_unpack_first(self):
     self.time_compare(unpack_first, (1,2,3), repeat = 1)
+
+  def test_nested(self):
+    self.time_compare(nested, 1, repeat=1)
+  
+  def test_nested_closure(self):
+    self.time_compare(nested_closure, 1, repeat=1)
 
 if __name__ == '__main__':
   unittest.main()

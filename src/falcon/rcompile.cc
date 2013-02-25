@@ -655,6 +655,18 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       op->regs[oparg + 1] = stack->push_register(state->num_reg++);
       break;
     }
+    case MAKE_CLOSURE: {
+      int code = stack->pop_register();
+      int closure_values = stack->pop_register();
+      CompilerOp* op = bb->add_varargs_op(opcode, oparg, oparg + 3);
+      op->regs[0] = code;
+      op->regs[1] = closure_values;
+      for (int i = 0; i < oparg; ++i) {
+        op->regs[i + 2] = stack->pop_register();
+      }
+      op->regs[oparg + 2] = stack->push_register(state->num_reg++);
+      break;
+    }
     case BUILD_LIST:
     case BUILD_SET:
     case BUILD_TUPLE: {

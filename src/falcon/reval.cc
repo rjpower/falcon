@@ -792,6 +792,27 @@ struct MakeFunction: public VarArgsOpImpl<MakeFunction> {
   }
 };
 
+
+struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
+    // first register argument is the code object
+    // second is the closure args tuple
+    // rest of the registers are default argument values
+    PyObject* code = registers[op->reg[0]];
+    PyObject* func = PyFunction_New(code, frame->globals());
+    PyObject* closure_values = registers[op->reg[1]];
+    PyFunction_SetClosure(func, closure_values);
+
+    PyObject* defaults = PyTuple_New(op->arg);
+    for (int i = 0; i < op->arg; ++i) {
+      PyTuple_SetItem(defaults, i, registers[op->reg[i + 2]]);
+    }
+    PyFunction_SetDefaults(func, defaults);
+    SET_REGISTER(op->reg[op->arg + 2], func);
+  }
+};
+
+
 struct CallFunction: public VarArgsOpImpl<CallFunction> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
     int na = op->arg & 0xff;
@@ -1505,6 +1526,7 @@ DEFINE_OP(IMPORT_FROM, ImportFrom);
 DEFINE_OP(IMPORT_NAME, ImportName);
 
 DEFINE_OP(MAKE_FUNCTION, MakeFunction);
+DEFINE_OP(MAKE_CLOSURE, MakeClosure);
 DEFINE_OP(BUILD_CLASS, BuildClass);
 
 BAD_OP(SETUP_LOOP);
@@ -1518,7 +1540,6 @@ BAD_OP(SETUP_WITH);
 BAD_OP(STORE_DEREF);
 BAD_OP(LOAD_DEREF);
 BAD_OP(LOAD_CLOSURE);
-BAD_OP(MAKE_CLOSURE);
 BAD_OP(BUILD_SLICE);
 BAD_OP(RAISE_VARARGS);
 BAD_OP(DELETE_FAST);
