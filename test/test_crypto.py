@@ -366,6 +366,7 @@ def t(kl, bl):
   assert r.decrypt(r.encrypt(b)) == b
 
 def multiple_calls():
+  for _ in xrange(50):
     t(16, 16)
     t(16, 24)
     t(16, 32)
