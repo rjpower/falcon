@@ -36,7 +36,18 @@
 #endif
 
 static inline const char* obj_to_str(PyObject* o) {
-  return PyString_AsString(PyObject_Str(o));
+  if (o == NULL) {
+    return "<NULL>";
+  }
+  if (PyString_Check(o)) {
+    return PyString_AsString(o);
+  }
+
+  PyObject* obj_repr = PyObject_Repr(o);
+  if (obj_repr == NULL) {
+    return "<INVALID __repr__>";
+  }
+  return PyString_AsString(obj_repr);
 }
 
 typedef uint16_t Register;
@@ -140,12 +151,12 @@ struct VarRegOp {
 template<int num_registers>
 inline std::string RegOp<num_registers>::str(PyObject** registers) const {
   StringWriter w;
-  w.printf("%s[%d] (", OpUtil::name(code), arg);
+  w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
     if (registers == NULL) {
       w.printf("%d,", reg[i]);
     } else {
-      w.printf("[%d] %s, ", reg[i], obj_to_str(registers[reg[i]]));
+      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
     }
   }
   w.printf(")");
@@ -154,14 +165,15 @@ inline std::string RegOp<num_registers>::str(PyObject** registers) const {
 
 inline std::string VarRegOp::str(PyObject** registers) const {
   StringWriter w;
-  w.printf("%s[%d]", OpUtil::name(code), arg);
+  w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
     if (registers == NULL) {
       w.printf("%d,", reg[i]);
     } else {
-      w.printf("[%d] %s, ", reg[i], obj_to_str(registers[reg[i]]));
+      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
     }
   }
+  w.printf(")");
   return w.str();
 }
 

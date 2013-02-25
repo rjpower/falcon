@@ -285,7 +285,7 @@ int RegisterStack::peek_register(int offset) {
   Reg_AssertGt(offset, 0);
   Reg_AssertGe((int)regs.size(), offset);
   int val = regs[regs.size() - offset];
-  Log_Info("Peek: %d = %d", offset, val);
+//  Log_Info("Peek: %d = %d", offset, val);
   return val;
 }
 
@@ -659,7 +659,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case BUILD_SET:
     case BUILD_TUPLE: {
       CompilerOp* f = bb->add_varargs_op(opcode, oparg, oparg + 1);
-      for (r = 0; r < oparg; ++r) {
+      for (r = oparg - 1; r >= 0; --r) {
         f->regs[r] = stack->pop_register();
       }
       f->regs[oparg] = stack->push_register(state->num_reg++);
@@ -712,7 +712,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       // Control flow instructions - recurse down each branch with a copy of the current stack.
     case BREAK_LOOP: {
       Frame f = stack->pop_frame();
-      bb->add_op(opcode, oparg);
+      Log_Info("Break loop -- jumping to %d", f.target);
+      bb->add_op(opcode, 0);
       bb->exits.push_back(registerize(state, stack, f.target));
       return entry_point;
     }
@@ -720,7 +721,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       stack->pop_frame();
       bb->add_op(opcode, oparg);
       bb->exits.push_back(registerize(state, stack, oparg));
-      break;
+      return entry_point;
     }
     case FOR_ITER: {
       RegisterStack a, b;
@@ -886,6 +887,15 @@ public:
     while (1) {
       if (next->entries.size() > 1 || next->visited) {
         break;
+      }
+
+      // Strip our branch instruction if we're being merged
+      // into the following basic block.
+      if (!bb->code.empty()) {
+        CompilerOp* last = bb->code.back();
+        if (OpUtil::is_branch(last->code)) {
+          bb->code.pop_back();
+        }
       }
 
       //        Log_Info("Merging %d into %d", next->idx, bb->idx);
@@ -1097,7 +1107,7 @@ public:
   }
 };
 
-class RenameRegisters: public CompilerPass, UseCounts {
+class RenameRegisters: public CompilerPass {
 private:
   // Mapping from old -> new register names
   google::dense_hash_map<int, int> register_map_;
@@ -1121,9 +1131,21 @@ public:
   }
 
   void visit_fn(CompilerState* fn) {
-    count_uses(fn);
+    google::dense_hash_map<int, int> counts;
+    counts.set_empty_key(kInvalidRegister);
 
-    // Don't reuse the const/local register aliases.
+    for (BasicBlock* bb : fn->bbs) {
+      if (bb->dead) continue;
+      for (CompilerOp *op : bb->code) {
+        if (op->dead) continue;
+        for (int reg : op->regs) {
+          ++counts[reg];
+        }
+      }
+    }
+
+    // Don't remap the const/local register aliases, even if we
+    // don't see a usage point for them.
     for (int i = 0; i < fn->num_consts + fn->num_locals; ++i) {
       register_map_[i] = i;
     }
@@ -1151,6 +1173,7 @@ public:
 
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
+//  Log_Info(fn->str().c_str());
   FuseBasicBlocks()(fn);
   CopyPropagation()(fn);
   StoreElim()(fn);
@@ -1185,6 +1208,10 @@ void lower_register_code(CompilerState* state, std::string *out) {
     BasicBlock* bb = state->bbs[i];
     OpHeader* op = NULL;
 
+    if (bb->code.empty()) {
+      continue;
+    }
+
     // Skip to the end of the basic block.
     for (size_t j = 0; j < bb->code.size(); ++j) {
       op = (OpHeader*) (out->data() + pos);
@@ -1199,6 +1226,9 @@ void lower_register_code(CompilerState* state, std::string *out) {
       }
       pos += RCompilerUtil::op_size(bb->code[j]);
     }
+
+    Reg_Assert(op->code == RETURN_VALUE || OpUtil::is_branch(op->code) || (bb->exits[0] == state->bbs[i + 1]),
+               "Non-local jump from non-branch op %s", OpUtil::name(op->code));
 
     if (OpUtil::is_branch(op->code) && op->code != RETURN_VALUE) {
       if (bb->exits.size() == 1) {

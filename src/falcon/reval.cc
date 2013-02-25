@@ -89,8 +89,10 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
   if (rcode->function) {
     globals_ = PyFunction_GetGlobals(rcode->function);
+    locals_ = NULL;
   } else {
     globals_ = PyEval_GetGlobals();
+    locals_ = PyEval_GetGlobals();
   }
 
   Reg_Assert(kw == NULL || kw->empty(), "Keyword args not supported.");
@@ -98,7 +100,6 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   builtins_ = PyEval_GetBuiltins();
 
   py_call_args = NULL;
-  locals_ = NULL;
   names_ = code->names();
   consts_ = code->consts();
 
@@ -210,7 +211,6 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 RegisterFrame* Evaluator::frame_from_codeobj(PyObject* code) {
   ObjVector args, kw;
   RegisterCode *regcode = compile(code);
-
   return new RegisterFrame(regcode, code, &args, &kw);
 }
 
@@ -246,7 +246,7 @@ template<class OpType, class SubType>
 struct RegOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
     OpType& op = *((OpType*) *pc);
-    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str(registers).c_str());
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(*pc), op.str(registers).c_str());
     *pc += op.size();
     SubType::_eval(eval, frame, op, registers);
   }
@@ -256,7 +256,7 @@ template<class SubType>
 struct VarArgsOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
     VarRegOp *op = (VarRegOp*) (*pc);
-    EVAL_LOG("%5d: %s", frame->offset(*pc), op->str().c_str());
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(*pc), op->str(registers).c_str());
     *pc += op->size();
     SubType::_eval(eval, frame, op, registers);
   }
@@ -266,7 +266,7 @@ template<class SubType>
 struct BranchOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
     BranchOp& op = *((BranchOp*) *pc);
-    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str().c_str());
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(*pc), op.str().c_str());
     SubType::_eval(eval, frame, op, pc, registers);
   }
 };
@@ -370,8 +370,7 @@ struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecia
     if (r3 == NULL) {
       r3 = ObjF(r1, r2);
     }
-    Py_XDECREF(registers[op.reg[2]]);
-    registers[op.reg[2]] = r3;
+    SET_REGISTER(op.reg[2], r3);
   }
 };
 
@@ -383,9 +382,7 @@ struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
     CHECK_VALID(r1);
     CHECK_VALID(r2);
     PyObject* r3 = ObjF(r1, r2);
-    CHECK_VALID(r3);
-    Py_XDECREF(registers[op.reg[2]]);
-    registers[op.reg[2]] = r3;
+    SET_REGISTER(op.reg[2], r3);
   }
 };
 
@@ -395,9 +392,7 @@ struct UnaryOp: public RegOpImpl<RegOp<2>, UnaryOp<OpCode, ObjF> > {
     PyObject* r1 = registers[op.reg[0]];
     CHECK_VALID(r1);
     PyObject* r2 = ObjF(r1);
-    CHECK_VALID(r2);
-    Py_XDECREF(registers[op.reg[1]]);
-    registers[op.reg[1]] = r2;
+    SET_REGISTER(op.reg[1], r2);
   }
 };
 
@@ -406,8 +401,26 @@ struct UnaryNot: public RegOpImpl<RegOp<2>, UnaryNot> {
     PyObject* r1 = registers[op.reg[0]];
     PyObject* res = PyObject_IsTrue(r1) ? Py_False : Py_True;
     Py_INCREF(res);
-    Py_XDECREF(registers[op.reg[1]]);
-    registers[op.reg[1]] = res;
+    SET_REGISTER(op.reg[1], res);
+  }
+};
+
+struct BinaryModulo: public RegOpImpl<RegOp<3>, BinaryModulo> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, PyObject** registers) {
+    PyObject* r1 = registers[op.reg[0]];
+    CHECK_VALID(r1);
+    PyObject* r2 = registers[op.reg[1]];
+    CHECK_VALID(r2);
+    PyObject* r3 = IntegerOps::mod(r1, r2);
+    if (r3 == NULL) {
+      if (PyString_CheckExact(r1)) {
+        r3 = PyString_Format(r1, r2);
+      } else {
+        r3 = PyNumber_Remainder(r1, r2);
+      }
+    }
+
+    SET_REGISTER(op.reg[2], r3);
   }
 };
 
@@ -419,8 +432,8 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
     CHECK_VALID(r2);
     PyObject* r3 = PyNumber_Power(r1, r2, Py_None);
     CHECK_VALID(r3);
-    Py_XDECREF(registers[op.reg[1]]);
-    registers[op.reg[2]] = r3;
+
+    SET_REGISTER(op.reg[2], r3);
   }
 };
 
@@ -909,13 +922,21 @@ struct JumpAbsolute: public BranchOpImpl<JumpAbsolute> {
   }
 };
 
+struct BreakLoop: public BranchOpImpl<BreakLoop> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc,
+                             PyObject** registers) {
+    EVAL_LOG("Jumping to: %d", op.label);
+    *pc = frame->instructions() + op.label;
+  }
+};
+
 // Evaluation of RETURN_VALUE is special.  g++ exceptions are excrutiatingly slow, so we
 // can't use the exception mechanism to jump to our exit point.  Instead, we return a value
 // here and jump to the exit of our frame.
 struct ReturnValue {
   static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
     RegOp<1>& op = *((RegOp<1>*) *pc);
-    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str().c_str());
+    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str(registers).c_str());
     PyObject* result = registers[op.reg[0]];
     Py_INCREF(result);
     return result;
@@ -933,10 +954,11 @@ struct BuildTuple: public VarArgsOpImpl<BuildTuple> {
     int i;
     PyObject* t = PyTuple_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
-      PyTuple_SET_ITEM(t, i, registers[op->reg[i]]);
+      PyObject* v = registers[op->reg[i]];
+      Py_INCREF(v);
+      PyTuple_SET_ITEM(t, i, v);
     }
-    registers[op->reg[op->arg]] = t;
-
+    SET_REGISTER(op->reg[op->arg], t);
   }
 };
 
@@ -945,9 +967,11 @@ struct BuildList: public VarArgsOpImpl<BuildList> {
     int i;
     PyObject* t = PyList_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
-      PyList_SET_ITEM(t, i, registers[op->reg[i]]);
+      PyObject* v = registers[op->reg[i]];
+      Py_INCREF(v);
+      PyList_SET_ITEM(t, i, v);
     }
-    registers[op->reg[op->arg]] = t;
+    SET_REGISTER(op->reg[op->arg], t);
   }
 };
 
@@ -982,8 +1006,7 @@ struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
     }
 
     result = PyObject_CallFunctionObjArgs(metaclass, name, bases, methods, NULL);
-    Log_Info("Building a class -- methods: %s\n bases: %s\n name: %s\n result: %s",
-             obj_to_str(methods), obj_to_str(bases), obj_to_str(name), obj_to_str(result));
+    EVAL_LOG("Building a class -- methods: %s\n bases: %s\n name: %s\n result: %s", obj_to_str(methods), obj_to_str(bases), obj_to_str(name), obj_to_str(result));
 
     Py_DECREF(metaclass);
 
@@ -1388,7 +1411,6 @@ BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
 BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
 BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
 BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-BINARY_OP3(BINARY_MODULO, PyNumber_Remainder, IntegerOps::mod);
 
 BINARY_OP2(BINARY_OR, PyNumber_Or);
 BINARY_OP2(BINARY_XOR, PyNumber_Xor);
@@ -1397,8 +1419,10 @@ BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
 BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
 BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
 BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
+
 DEFINE_OP(BINARY_POWER, BinaryPower);
 DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
+DEFINE_OP(BINARY_MODULO, BinaryModulo);
 
 BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
 BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
@@ -1440,6 +1464,7 @@ DEFINE_OP(CONST_INDEX, ConstIndex);
 
 DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);
+DEFINE_OP(BREAK_LOOP, BreakLoop);
 
 op_RETURN_VALUE: {
       result = ReturnValue::eval(this, frame, &pc, registers);
@@ -1508,7 +1533,6 @@ BAD_OP(END_FINALLY);
 BAD_OP(YIELD_VALUE);
 BAD_OP(EXEC_STMT);
 BAD_OP(WITH_CLEANUP);
-BAD_OP(BREAK_LOOP);
 BAD_OP(PRINT_EXPR);
 BAD_OP(DELETE_SUBSCR);
 BAD_OP(STORE_MAP);

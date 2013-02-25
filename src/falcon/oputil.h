@@ -40,6 +40,8 @@ struct OpUtil {
       r.insert(POP_JUMP_IF_TRUE);
       r.insert(JUMP_ABSOLUTE);
       r.insert(JUMP_FORWARD);
+      r.insert(BREAK_LOOP);
+      r.insert(CONTINUE_LOOP);
     }
 
     return r.find(opcode) != r.end();
@@ -67,6 +69,7 @@ struct OpUtil {
       r.insert(BUILD_SET);
       r.insert(IMPORT_NAME);
       r.insert(IMPORT_FROM);
+      r.insert(CONTINUE_LOOP);
     }
 
     return r.find(opcode) != r.end();

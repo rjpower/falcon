@@ -66,3 +66,12 @@ class TimedTest(unittest.TestCase):
           else:
               self.assertEqual(py_result, falcon_result)
 
+
+
+# decorator for quickly creating simple test functions
+def simple_test(f):
+  class SimpleTestCase(TimedTest):
+    def test_function(self):
+      self.time_compare(f)
+      
+  return SimpleTestCase
