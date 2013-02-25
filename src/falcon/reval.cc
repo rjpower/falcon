@@ -602,10 +602,6 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
     CHECK_VALID(r1);
     CHECK_VALID(r2);
     PyObject_SetItem(frame->locals(), r1, r2);
-    const int num_consts = PyTuple_Size(frame->consts());
-    Py_INCREF(r2);
-    Py_XDECREF(registers[num_consts + op.arg]);
-    registers[num_consts + op.arg] = r2;
   }
 };
 

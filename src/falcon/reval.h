@@ -85,7 +85,9 @@ public:
   f_inline PyObject* locals() {
     if (!locals_) {
       const int num_consts = PyTuple_Size(consts());
-      const int num_locals = PyTuple_Size(code->names());
+      const int num_locals = code->code()->co_nlocals;
+
+      Log_Info("%d %d %d %d", num_consts, num_locals, num_consts + num_locals, code->num_registers);
       locals_ = PyDict_New();
       for (int i = 0; i < num_locals; ++i) {
         PyObject* v = registers[num_consts + i];

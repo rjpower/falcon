@@ -60,7 +60,7 @@ class TestDecisionTree(timed_test.TimedTest):
 #    self.timed(gen_random_tree, 1000, 12)
   def test_eval_labels(self):
     tree = gen_random_tree(n_features = 10, depth = 12)
-    features = gen_random_tuples(500000,10)
+    features = gen_random_tuples(50000,10)
     self.timed(predict_labels, features, tree)
 
 if __name__ == '__main__':

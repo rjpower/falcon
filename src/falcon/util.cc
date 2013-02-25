@@ -80,7 +80,7 @@ void logAtLevel(LogLevel level, const char* path, int line, const char* fmt, ...
 
   double subSecond = Now();
 
-  fprintf(stderr, "%s %4.3f [%5d] %s:%3d %s\n", logLevels[level], subSecond, getpid(), file, line, buffer);
+  fprintf(stderr, "%s %4.3f [%5d] %s:%d %s\n", logLevels[level], subSecond, getpid(), file, line, buffer);
 
   fflush(stderr);
   if (level == kLogFatal) {
