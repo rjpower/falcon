@@ -39,11 +39,11 @@ static inline const char* obj_to_str(PyObject* o) {
   return PyString_AsString(PyObject_Str(o));
 }
 
-typedef uint8_t Register;
+typedef uint16_t Register;
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
-static const uint8_t kInvalidRegister = (uint8_t) -1;
+static const Register kInvalidRegister = (Register) -1;
 
 typedef uint16_t HintOffset;
 static const uint16_t kMaxHints = 1024;

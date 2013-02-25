@@ -338,11 +338,11 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-//    const char* name = NULL;
-//    if (oparg < PyTuple_Size(state->names)) {
-//      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
-//    }
-//    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
+    const char* name = NULL;
+    if (oparg < PyTuple_Size(state->names)) {
+      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+    }
+    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     for (size_t i = 0; i < state->bbs.size(); ++i) {
