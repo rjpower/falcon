@@ -97,19 +97,7 @@ struct BranchOp {
   JumpLoc label;
   Register reg[2];
 
-  std::string str() const {
-    StringWriter w;
-    w.printf("%s (", OpUtil::name(code));
-    if (reg[0] != kInvalidRegister) {
-      w.printf("%d, ", reg[0]);
-    }
-    if (reg[1] != kInvalidRegister) {
-      w.printf("%d, ", reg[1]);
-    }
-    w.printf(")");
-    w.printf(" -> [%d]", label);
-    return w.str();
-  }
+  std::string str() const;
 
   inline size_t size() const {
     return sizeof(*this);
@@ -127,15 +115,7 @@ struct RegOp {
 
   Register reg[num_registers];
 
-  std::string str() const {
-    StringWriter w;
-    w.printf("%s[%d] (", OpUtil::name(code), arg);
-    for (int i = 0; i < num_registers; ++i) {
-      w.printf("%d,", reg[i]);
-    }
-    w.printf(")");
-    return w.str();
-  }
+  std::string str(PyObject** registers = NULL) const;
 
   inline size_t size() const {
     return sizeof(*this);
@@ -148,18 +128,56 @@ struct VarRegOp {
   uint8_t code;
   uint8_t arg;
   uint8_t num_registers;
-  Register regs[0];
+  Register reg[0];
 
-  std::string str() const {
-    StringWriter w;
-    w.printf("%s[%d] (%s)", OpUtil::name(code), arg, StrUtil::join(&regs[0], &regs[num_registers]).c_str());
-    return w.str();
-  }
+  std::string str(PyObject** registers = NULL) const;
 
   inline size_t size() const {
     return sizeof(VarRegOp) + num_registers * sizeof(Register);
   }
 };
+
+template<int num_registers>
+inline std::string RegOp<num_registers>::str(PyObject** registers) const {
+  StringWriter w;
+  w.printf("%s[%d] (", OpUtil::name(code), arg);
+  for (int i = 0; i < num_registers; ++i) {
+    if (registers == NULL) {
+      w.printf("%d,", reg[i]);
+    } else {
+      w.printf("[%d] %s, ", reg[i], obj_to_str(registers[reg[i]]));
+    }
+  }
+  w.printf(")");
+  return w.str();
+}
+
+inline std::string VarRegOp::str(PyObject** registers) const {
+  StringWriter w;
+  w.printf("%s[%d]", OpUtil::name(code), arg);
+  for (int i = 0; i < num_registers; ++i) {
+    if (registers == NULL) {
+      w.printf("%d,", reg[i]);
+    } else {
+      w.printf("[%d] %s, ", reg[i], obj_to_str(registers[reg[i]]));
+    }
+  }
+  return w.str();
+}
+
+inline std::string BranchOp::str() const {
+  StringWriter w;
+  w.printf("%s (", OpUtil::name(code));
+  if (reg[0] != kInvalidRegister) {
+    w.printf("%d, ", reg[0]);
+  }
+  if (reg[1] != kInvalidRegister) {
+    w.printf("%d, ", reg[1]);
+  }
+  w.printf(")");
+  w.printf(" -> [%d]", label);
+  return w.str();
+}
 
 #pragma pack(pop)
 

@@ -33,7 +33,7 @@ class TimedTest(unittest.TestCase):
     repeat = kw.get('repeat', 1)
     if falcon:
       evaluator = falcon.Evaluator()
-      frame = evaluator.frame_from_python(function, args)
+      frame = evaluator.frame_from_pyfunc(function, args, None)
       if not frame:
         raise Exception('Failed to compile frame.')
     

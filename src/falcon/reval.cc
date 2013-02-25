@@ -93,6 +93,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
     globals_ = PyEval_GetGlobals();
   }
 
+  Reg_Assert(kw == NULL || kw->empty(), "Keyword args not supported.");
+
   builtins_ = PyEval_GetBuiltins();
 
   py_call_args = NULL;
@@ -168,13 +170,23 @@ Evaluator::~Evaluator() {
 }
 
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
-  RegisterFrame* frame = frame_from_python(func, args);
+  RegisterFrame* frame = frame_from_pyfunc(func, args, NULL);
   PyObject* result = eval(frame);
   delete frame;
   return result;
 }
 
-RegisterFrame* Evaluator::frame_from_python(PyObject* obj, PyObject* args) {
+RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
+  RegisterCode* regcode = compile((PyObject*) frame->f_code);
+
+  ObjVector v_args;
+  RegisterFrame* f = new RegisterFrame(regcode, (PyObject*) frame->f_code, &v_args, NULL);
+  PyFrame_FastToLocals(frame);
+  f->fill_locals(frame->f_locals);
+  return f;
+}
+
+RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObject* kw) {
   if (args == NULL || !PyTuple_Check(args)) {
     throw RException(PyExc_TypeError, "Expected function argument tuple, got: %s", obj_to_str(PyObject_Type(args)));
   }
@@ -184,6 +196,12 @@ RegisterFrame* Evaluator::frame_from_python(PyObject* obj, PyObject* args) {
   ObjVector v_args;
   for (int i = 0; i < PyTuple_GET_SIZE(args) ; ++i) {
     v_args.push_back(PyTuple_GET_ITEM(args, i) );
+  }
+
+  ObjVector kw_args;
+  if (kw != NULL && kw != Py_None) {
+    Log_Fatal("Keywords not supported.");
+//    kw_args.push_back()
   }
 
   return new RegisterFrame(regcode, obj, &v_args, NULL);
@@ -224,12 +242,11 @@ void Evaluator::collect_info(int opcode) {
     CHECK_VALID(val);\
     registers[regnum] = val;
 
-
 template<class OpType, class SubType>
 struct RegOpImpl {
   static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
     OpType& op = *((OpType*) *pc);
-    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str().c_str());
+    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str(registers).c_str());
     *pc += op.size();
     SubType::_eval(eval, frame, op, registers);
   }
@@ -512,6 +529,21 @@ struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
   }
 };
 
+struct StoreGlobal: public RegOpImpl<RegOp<1>, StoreGlobal> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    PyObject* key = PyTuple_GET_ITEM(frame->names(), op.arg) ;
+    PyObject* val = registers[op.reg[0]];
+    PyDict_SetItem(frame->globals(), key, val);
+  }
+};
+
+struct DeleteGlobal: public RegOpImpl<RegOp<0>, DeleteGlobal> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<0>& op, PyObject** registers) {
+    PyObject* key = PyTuple_GET_ITEM(frame->names(), op.arg) ;
+    PyDict_DelItem(frame->globals(), key);
+  }
+};
+
 struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
     PyObject* r1 = PyTuple_GET_ITEM(frame->names(), op.arg) ;
@@ -630,7 +662,7 @@ static PyDictObject* obj_getdictptr(PyObject* obj, PyTypeObject* type) {
 
 static size_t dict_getoffset(PyDictObject* dict, PyObject* key) {
   PyDictEntry* pos = dict->ma_table;
-  for (size_t offset = 0; offset < dict->ma_mask + 1; ++offset, ++pos) {
+  for (int offset = 0; offset < dict->ma_mask + 1; ++offset, ++pos) {
     if (pos->me_key == key) {
       return offset;
     }
@@ -734,14 +766,14 @@ struct LoadAttr: public RegOpImpl<RegOp<2>, LoadAttr> {
 
 struct MakeFunction: public VarArgsOpImpl<MakeFunction> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
-    PyObject* code = registers[op->regs[0]];
-    PyObject* func =  PyFunction_New(code, frame->globals());
+    PyObject* code = registers[op->reg[0]];
+    PyObject* func = PyFunction_New(code, frame->globals());
     PyObject* defaults = PyTuple_New(op->arg);
     for (int i = 0; i < op->arg; ++i) {
-      PyTuple_SetItem(defaults, i, registers[op->regs[i + 1]]);
+      PyTuple_SetItem(defaults, i, registers[op->reg[i + 1]]);
     }
     PyFunction_SetDefaults(func, defaults);
-    SET_REGISTER(op->regs[op->arg + 1], func);
+    SET_REGISTER(op->reg[op->arg + 1], func);
   }
 };
 
@@ -751,11 +783,12 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
     int i;
-    PyObject* fn = registers[op->regs[n]];
+    PyObject* fn = registers[op->reg[n]];
     assert(n + 2 == op->num_registers);
 
     PyObject* res = NULL;
     RegisterCode* code = NULL;
+
     if (!PyCFunction_Check(fn)) {
       try {
         code = eval->compile(fn);
@@ -773,20 +806,20 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
 
       PyObject* args = frame->py_call_args;
       for (i = 0; i < na; ++i) {
-        CHECK_VALID(registers[op->regs[i]]);
-        Py_INCREF(registers[op->regs[i]]);
-        PyTuple_SET_ITEM(args, i, registers[op->regs[i]]);
+        CHECK_VALID(registers[op->reg[i]]);
+        Py_INCREF(registers[op->reg[i]]);
+        PyTuple_SET_ITEM(args, i, registers[op->reg[i]]);
       }
 
       PyObject* kwdict = NULL;
       if (nk > 0) {
         kwdict = PyDict_New();
         for (i = na; i < nk * 2; i += 2) {
-          CHECK_VALID(registers[op->regs[i]]);
-          CHECK_VALID(registers[op->regs[i+i]]);
-          Py_INCREF(registers[op->regs[i]]);
-          Py_INCREF(registers[op->regs[i+1]]);
-          PyDict_SetItem(kwdict, registers[op->regs[i]], registers[op->regs[i + 1]]);
+          CHECK_VALID(registers[op->reg[i]]);
+          CHECK_VALID(registers[op->reg[i+i]]);
+          Py_INCREF(registers[op->reg[i]]);
+          Py_INCREF(registers[op->reg[i+1]]);
+          PyDict_SetItem(kwdict, registers[op->reg[i]], registers[op->reg[i + 1]]);
         }
       }
       if (PyCFunction_Check(fn)) {
@@ -798,8 +831,8 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       ObjVector& args = frame->reg_call_args;
       args.resize(na);
       for (i = 0; i < na; ++i) {
-        CHECK_VALID(registers[op->regs[i]]);
-        args[i] = registers[op->regs[i]];
+        CHECK_VALID(registers[op->reg[i]]);
+        args[i] = registers[op->reg[i]];
       }
       RegisterFrame f(code, fn, &args, NULL);
       res = eval->eval(&f);
@@ -809,7 +842,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       throw RException();
     }
 
-    int dst = op->regs[n + 1];
+    int dst = op->reg[n + 1];
     if (dst != kInvalidRegister) {
       Py_XDECREF(registers[dst]);
       registers[dst] = res;
@@ -900,9 +933,9 @@ struct BuildTuple: public VarArgsOpImpl<BuildTuple> {
     int i;
     PyObject* t = PyTuple_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
-      PyTuple_SET_ITEM(t, i, registers[op->regs[i]]);
+      PyTuple_SET_ITEM(t, i, registers[op->reg[i]]);
     }
-    registers[op->regs[op->arg]] = t;
+    registers[op->reg[op->arg]] = t;
 
   }
 };
@@ -912,9 +945,74 @@ struct BuildList: public VarArgsOpImpl<BuildList> {
     int i;
     PyObject* t = PyList_New(op->arg);
     for (i = 0; i < op->arg; ++i) {
-      PyList_SET_ITEM(t, i, registers[op->regs[i]]);
+      PyList_SET_ITEM(t, i, registers[op->reg[i]]);
     }
-    registers[op->regs[op->arg]] = t;
+    registers[op->reg[op->arg]] = t;
+  }
+};
+
+struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, PyObject** registers) {
+    PyObject* methods = registers[op.reg[0]];
+    PyObject* bases = registers[op.reg[1]];
+    PyObject* name = registers[op.reg[2]];
+
+    // Begin: build_class from ceval.c
+    PyObject *metaclass = NULL, *result, *base;
+
+    if (PyDict_Check(methods)) metaclass = PyDict_GetItemString(methods, "__metaclass__");
+    if (metaclass != NULL)
+    Py_INCREF(metaclass);
+    else if (PyTuple_Check(bases) && PyTuple_GET_SIZE(bases) > 0) {
+      base = PyTuple_GET_ITEM(bases, 0) ;
+      metaclass = PyObject_GetAttrString(base, "__class__");
+      if (metaclass == NULL) {
+        PyErr_Clear();
+        metaclass = (PyObject *)base->ob_type;
+        Py_INCREF(metaclass);
+      }
+    }
+    else {
+      PyObject *g = PyEval_GetGlobals();
+      if (g != NULL && PyDict_Check(g))
+      metaclass = PyDict_GetItemString(g, "__metaclass__");
+      if (metaclass == NULL)
+      metaclass = (PyObject *) &PyClass_Type;
+      Py_INCREF(metaclass);
+    }
+
+    result = PyObject_CallFunctionObjArgs(metaclass, name, bases, methods, NULL);
+    Log_Info("Building a class -- methods: %s\n bases: %s\n name: %s\n result: %s",
+             obj_to_str(methods), obj_to_str(bases), obj_to_str(name), obj_to_str(result));
+
+    Py_DECREF(metaclass);
+
+    if (result == NULL && PyErr_ExceptionMatches(PyExc_TypeError)) {
+      /* A type error here likely means that the user passed
+       in a base that was not a class (such the random module
+       instead of the random.random type).  Help them out with
+       by augmenting the error message with more information.*/
+
+      PyObject *ptype, *pvalue, *ptraceback;
+
+      PyErr_Fetch(&ptype, &pvalue, &ptraceback);
+      if (PyString_Check(pvalue)) {
+        PyObject *newmsg;
+        newmsg = PyString_FromFormat("Error when calling the metaclass bases\n"
+                                     "    %s",
+                                     PyString_AS_STRING(pvalue) );
+        if (newmsg != NULL) {
+          Py_DECREF(pvalue);
+          pvalue = newmsg;
+        }
+      }
+
+      PyErr_Restore(ptype, pvalue, ptraceback);
+      throw RException();
+    }
+
+    // End: build_class()
+    SET_REGISTER(op.reg[3], result);
   }
 };
 
@@ -1112,7 +1210,6 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
     op_##opname: _DEFINE_OP(opname, UnaryOp<CONCAT(opname, objfn)>)
 
 PyObject * Evaluator::eval(RegisterFrame* f) {
-  register Evaluator* eval = this;
   register RegisterFrame* frame = f;
   register PyObject** registers = frame->registers;
   register const char* pc = frame->instructions();
@@ -1281,7 +1378,7 @@ static const void* labels[] = {
   OFFSET(CONST_INDEX)}
 ;
 
-EVAL_LOG("New frame: %p", frame->code);
+EVAL_LOG("Entering frame: %s", frame->str().c_str());
 try {
     JUMP_TO(frame->next_code(pc));
 
@@ -1327,7 +1424,6 @@ DEFINE_OP(UNARY_NOT, UnaryNot);
 
 DEFINE_OP(LOAD_FAST, LoadFast);
 DEFINE_OP(LOAD_LOCALS, LoadLocals);
-DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
 DEFINE_OP(LOAD_NAME, LoadName);
 DEFINE_OP(LOAD_ATTR, LoadAttr);
 
@@ -1335,6 +1431,10 @@ DEFINE_OP(STORE_NAME, StoreName);
 DEFINE_OP(STORE_ATTR, StoreAttr);
 DEFINE_OP(STORE_SUBSCR, StoreSubscr);
 DEFINE_OP(STORE_FAST, StoreFast);
+
+DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
+DEFINE_OP(STORE_GLOBAL, StoreGlobal);
+DEFINE_OP(DELETE_GLOBAL, DeleteGlobal);
 
 DEFINE_OP(CONST_INDEX, ConstIndex);
 
@@ -1378,6 +1478,7 @@ DEFINE_OP(IMPORT_FROM, ImportFrom);
 DEFINE_OP(IMPORT_NAME, ImportName);
 
 DEFINE_OP(MAKE_FUNCTION, MakeFunction);
+DEFINE_OP(BUILD_CLASS, BuildClass);
 
 BAD_OP(SETUP_LOOP);
 BAD_OP(POP_BLOCK);
@@ -1400,12 +1501,9 @@ BAD_OP(CONTINUE_LOOP);
 BAD_OP(BUILD_MAP);
 BAD_OP(BUILD_SET);
 BAD_OP(DUP_TOPX);
-BAD_OP(DELETE_GLOBAL);
-BAD_OP(STORE_GLOBAL);
 BAD_OP(DELETE_ATTR);
 BAD_OP(UNPACK_SEQUENCE);
 BAD_OP(DELETE_NAME);
-BAD_OP(BUILD_CLASS);
 BAD_OP(END_FINALLY);
 BAD_OP(YIELD_VALUE);
 BAD_OP(EXEC_STMT);
@@ -1428,12 +1526,38 @@ op_BADCODE: {
 throw RException(PyExc_SystemError, "Invalid jump.");
     }
   } catch (RException &error) {
-    EVAL_LOG("Leaving frame: %p", frame->code);
+    EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
 Reg_Assert(error.exception != NULL, "Error without exception set.");
 error.set_python_err();
     return NULL;
   }
   done:
-  EVAL_LOG("Leaving frame: %p", frame->code);
+  EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
 return result;
 }
+
+//void StartTracing(Evaluator* eval) {
+//  PyEval_SetProfile(&TraceFunction, (PyObject*)eval);
+//}
+
+// TODO(power) -- handle tracing method calls?
+// Give up on this route?
+//int TraceFunction(PyObject *obj, PyFrameObject *frame, int what, PyObject *arg) {
+//  if (what != PyTrace_CALL) {
+//    return 0;
+//  }
+//
+//  Log_Info("Tracing... %s:%d %d (%p)", obj_to_str(frame->f_code->co_filename), frame->f_code->co_firstlineno, what, arg);
+//  Evaluator* eval = (Evaluator*) obj;
+//  try {
+//    RegisterFrame* rframe = eval->frame_from_pyframe(frame);
+//    PyCodeObject* code = PyCode_NewEmpty("*dummy*", "__dummy__", frame->f_lineno);
+//    code->co_consts = PyTuple_Pack(1, rframe);
+//  } catch (RException& e) {
+//    Log_Info("Failed to compile %s:%d %d (%p), using python.", obj_to_str(frame->f_code->co_filename), frame->f_code->co_firstlineno, what, arg);
+//  }
+//
+//  frame->f_code->co_code =
+//
+//  return 0;
+//}

@@ -59,10 +59,10 @@ struct RCompilerUtil {
       VarRegOp* op = (VarRegOp*) dst;
       op->num_registers = src->regs.size();
       for (size_t i = 0; i < src->regs.size(); ++i) {
-        op->regs[i] = src->regs[i];
+        op->reg[i] = src->regs[i];
 
         // Guard against overflowing our register size.
-        Reg_AssertEq(op->regs[i], src->regs[i]);
+        Reg_AssertEq(op->reg[i], src->regs[i]);
       }
       Reg_AssertEq(op->num_registers, src->regs.size());
     } else if (OpUtil::is_branch(src->code)) {
@@ -278,8 +278,15 @@ int RegisterStack::pop_register() {
   return reg;
 }
 
+// Implement ceval's slightly odd PEEK semantics.  To wit: offset
+// zero is invalid, the offset of the top register on the stack is
+// 1.
 int RegisterStack::peek_register(int offset) {
-  return regs[regs.size() - offset - 1];
+  Reg_AssertGt(offset, 0);
+  Reg_AssertGe((int)regs.size(), offset);
+  int val = regs[regs.size() - offset];
+  Log_Info("Peek: %d = %d", offset, val);
+  return val;
 }
 
 void copy_stack(RegisterStack *from, RegisterStack* to) {
@@ -381,22 +388,18 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case POP_TOP: {
       stack->pop_register();
-//      bb->add_op(DECREF, 0, r1);
       break;
     }
     case DUP_TOP: {
       int r1 = stack->pop_register();
       stack->push_register(r1);
       stack->push_register(r1);
-      //bb->add_op(INCREF, 0, r1);
       break;
     }
     case DUP_TOPX: {
       if (oparg == 2) {
         int r1 = stack->pop_register();
         int r2 = stack->pop_register();
-        //bb->add_op(INCREF, 0, r1);
-        //bb->add_op(INCREF, 0, r2);
         stack->push_register(r1);
         stack->push_register(r2);
         stack->push_register(r1);
@@ -405,9 +408,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
         int r1 = stack->pop_register();
         int r2 = stack->pop_register();
         int r3 = stack->pop_register();
-        //bb->add_op(INCREF, 0, r1);
-        //bb->add_op(INCREF, 0, r2);
-        //bb->add_op(INCREF, 0, r3);
         stack->push_register(r3);
         stack->push_register(r2);
         stack->push_register(r1);
@@ -448,7 +448,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case STORE_FAST: {
       int r1 = stack->pop_register();
       // Decrement the old value.
-//      bb->add_op(DECREF, 0, state->num_consts + oparg);
       bb->add_dest_op(opcode, 0, r1, state->num_consts + oparg);
       break;
     }
@@ -458,15 +457,18 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case STORE_NAME: {
       int r1 = stack->pop_register();
       bb->add_op(opcode, oparg, r1);
-//      bb->add_op(DECREF, 0, r1);
       break;
     }
+
+    case DELETE_GLOBAL: {
+      bb->add_op(opcode, oparg);
+      break;
+    }
+
     case STORE_ATTR: {
       int r1 = stack->pop_register();
       int r2 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, r2);
-//      bb->add_op(DECREF, 0, r1);
-//      bb->add_op(DECREF, 0, r2);
       break;
     }
     case STORE_MAP: {
@@ -531,6 +533,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case LIST_APPEND: {
       int item = stack->pop_register();
       int list = stack->peek_register(oparg);
+      Log_Info("%d %d", item, list);
       bb->add_op(opcode, 0, list, item);
       break;
     }
@@ -548,6 +551,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case BINARY_POWER:
     case BINARY_MULTIPLY:
+    case BINARY_DIVIDE:
     case BINARY_TRUE_DIVIDE:
     case BINARY_FLOOR_DIVIDE:
     case BINARY_MODULO:
@@ -594,8 +598,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       f->regs[n] = stack->pop_register();
       f->regs[n + 1] = stack->push_register(state->num_reg++);
       Reg_AssertEq(f->arg, oparg);
-
-//            for (r = n; r >= 0; --r) { bb->add_op(DECREF, 0, f->regs[r]); }
       break;
     }
     case PRINT_ITEM: {
@@ -624,7 +626,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case IMPORT_FROM: {
-      int module = stack->peek_register(0);
+      int module = stack->peek_register(1);
       int tgt = stack->push_register(state->num_reg++);
       bb->add_dest_op(opcode, oparg, module, tgt);
       break;

@@ -56,8 +56,30 @@ public:
     return consts_;
   }
 
+  f_inline int num_consts() const {
+    return PyTuple_GET_SIZE(consts_) ;
+  }
+
   f_inline PyObject* names() {
     return names_;
+  }
+
+  void set_local(PyObject* name, PyObject* value) {
+    for (int i = 0; i < PyTuple_GET_SIZE(names_) ; ++i) {
+      if (PyTuple_GET_ITEM(names_, i) == name) {
+        registers[num_consts() + i] = value;
+      }
+    }
+  }
+
+  void fill_locals(PyObject* ldict) {
+    for (int i = 0; i < PyTuple_GET_SIZE(names_) ; ++i) {
+      PyObject* name = PyTuple_GET_ITEM(names_, i) ;
+      PyObject* value = PyDict_GetItem(ldict, name);
+      if (value != NULL) {
+        registers[num_consts() + i] = value;
+      }
+    }
   }
 
   f_inline PyObject* locals() {
@@ -84,6 +106,17 @@ public:
     return ((OpHeader*) pc)->code;
   }
 
+  std::string str() const {
+    StringWriter w;
+    if (code->function) {
+      PyFunctionObject* f = (PyFunctionObject*)code->function;
+      w.printf("func: %s ", obj_to_str(f->func_name));
+    }
+    PyCodeObject* c = (PyCodeObject*)code->code_;
+    w.printf("file: %s, line: %d", obj_to_str(c->co_filename), c->co_firstlineno);
+    return w.str();
+  }
+
   RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector* args, const ObjVector* kw);
   ~RegisterFrame();
 };
@@ -108,7 +141,8 @@ public:
   PyObject* eval(RegisterFrame* rf);
   PyObject* eval_python(PyObject* func, PyObject* args);
 
-  RegisterFrame* frame_from_python(PyObject* func, PyObject* args);
+  RegisterFrame* frame_from_pyframe(PyFrameObject*);
+  RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
   RegisterFrame* frame_from_codeobj(PyObject* code);
 
   Hint hints[kMaxHints];
@@ -117,5 +151,8 @@ public:
 RegisterCode* Evaluator::compile(PyObject* obj) {
   return compiler_->compile(obj);
 }
+
+//void StartTracing(Evaluator*);
+//int TraceFunction(PyObject *obj, PyFrameObject *frame, int what, PyObject *arg);
 
 #endif /* REVAL_H_ */
