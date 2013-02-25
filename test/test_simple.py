@@ -7,10 +7,12 @@ import time
 import unittest
 import math
 
-from timed_test import TimedTest
+from timed_test import TimedTest, simple_test
 
+@simple_test
 def print_item():
   print 'hello'
+
 
 def add(a, b):
   return a + b
@@ -75,8 +77,5 @@ class Simple(TimedTest):
   def test_unpack_first(self):
     self.time_compare(unpack_first, (1,2,3), repeat = 1)
 
-  def test_print(self):
-    self.time_compare(print_item)
-    
 if __name__ == '__main__':
   unittest.main()

@@ -611,13 +611,15 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
 
 struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
-    PyObject* t = PyTuple_GET_ITEM(frame->names(), op.arg) ;
-    PyObject* key = registers[op.reg[0]];
+    PyObject* obj = registers[op.reg[0]];
+    PyObject* key = PyTuple_GET_ITEM(frame->names(), op.arg) ;
     PyObject* value = registers[op.reg[1]];
-    CHECK_VALID(t);
+    CHECK_VALID(obj);
     CHECK_VALID(key);
     CHECK_VALID(value);
-    PyObject_SetAttr(t, key, value);
+    if (PyObject_SetAttr(obj, key, value) != 0) {
+      throw RException();
+    }
   }
 };
 
