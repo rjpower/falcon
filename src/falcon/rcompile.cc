@@ -68,8 +68,8 @@ struct RCompilerUtil {
     } else if (OpUtil::is_branch(src->code)) {
       BranchOp* op = (BranchOp*) dst;
       assert(src->regs.size() < 3);
-      op->reg[0] = src->regs.size() > 0 ? src->regs[0] : -1;
-      op->reg[1] = src->regs.size() > 1 ? src->regs[1] : -1;
+      op->reg[0] = src->regs.size() > 0 ? src->regs[0] : kInvalidRegister;
+      op->reg[1] = src->regs.size() > 1 ? src->regs[1] : kInvalidRegister;
 
       // Label be set after the first pass has determined the offset
       // of each instruction.
@@ -504,7 +504,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case SLICE + 2:
     case SLICE + 3: {
       int list, left, right;
-      left = right = -1;
+      left = right = kInvalidRegister;
       if ((opcode - SLICE) & 2) right = stack->pop_register();
       if ((opcode - SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
@@ -517,7 +517,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case STORE_SLICE + 2:
     case STORE_SLICE + 3: {
       int list, left, right, value;
-      left = right = -1;
+      left = right = kInvalidRegister;
       if ((opcode - STORE_SLICE) & 2) right = stack->pop_register();
       if ((opcode - STORE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
@@ -530,7 +530,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case DELETE_SLICE + 2:
     case DELETE_SLICE + 3: {
       int list, left, right;
-      left = right = -1;
+      left = right = kInvalidRegister;
       if ((opcode - DELETE_SLICE) & 2) right = stack->pop_register();
       if ((opcode - DELETE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
@@ -609,7 +609,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case PRINT_ITEM: {
       int r1 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1, -1);
+      bb->add_op(opcode, oparg, r1, kInvalidRegister);
       break;
     }
     case PRINT_ITEM_TO: {
@@ -624,7 +624,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case PRINT_NEWLINE: {
-      bb->add_op(opcode, oparg, -1);
+      bb->add_op(opcode, oparg, kInvalidRegister);
       break;
     }
     case IMPORT_STAR: {
@@ -695,18 +695,25 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case RAISE_VARARGS: {
       int r1, r2, r3;
-      r1 = r2 = r3 = -1;
+      r1 = r2 = r3 = kInvalidRegister;
+      CompilerOp* op = bb->add_varargs_op(opcode, 0, oparg);
       if (oparg == 3) {
         r1 = stack->pop_register();
         r2 = stack->pop_register();
         r3 = stack->pop_register();
+        op->regs.push_back(r1);
+        op->regs.push_back(r2);
+        op->regs.push_back(r3);
       } else if (oparg == 2) {
         r1 = stack->pop_register();
         r2 = stack->pop_register();
+        op->regs.push_back(r1);
+        op->regs.push_back(r2);
       } else if (oparg == 1) {
         r1 = stack->pop_register();
+        op->regs.push_back(r1);
       }
-      bb->add_op(opcode, 0, r1, r2, r3);
+
       break;
     }
       // Control flow instructions - recurse down each branch with a copy of the current stack.
@@ -1110,29 +1117,25 @@ public:
 class RenameRegisters: public CompilerPass {
 private:
   // Mapping from old -> new register names
-  google::dense_hash_map<int, int> register_map_;
+  std::map<int, int> register_map_;
 
 public:
   RenameRegisters() {
-    register_map_.set_empty_key(kInvalidRegister);
   }
 
   void visit_op(CompilerOp* op) {
     for (size_t i = 0; i < op->regs.size(); ++i) {
       int tgt;
       if (register_map_.find(op->regs[i]) == register_map_.end()) {
-        tgt = kInvalidRegister;
         Log_Fatal("No mapping for register: %s, [%d]", op->str().c_str(), op->regs[i]);
-      } else {
-        tgt = register_map_[op->regs[i]];
       }
+      tgt = register_map_[op->regs[i]];
       op->regs[i] = tgt;
     }
   }
 
   void visit_fn(CompilerState* fn) {
-    google::dense_hash_map<int, int> counts;
-    counts.set_empty_key(kInvalidRegister);
+    std::map<int, int> counts;
 
     for (BasicBlock* bb : fn->bbs) {
       if (bb->dead) continue;
@@ -1143,6 +1146,9 @@ public:
         }
       }
     }
+
+    // A few fixed-register opcodes special case the invalid register.
+    register_map_[kInvalidRegister] = kInvalidRegister;
 
     // Don't remap the const/local register aliases, even if we
     // don't see a usage point for them.
@@ -1178,7 +1184,7 @@ void optimize(CompilerState* fn) {
   CopyPropagation()(fn);
   StoreElim()(fn);
   DeadCodeElim()(fn);
-//  RenameRegisters()(fn);
+  RenameRegisters()(fn);
 //  Log_Info(fn->str().c_str());
 }
 
