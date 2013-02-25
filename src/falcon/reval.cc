@@ -520,7 +520,7 @@ struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
       r2 = PyDict_GetItem(frame->builtins(), r1);
     }
     if (r2 == NULL) {
-      throw RException(PyExc_NameError, "Global name %.200s not defined.", r1);
+      throw RException(PyExc_NameError, "Global name %.200s not defined.", obj_to_str(r1));
     }
     Py_INCREF(r2);
     Py_XDECREF(registers[op.reg[0]]);

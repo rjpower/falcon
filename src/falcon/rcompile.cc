@@ -338,11 +338,12 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-    const char* name = NULL;
-    if (oparg < PyTuple_Size(state->names)) {
-      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
-    }
-    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
+//    const char* name = NULL;
+//    if (oparg < PyTuple_Size(state->names)) {
+//      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+//    }
+//    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());fn
+
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     for (size_t i = 0; i < state->bbs.size(); ++i) {
@@ -350,6 +351,12 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       if (old->py_offset == offset) {
         Reg_Assert(entry_point != NULL, "Bad entry point.");
         Reg_Assert(last != NULL, "Bad entry point.");
+        // If our previous block won't fall-through into this one, then
+        // generate an explicit jump instruction.
+        if (last->idx != old->idx - 1) {
+          // The argument for jump absolute will be generated from the block exit information.
+          last->add_op(JUMP_ABSOLUTE, 0);
+        }
         last->exits.push_back(old);
         return entry_point;
       }
@@ -641,7 +648,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case MAKE_FUNCTION: {
       int code = stack->pop_register();
       CompilerOp* op = bb->add_varargs_op(opcode, oparg, oparg + 2);
-      op->regs[0]  = code;
+      op->regs[0] = code;
       for (int i = 0; i < oparg; ++i) {
         op->regs[i + 1] = stack->pop_register();
       }
@@ -1150,7 +1157,7 @@ void optimize(CompilerState* fn) {
   DeadCodeElim()(fn);
 //  RenameRegisters()(fn);
 
-  Log_Info(fn->str().c_str());
+//  Log_Info(fn->str().c_str());
 }
 
 void lower_register_code(CompilerState* state, std::string *out) {
@@ -1243,7 +1250,7 @@ RegisterCode* Compiler::compile_(PyObject* func) {
 
   RegisterCode *regcode = new RegisterCode;
   lower_register_code(&state, &regcode->instructions);
-  regcode->code_ = (PyObject*)code;
+  regcode->code_ = (PyObject*) code;
   regcode->version = 1;
   if (PyFunction_Check(func)) {
     regcode->function = func;
