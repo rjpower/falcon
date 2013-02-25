@@ -3,35 +3,48 @@
 # shelling out to it.  Any additions to the setup.py extension should also
 # be made here!
 
-VPATH := src/falcon
-CPPFLAGS := -I./src -I/usr/include/python2.7 -I./src/sparsehash-2.0.2/src/
+ifndef REALBUILD
+
+opt: 
+	mkdir -p build/opt
+	cd build/opt && REALBUILD=1 $(MAKE) -f ../../Makefile opt
+	ln -sf ../build/opt/_falcon_core.so src/_falcon_core.so
+
+dbg: 
+	mkdir -p build/dbg
+	cd build/dbg && REALBUILD=1 $(MAKE) -f ../../Makefile dbg 
+	ln -sf ../build/dbg/_falcon_core.so src/_falcon_core.so
+
+clean:
+	rm -rf build/
+else
+SRCDIR := ../../src
+VPATH := $(SRCDIR)/falcon
+CPPFLAGS := -I$(SRCDIR) -I/usr/include/python2.7 -I$(SRCDIR)/sparsehash-2.0.2/src
 CFLAGS := $(CPPFLAGS) -pthread -fno-strict-aliasing -fwrapv -Wall -fno-omit-frame-pointer -fPIC  -fno-gcse -fno-crossjumping -ggdb2 -std=c++0x
 CXXFLAGS := $(CFLAGS) 
-INCLUDES := $(shell find src -name '*.h') Makefile
-BUILD := build
+INCLUDES := $(shell find $(SRCDIR) -name '*.h') ../../Makefile
 
 opt : COPT := -O3 -funroll-loops
 dbg : COPT := -DFALCON_DEBUG=1 -O0
 
-opt: src/_falcon_core.so
-dbg: src/_falcon_core.so
+opt: _falcon_core.so
+dbg: _falcon_core.so
 
-$(BUILD)/.timestamp:
-	mkdir -p $(BUILD)/
-	touch $(BUILD)/.timestamp
-
-$(BUILD)/%.o : %.cc $(INCLUDES) $(BUILD)/.timestamp
+%.o : %.cc $(INCLUDES) 
 	$(CXX) $(COPT) $(CXXFLAGS) -c $< -o $@
 
-$(BUILD)/%.o : %.cpp  $(INCLUDES) $(BUILD)/.timestamp
+%.o : %.cpp  $(INCLUDES) 
 	$(CXX) $(COPT) $(CXXFLAGS) -c $< -o $@
 
-src/falcon/rmodule_wrap.cpp: src/falcon/rmodule.i $(INCLUDES) 
-	swig -python -Isrc -modern -O -c++ -w312,509 -o src/falcon/rmodule_wrap.cpp src/falcon/rmodule.i
-
-src/_falcon_core.so: $(BUILD)/reval.o $(BUILD)/rcompile.o $(BUILD)/rmodule_wrap.o $(BUILD)/util.o $(BUILD)/oputil.o $(BUILD)/rexcept.o
+_falcon_core.so: reval.o rcompile.o rmodule_wrap.o util.o oputil.o rexcept.o
 	 g++ -shared -o $@ $^ -lrt
+
+$(SRCDIR)/falcon/rmodule_wrap.cpp: $(SRCDIR)/falcon/rmodule.i $(INCLUDES) 
+	swig -python -Isrc -modern -O -c++ -w312,509 -o $(SRCDIR)/falcon/rmodule_wrap.cpp $(SRCDIR)/falcon/rmodule.i
 
 clean:
 	rm -rf build/
 	rm -f src/*.so
+
+endif
