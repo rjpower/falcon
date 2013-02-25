@@ -338,11 +338,11 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-    const char* name = NULL;
-    if (oparg < PyTuple_Size(state->names)) {
-      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
-    }
-    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
+//    const char* name = NULL;
+//    if (oparg < PyTuple_Size(state->names)) {
+//      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+//    }
+//    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     for (size_t i = 0; i < state->bbs.size(); ++i) {
@@ -533,7 +533,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case LIST_APPEND: {
       int item = stack->pop_register();
       int list = stack->peek_register(oparg);
-      Log_Info("%d %d", item, list);
+      // Log_Info("%d %d", item, list);
       bb->add_op(opcode, 0, list, item);
       break;
     }
@@ -1150,7 +1150,7 @@ void optimize(CompilerState* fn) {
   DeadCodeElim()(fn);
 //  RenameRegisters()(fn);
 
-  Log_Info(fn->str().c_str());
+  //Log_Info(fn->str().c_str());
 }
 
 void lower_register_code(CompilerState* state, std::string *out) {
