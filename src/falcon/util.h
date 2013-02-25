@@ -12,14 +12,13 @@
 #include <string>
 #include <vector>
 
-static __attribute__((always_inline)) inline void breakpoint() {
-  struct sigaction oldAct;
-  struct sigaction newAct;
-  newAct.sa_handler = SIG_IGN;
-  sigaction(SIGTRAP, &newAct, &oldAct);
-  raise(SIGTRAP);
+#define breakpoint()\
+  struct sigaction oldAct;\
+  struct sigaction newAct;\
+  newAct.sa_handler = SIG_IGN;\
+  sigaction(SIGTRAP, &newAct, &oldAct);\
+  raise(SIGTRAP);\
   sigaction(SIGTRAP, &oldAct, NULL);
-}
 
 static inline uint64_t rdtsc() {
   uint32_t hi, lo;

@@ -1,5 +1,6 @@
 #include "rexcept.h"
 #include "rinst.h"
+#include "util.h"
 
 void RException::set_python_err() {
   Log_Info("Setting python error: %s %s", obj_to_str(exception), obj_to_str(value));
@@ -8,6 +9,7 @@ void RException::set_python_err() {
 
 RException::RException(PyObject* exc, const char* fmt, ...) :
     exception(exc) {
+  breakpoint();
   va_list vargs;
   va_start(vargs, fmt);
   value = PyString_FromFormatV(fmt, vargs);
