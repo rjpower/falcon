@@ -983,21 +983,22 @@ protected:
   bool is_pure(int op_code) {
     Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
     switch (op_code) {
+    case LOAD_GLOBAL:
+    case LOAD_FAST:
+    case LOAD_DEREF:
+    case LOAD_CLOSURE:
     case LOAD_LOCALS:
     case LOAD_CONST:
     case LOAD_NAME:
+    case STORE_FAST:
+    case STORE_DEREF:
+    case BUILD_SLICE:
+    case CONST_INDEX:
     case BUILD_TUPLE:
     case BUILD_LIST:
     case BUILD_SET:
     case BUILD_MAP:
     case MAKE_CLOSURE:
-    case LOAD_GLOBAL:
-    case LOAD_FAST:
-    case LOAD_DEREF:
-    case LOAD_CLOSURE:
-    case BUILD_SLICE:
-    case CONST_INDEX:
-    case STORE_FAST:
       return true;
     default:
       return false;

@@ -104,6 +104,45 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   consts_ = code->consts();
 
   registers = new PyObject*[rcode->num_registers];
+
+  const int num_freevars = PyTuple_GET_SIZE(rcode->code()->co_freevars);
+  const int num_cellvars = PyTuple_GET_SIZE(rcode->code()->co_cellvars);
+  const int num_cells = num_freevars + num_cellvars;
+
+  const int num_args = args->size();
+
+  if (num_cells > 0) {
+    freevars = new PyObject*[num_cells];
+    int i;
+    for (i = 0; i < num_cellvars; ++i) {
+      bool found_argname = false;
+      char *cellname = PyString_AS_STRING(PyTuple_GET_ITEM(rcode->code()->co_cellvars, i));
+      for (int arg_idx = 0; arg_idx < num_args; ++arg_idx) {
+        char* argname = PyString_AS_STRING(PyTuple_GET_ITEM(rcode->code()->co_varnames, arg_idx));
+        if (strcmp(cellname, argname) == 0) {
+          PyObject* arg_value = args->at(arg_idx);
+          freevars[i] = PyCell_New(arg_value);
+          found_argname = true;
+          break;
+        }
+      }
+      if (!found_argname) {
+        freevars[i] = PyCell_New(NULL);
+      }
+      Reg_Assert(freevars[i] != NULL, "NULL cell");
+    }
+    PyObject* closure =((PyFunctionObject*) rcode->function)->func_closure;
+    if (closure) {
+      for (i = num_cellvars; i < num_cells; ++i) {
+        freevars[i] = PyTuple_GET_ITEM(closure, i - num_cellvars);
+      }
+    } else {
+      for (i = num_cellvars; i < num_cells; ++i) {
+        freevars[i] = PyCell_New(NULL);
+      }
+    }
+  }
+
   const int num_registers = code->num_registers;
 
   // setup const and local register aliases.
@@ -149,12 +188,19 @@ RegisterFrame::~RegisterFrame() {
   Py_XDECREF(py_call_args);
 
   const int num_registers = code->num_registers;
-
-  for (register int i = 0; i < num_registers; ++i) {
+  register int i;
+  for (i = 0; i < num_registers; ++i) {
     Py_XDECREF(registers[i]);
   }
-
   delete[] registers;
+
+  const int num_freevars = PyTuple_GET_SIZE(code->code()->co_freevars);
+  const int num_cellvars = PyTuple_GET_SIZE(code->code()->co_cellvars);
+  const int num_cells = num_freevars + num_cellvars;
+  for (i = 0; i <  num_cells; ++i) {
+    Py_XDECREF(freevars[i]);
+  }
+  delete[] freevars;
 }
 
 Evaluator::Evaluator() {
@@ -577,6 +623,17 @@ struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
   }
 };
 
+struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    PyObject* r1 = PyTuple_GET_ITEM(frame->names(), op.arg) ;
+    PyObject* r2 = registers[op.reg[0]];
+    CHECK_VALID(r1);
+    CHECK_VALID(r2);
+    PyObject_SetItem(frame->locals(), r1, r2);
+  }
+};
+
+
 struct LoadFast: public RegOpImpl<RegOp<2>, LoadFast> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
     Py_INCREF(registers[op.reg[0]]);
@@ -595,15 +652,6 @@ struct StoreFast: public RegOpImpl<RegOp<2>, StoreFast> {
   }
 };
 
-struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
-    PyObject* r1 = PyTuple_GET_ITEM(frame->names(), op.arg) ;
-    PyObject* r2 = registers[op.reg[0]];
-    CHECK_VALID(r1);
-    CHECK_VALID(r2);
-    PyObject_SetItem(frame->locals(), r1, r2);
-  }
-};
 
 struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
@@ -775,6 +823,34 @@ struct LoadAttr: public RegOpImpl<RegOp<2>, LoadAttr> {
   }
 };
 
+
+struct LoadDeref: public RegOpImpl<RegOp<1>, LoadDeref> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    PyObject* closure_cell = frame->freevars[op.arg];
+    PyObject* closure_value = PyCell_Get(closure_cell);
+    Py_INCREF(closure_value);
+    SET_REGISTER(op.reg[0], closure_value);
+  }
+};
+
+struct StoreDeref : public RegOpImpl<RegOp<1>, StoreDeref> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    PyObject* value = registers[op.reg[0]];
+    PyObject* dest_cell = frame->freevars[op.arg];
+    PyCell_Set(dest_cell, value);
+  }
+};
+
+
+struct LoadClosure: public RegOpImpl<RegOp<1>, LoadClosure> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    PyObject* closure_cell = frame->freevars[op.arg];
+    Py_INCREF(closure_cell);
+    SET_REGISTER(op.reg[0], closure_cell);
+  }
+};
+
+
 struct MakeFunction: public VarArgsOpImpl<MakeFunction> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
     PyObject* code = registers[op->reg[0]];
@@ -876,8 +952,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
 
     int dst = op->reg[n + 1];
     if (dst != kInvalidRegister) {
-      Py_XDECREF(registers[dst]);
-      registers[dst] = res;
+      SET_REGISTER(dst, res);
     }
   }
 };
@@ -1257,7 +1332,7 @@ PyObject * Evaluator::eval(RegisterFrame* f) {
   register const char* pc = frame->instructions();
 
   Reg_Assert(frame != NULL, "NULL frame object.");
-  Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
+  // Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
 
   PyObject* result = Py_None;
 
@@ -1479,6 +1554,10 @@ DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
 DEFINE_OP(STORE_GLOBAL, StoreGlobal);
 DEFINE_OP(DELETE_GLOBAL, DeleteGlobal);
 
+DEFINE_OP(LOAD_CLOSURE, LoadClosure);
+DEFINE_OP(LOAD_DEREF, LoadDeref);
+DEFINE_OP(STORE_DEREF, StoreDeref);
+
 DEFINE_OP(CONST_INDEX, ConstIndex);
 
 DEFINE_OP(GET_ITER, GetIter);
@@ -1533,9 +1612,6 @@ BAD_OP(MAP_ADD);
 BAD_OP(SET_ADD);
 BAD_OP(EXTENDED_ARG);
 BAD_OP(SETUP_WITH);
-BAD_OP(STORE_DEREF);
-BAD_OP(LOAD_DEREF);
-BAD_OP(LOAD_CLOSURE);
 BAD_OP(BUILD_SLICE);
 BAD_OP(RAISE_VARARGS);
 BAD_OP(DELETE_FAST);

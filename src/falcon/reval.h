@@ -37,6 +37,7 @@ public:
   PyObject* py_call_args;
   ObjVector reg_call_args;
   PyObject** registers;
+  PyObject** freevars;
   const RegisterCode* code;
 
   size_t current_hint;

@@ -25,6 +25,7 @@ struct OpUtil {
       r.insert(BUILD_MAP);
       r.insert(BUILD_SET);
       r.insert(MAKE_FUNCTION);
+      r.insert(MAKE_CLOSURE);
     }
 
     return r.find(opcode) != r.end();
