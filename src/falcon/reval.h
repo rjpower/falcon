@@ -14,7 +14,6 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 
-
 // A vector which we can normally stack allocate, and which
 // contains a small number of slots internally.
 static const size_t kSVBuiltinSlots = 8;
@@ -35,16 +34,16 @@ struct SmallVector {
     }
 
     if (limit_ < needed) {
-      rest_ = (T*)realloc(rest_, sizeof(T) * needed * 2);
+      rest_ = (T*) realloc(rest_, sizeof(T) * needed * 2);
       limit_ = kSVBuiltinSlots + needed * 2;
     }
   }
 
   T& operator[](const size_t idx) const {
     if (idx < kSVBuiltinSlots) {
-      return (T&)(vals_[idx]);
+      return (T&) (vals_[idx]);
     }
-    return (T&)(rest_[idx - kSVBuiltinSlots]);
+    return (T&) (rest_[idx - kSVBuiltinSlots]);
   }
 
   T& at(const size_t idx) {
@@ -130,37 +129,31 @@ public:
     return names_;
   }
 
-  void set_local(PyObject* name, PyObject* value) {
-    for (int i = 0; i < PyTuple_GET_SIZE(names_) ; ++i) {
-      if (PyTuple_GET_ITEM(names_, i) == name) {
-        registers[num_consts() + i] = value;
-      }
-    }
-  }
-
   void fill_locals(PyObject* ldict) {
-    for (int i = 0; i < PyTuple_GET_SIZE(names_); ++i) {
-      PyObject* name = PyTuple_GET_ITEM(names_, i);
+    PyObject* varnames = code->varnames();
+    for (int i = 0; i < PyTuple_GET_SIZE(varnames) ; ++i) {
+      PyObject* name = PyTuple_GET_ITEM(varnames, i) ;
       PyObject* value = PyDict_GetItem(ldict, name);
-      if (value != NULL) {
-        registers[num_consts() + i] = value;
-      }
+      registers[num_consts() + i] = value;
     }
+
+    Py_INCREF(ldict);
+    locals_ = ldict;
   }
 
   f_inline PyObject* locals() {
     if (!locals_) {
-      const int num_consts = PyTuple_Size(consts());
-      const int num_locals = code->code()->co_nlocals;
-
-      Log_Info("%d %d %d %d", num_consts, num_locals, num_consts + num_locals, code->num_registers);
       locals_ = PyDict_New();
-      for (int i = 0; i < num_locals; ++i) {
-        PyObject* v = registers[num_consts + i];
-        if (v != NULL) {
-          Py_INCREF(v);
-          PyDict_SetItem(locals_, PyTuple_GetItem(code->names(), i), v);
-        }
+    }
+
+    PyObject* varnames = code->varnames();
+    const int num_consts = PyTuple_Size(consts());
+    const int num_locals = code->code()->co_nlocals;
+    for (int i = 0; i < num_locals; ++i) {
+      PyObject* v = registers[num_consts + i];
+      if (v != NULL) {
+        Py_INCREF(v);
+        PyDict_SetItem(locals_, PyTuple_GetItem(varnames, i), v);
       }
     }
     return locals_;

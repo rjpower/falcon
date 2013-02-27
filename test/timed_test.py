@@ -1,12 +1,9 @@
-import dis
 import logging
-import sys
 import random
+import sys
 import time
-import unittest 
-import traceback
+import unittest
 
-import logging
 logging.basicConfig(
     format='%(asctime)s %(filename)s:%(funcName)s %(message)s',
     level=logging.INFO, 

@@ -24,7 +24,7 @@
   try {
     $function
   } catch (RException& e) {
-    e.set_python_err();
+    PyErr_SetObject(e.exception, e.value);
     return NULL;
   }
 }

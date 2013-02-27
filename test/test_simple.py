@@ -1,9 +1,5 @@
 #!/usr/bin/env python
 
-import dis
-import opcode
-import sys
-import time
 import unittest
 import math
 
@@ -81,12 +77,6 @@ class Simple(TimedTest):
     
   def test_loop1(self):
     self.time_compare(loop, 100)
-    
-  def test_loopbig(self):
-    import falcon
-    evaluator = falcon.Evaluator()
-    evaluator.eval_python(loop, (1000 * 1000 * 10,))
-    evaluator.dump_status()
     
   def test_count_threshold(self):
     self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=5)

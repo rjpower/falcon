@@ -1,11 +1,6 @@
 #include "rexcept.h"
 #include "rinst.h"
 
-void RException::set_python_err() {
-  Log_Info("Setting python error: %s %s", obj_to_str(exception), obj_to_str(value));
-  PyErr_SetObject(exception, value);
-}
-
 RException::RException(PyObject* exc, const char* fmt, ...) :
     exception(exc) {
 //  breakpoint();
@@ -20,7 +15,7 @@ RException::RException(PyObject* exc, const char* fmt, ...) :
 
 RException::RException() {
   assert(PyErr_Occurred());
-  PyErr_Fetch(&exception, &value, &traceback);
+  traceback = exception = value = NULL;
   file = NULL;
   line = 0;
 }
