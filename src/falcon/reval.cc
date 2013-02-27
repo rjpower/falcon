@@ -756,7 +756,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
   Hint op_hint = eval->hints[op.hint_pos];
 
   // A hint for an instance dictionary lookup.
-  if (op_hint.guard.dict_size == dict->ma_mask && op_hint.value == type) {
+  if (false && op_hint.guard.dict_size == dict->ma_mask && op_hint.value == type) {
     PyDictEntry e(dict->ma_table[op_hint.version]);
     if (e.me_key == name) {
       Py_INCREF(e.me_value);

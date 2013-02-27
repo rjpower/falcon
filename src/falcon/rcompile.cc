@@ -1252,7 +1252,12 @@ private:
   std::stack<Register> free_registers;
   Register num_frozen;
   Register max_register;
-  std::set<Register> used_once;
+
+  std::set<Register> bb_defs;
+  bool defined_locally(Register r) {
+    return bb_defs.find(r) != bb_defs.end();
+  }
+
 public:
 
   void visit_op(CompilerOp* op) {
@@ -1268,38 +1273,47 @@ public:
     Register new_reg;
     for (size_t i = 0; i < n_input_regs; ++i) {
       old_reg = op->regs[i];
-      new_reg = register_map[old_reg];
-      op->regs[i] = new_reg;
-      this->decr_count(old_reg);
-      if (this->get_count(old_reg) == 0 && old_reg >= num_frozen && !this->in_cycle) {
-        this->free_registers.push(new_reg);
+      if (old_reg != kInvalidRegister) {
+        new_reg = register_map[old_reg];
+        op->regs[i] = new_reg;
+        this->decr_count(old_reg);
+        if (this->get_count(old_reg) == 0 && old_reg >= num_frozen) {
+          if (!this->in_cycle || this->defined_locally(old_reg)) {
+            this->free_registers.push(new_reg);
+          }
+        }
       }
     }
     if (op->has_dest) {
       old_reg = op->regs[n_input_regs];
-      if (register_map.find(old_reg) != register_map.end()) {
-        new_reg = register_map[old_reg];
-      } else if (free_registers.size() > 0) {
-        new_reg = free_registers.top();
-        free_registers.pop();
-        register_map[old_reg] = new_reg;
-      } else {
-        new_reg = max_register;
-        register_map[old_reg] = new_reg;
-        max_register++;
+      if (old_reg != kInvalidRegister) {
+        bb_defs.insert(old_reg);
+        if (register_map.find(old_reg) != register_map.end()) {
+          new_reg = register_map[old_reg];
+        } else if (free_registers.size() > 0) {
+          new_reg = free_registers.top();
+          free_registers.pop();
+          register_map[old_reg] = new_reg;
+        } else {
+          new_reg = max_register;
+          register_map[old_reg] = new_reg;
+          max_register++;
+        }
+        op->regs[n_input_regs] = new_reg;
       }
-      op->regs[n_input_regs] = new_reg;
     }
   }
 
+  void visit_bb(BasicBlock* bb) {
+    this->bb_defs.clear();
+    //printf("Defs before bb %d\n", this->bb_defs.size());
+    SortedPass::visit_bb(bb);
+    //printf("Defs after bb %d\n", this->bb_defs.size());
+  }
   void visit_fn(CompilerState* fn) {
 
     this->count_uses(fn);
-    for (auto iter = this->counts.begin(); iter != this->counts.end(); ++iter) {
-      if (iter->second == 1) {
-        this->used_once.insert(iter->first);
-      }
-    }
+
     // don't rename inputs, locals, or constants
     num_frozen = fn->num_locals + fn->num_consts;
     max_register = num_frozen;
@@ -1313,7 +1327,6 @@ public:
 
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
-//  Log_Info(fn->str().c_str());
   FuseBasicBlocks()(fn);
   CopyPropagation()(fn);
   StoreElim()(fn);
