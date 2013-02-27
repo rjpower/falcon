@@ -52,7 +52,8 @@ struct RefHelper {
 #define GilHelper(v) static int MustInitWithVar[-1];
 #define RefHelper(v) static int MustInitWithVar[-1];
 
-// Wrapper around PyXXXObject*, allows implicit casting to PyObject.
+// Wrapper around PyXXXObject* which allows implicit casting to PyObject.
+// This let's us access member variables and call API functions easily.
 template<class T>
 struct PyObjHelper {
   T val_;
@@ -216,8 +217,16 @@ Evaluator::Evaluator() {
   bzero(op_times_, sizeof(op_times_));
   total_count_ = 0;
   last_clock_ = 0;
+  hint_hits_ = 0;
+  hint_misses_ = 0;
   compiler_ = new Compiler;
   bzero(hints, sizeof(Hint) * kMaxHints);
+
+  // We use a sentinel value for the invalid hint index.
+  hints[kInvalidHint].guard.obj = NULL;
+  hints[kInvalidHint].key = NULL;
+  hints[kInvalidHint].value = NULL;
+  hints[kInvalidHint].version = (unsigned int) -1;
 }
 
 Evaluator::~Evaluator() {
@@ -741,17 +750,16 @@ static size_t dict_getoffset(PyDictObject* dict, PyObject* key) {
 // Most of this is taken from _PyObject_GenericGetAttrWithDict
 static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyObject *name) {
   PyObjHelper<PyTypeObject*> type(Py_TYPE(obj) );
-  PyObject *res = NULL;
+  PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
+  PyObject *descr = NULL;
+  Hint op_hint = eval->hints[op.hint_pos];
 
-  if (op.hint != kInvalidHint) {
-    Hint h = eval->hints[op.hint];
-    PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
-    if (h.guard.dict_size == dict->ma_mask) {
-      PyDictEntry e(dict->ma_table[h.version]);
-      if (e.me_key == name) {
-        Py_INCREF(e.me_value);
-        return e.me_value;
-      }
+  // A hint for an instance dictionary lookup.
+  if (op_hint.guard.dict_size == dict->ma_mask && op_hint.value == type) {
+    PyDictEntry e(dict->ma_table[op_hint.version]);
+    if (e.me_key == name) {
+      Py_INCREF(e.me_value);
+      return e.me_value;
     }
   }
 
@@ -765,45 +773,57 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
     }
   }
 
-  PyObject* descr = _PyType_Lookup(type, name);
+  // A hint for a type dictionary lookup, we've cached the 'descr' object.
+//  if (op_hint.guard.obj == type && op_hint.key == name && op_hint.version == type->tp_version_tag) {
+//    descr = op_hint.value;
+//  } else {
+    descr = _PyType_Lookup(type, name);
+//  }
+
   descrgetfunc getter = NULL;
   if (descr != NULL && PyType_HasFeature(descr->ob_type, Py_TPFLAGS_HAVE_CLASS)) {
     getter = descr->ob_type->tp_descr_get;
     if (getter != NULL && PyDescr_IsData(descr)) {
-      res = getter(descr, obj, (PyObject*) type);
-      return res;
+      return getter(descr, obj, (PyObject*) type);
     }
   }
 
   // Look for a match in our object dictionary
-  PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
   if (dict != NULL) {
-    res = PyDict_GetItem(dict, name);
-  }
+    PyObject* res = PyDict_GetItem(dict, name);
+    // We found a match.  Create a hint for where to look next time.
+    if (res != NULL) {
+      size_t hint_pos = hint_offset(type, name);
+      size_t dict_pos = dict_getoffset(dict, name);
 
-  // We found a match.  Create a hint for where to look in objects of this type.
-  if (res != NULL) {
-    size_t hint_pos = hint_offset(type, name);
-    size_t dict_pos = dict_getoffset(dict, name);
+      Hint h;
+      h.guard.dict_size = dict->ma_mask;
+      h.key = name;
+      h.value = type;
+      h.version = dict_pos;
+      eval->hints[hint_pos] = h;
+      op.hint_pos = hint_pos;
 
-    Hint h;
-    h.guard.dict_size = dict->ma_mask;
-    h.key = name;
-    h.value = NULL;
-    h.version = dict_pos;
-    eval->hints[hint_pos] = h;
-    op.hint = hint_pos;
-    Py_INCREF(res);
-    return res;
+      Py_INCREF(res);
+      return res;
+    }
   }
 
   // Instance dictionary lookup failed, try to find a match in the class hierarchy.
   if (getter != NULL) {
-    res = getter(descr, obj, (PyObject*) type);
-  }
+    PyObject* res = getter(descr, obj, (PyObject*) type);
+    if (res != NULL) {
+      size_t hint_pos = hint_offset(type, name);
+      Hint h;
+      h.guard.obj = type;
+      h.key = name;
+      h.value = descr;
+      h.version = type->tp_version_tag;
+      eval->hints[hint_pos] = h;
+      op.hint_pos = hint_pos;
 
-  if (res != NULL) {
-    return res;
+      return res;
+    }
   }
 
   if (descr != NULL) {

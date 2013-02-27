@@ -195,6 +195,9 @@ private:
   int32_t op_counts_[256];
   int64_t op_times_[256];
 
+  int64_t hint_hits_;
+  int64_t hint_misses_;
+
   int32_t total_count_;
   int64_t last_clock_;
 
@@ -213,7 +216,7 @@ public:
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
   RegisterFrame* frame_from_codeobj(PyObject* code);
 
-  Hint hints[kMaxHints];
+  Hint hints[kMaxHints + 1];
 };
 
 RegisterCode* Evaluator::compile(PyObject* obj) {

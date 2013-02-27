@@ -81,7 +81,7 @@ struct RCompilerUtil {
 //        op->reg.set(i, src->regs[i]);
         op->reg[i] = src->regs[i];
       }
-      op->hint = kInvalidHint;
+      op->hint_pos = kInvalidHint;
     }
   }
 };
