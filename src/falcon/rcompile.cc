@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <map>
 #include <set>
+#include <stack>
+#include <queue>
 #include <vector>
 #include <string>
 
@@ -885,6 +887,62 @@ public:
 
 };
 
+class SortedPass: public CompilerPass {
+// visit basic blocks in topologically sorted order
+private:
+  bool all_preds_visited(BasicBlock* bb) {
+    size_t n_entries = bb->entries.size();
+    for (size_t i = 0; i < n_entries; ++i) {
+      if (!bb->entries[i]->visited) {
+        return false;
+      }
+    }
+    return true;
+  }
+protected:
+  bool in_cycle;
+public:
+
+  void visit_fn(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t i = 0; i < n_bbs; ++i) {
+      fn->bbs[i]->visited = false;
+    }
+
+    std::queue<BasicBlock*> ready;
+    std::queue<BasicBlock*> waiting;
+
+    ready.push(fn->bbs[0]);
+
+    while (ready.size() > 0 || waiting.size() > 0) {
+      BasicBlock* bb = NULL;
+      if (ready.size() > 0) {
+        bb = ready.front();
+        ready.pop();
+      } else {
+        bb = waiting.front();
+        waiting.pop();
+      }
+      if (!bb->visited) {
+        bb->visited = true;
+        this->in_cycle = !(this->all_preds_visited(bb));
+        this->visit_bb(bb);
+        int n_exits = bb->exits.size();
+        for (int i = 0; i < n_exits; ++i) {
+          BasicBlock* succ = bb->exits[i];
+          if (this->all_preds_visited(succ)) {
+            ready.push(succ);
+          } else {
+            waiting.push(succ);
+          }
+        }
+      }
+    }
+  }
+
+};
+
+
 class MarkEntries: public CompilerPass {
 public:
   void visit_bb(BasicBlock* bb) {
@@ -1100,15 +1158,10 @@ public:
   }
 
   void visit_op(CompilerOp* op) {
-    // printf("visit_op %s (code = %d)\n", op->str().c_str(), op->code);
 
     size_t n_inputs = op->num_inputs();
-    // printf(" -- n_inputs %d\n", n_inputs);
-    // printf(" -- has_dest %d\n", op->has_dest);
-    // printf(" -- is pure? %d\n", this->is_pure(op->code));
     if ((n_inputs > 0) && (op->has_dest)) {
       Register dest = op->regs[n_inputs];
-      // printf(" ** use count %d\n", this->get_count(dest));
       if (this->is_pure(op->code) && this->get_count(dest) == 0) {
         op->dead = true;
         // if an operation is marked dead, decrement the use counts
@@ -1128,6 +1181,7 @@ public:
 };
 
 class RenameRegisters: public CompilerPass {
+  // simple renaming that ignore live ranges of registers
 private:
   // Mapping from old -> new register names
   std::map<int, int> register_map_;
@@ -1148,6 +1202,7 @@ public:
   }
 
   void visit_fn(CompilerState* fn) {
+
     std::map<int, int> counts;
 
     for (BasicBlock* bb : fn->bbs) {
@@ -1190,6 +1245,72 @@ public:
   }
 };
 
+class CompactRegisters: public SortedPass, UseCounts {
+private:
+  // Mapping from old -> new register names
+  std::map<Register, Register> register_map;
+  std::stack<Register> free_registers;
+  Register num_frozen;
+  Register max_register;
+  std::set<Register> used_once;
+public:
+
+  void visit_op(CompilerOp* op) {
+
+    size_t n_regs = op->regs.size();
+    size_t n_input_regs;
+    if (op->has_dest) {
+      n_input_regs = n_regs - 1;
+    } else {
+      n_input_regs = n_regs;
+    }
+    Register old_reg;
+    Register new_reg;
+    for (size_t i = 0; i < n_input_regs; ++i) {
+      old_reg = op->regs[i];
+      new_reg = register_map[old_reg];
+      op->regs[i] = new_reg;
+      this->decr_count(old_reg);
+      if (this->get_count(old_reg) == 0 && old_reg >= num_frozen && !this->in_cycle) {
+        this->free_registers.push(new_reg);
+      }
+    }
+    if (op->has_dest) {
+      old_reg = op->regs[n_input_regs];
+      if (register_map.find(old_reg) != register_map.end()) {
+        new_reg = register_map[old_reg];
+      } else if (free_registers.size() > 0) {
+        new_reg = free_registers.top();
+        free_registers.pop();
+        register_map[old_reg] = new_reg;
+      } else {
+        new_reg = max_register;
+        register_map[old_reg] = new_reg;
+        max_register++;
+      }
+      op->regs[n_input_regs] = new_reg;
+    }
+  }
+
+  void visit_fn(CompilerState* fn) {
+
+    this->count_uses(fn);
+    for (auto iter = this->counts.begin(); iter != this->counts.end(); ++iter) {
+      if (iter->second == 1) {
+        this->used_once.insert(iter->first);
+      }
+    }
+    // don't rename inputs, locals, or constants
+    num_frozen = fn->num_locals + fn->num_consts;
+    max_register = num_frozen;
+    for (Register i = 0; i < max_register; ++i) {
+      register_map[i] = i;
+    }
+    SortedPass::visit_fn(fn);
+  }
+};
+
+
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
 //  Log_Info(fn->str().c_str());
@@ -1197,8 +1318,9 @@ void optimize(CompilerState* fn) {
   CopyPropagation()(fn);
   StoreElim()(fn);
   DeadCodeElim()(fn);
+  CompactRegisters()(fn);
   RenameRegisters()(fn);
-//  Log_Info(fn->str().c_str());
+  //Log_Info(fn->str().c_str());
 }
 
 void lower_register_code(CompilerState* state, std::string *out) {

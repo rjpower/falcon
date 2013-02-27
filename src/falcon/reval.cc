@@ -110,9 +110,9 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   const int num_cells = num_freevars + num_cellvars;
 
   const int num_args = args->size();
-
+  freevars = new PyObject*[num_cells];
   if (num_cells > 0) {
-    freevars = new PyObject*[num_cells];
+
     int i;
     for (i = 0; i < num_cellvars; ++i) {
       bool found_argname = false;
