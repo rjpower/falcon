@@ -16,6 +16,10 @@
   $1 = ((PyCodeObject*)$input);
 }
 
+%typemap(out) int& {
+  $result = PyInt_FromLong(*$1);
+}
+
 %exception {
   try {
     $function
@@ -36,6 +40,7 @@
 %template(CodeVector) std::vector<CompilerOp*>;
 %template(BlockVector) std::vector<BasicBlock*>;
 %template(RegVector) std::vector<Register>;
+%template(SmallIntVector) SmallVector<int>;
 
 %pythoncode %{
 def disown_class(c):

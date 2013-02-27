@@ -14,10 +14,75 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 
-typedef std::vector<PyObject*> ObjVector;
+
+// A vector which we can normally stack allocate, and which
+// contains a small number of slots internally.
+static const size_t kSVBuiltinSlots = 8;
+template<class T>
+struct SmallVector {
+  SmallVector() :
+      limit_(kSVBuiltinSlots), count_(0), rest_(NULL) {
+  }
+  ~SmallVector() {
+    if (rest_) {
+      free(rest_);
+    }
+  }
+
+  void ensure(size_t needed) {
+    if (limit_ > needed) {
+      return;
+    }
+
+    if (limit_ < needed) {
+      rest_ = (T*)realloc(rest_, sizeof(T) * needed * 2);
+      limit_ = kSVBuiltinSlots + needed * 2;
+    }
+  }
+
+  T& operator[](const size_t idx) const {
+    if (idx < kSVBuiltinSlots) {
+      return (T&)(vals_[idx]);
+    }
+    return (T&)(rest_[idx - kSVBuiltinSlots]);
+  }
+
+  T& at(const size_t idx) {
+    return (*this)[idx];
+  }
+
+  void push_back(const T& t) {
+    if (count_ < kSVBuiltinSlots) {
+      vals_[count_++] = t;
+    } else {
+      ensure(count_ + 1);
+      rest_[count_ - kSVBuiltinSlots] = t;
+      ++count_;
+    }
+  }
+
+  size_t size() const {
+    return count_;
+  }
+
+  bool empty() const {
+    return count_ == 0;
+  }
+
+  size_t limit_;
+  size_t count_;
+  T vals_[kSVBuiltinSlots];
+  T* rest_;
+};
+
+typedef SmallVector<PyObject*> ObjVector;
 
 struct Hint {
-  PyObject* obj;
+  union {
+    PyObject* obj;
+    int dict_size;
+  } guard;
+
   PyObject* key;
   PyObject* value;
   unsigned int version;
@@ -74,8 +139,8 @@ public:
   }
 
   void fill_locals(PyObject* ldict) {
-    for (int i = 0; i < PyTuple_GET_SIZE(names_) ; ++i) {
-      PyObject* name = PyTuple_GET_ITEM(names_, i) ;
+    for (int i = 0; i < PyTuple_GET_SIZE(names_); ++i) {
+      PyObject* name = PyTuple_GET_ITEM(names_, i);
       PyObject* value = PyDict_GetItem(ldict, name);
       if (value != NULL) {
         registers[num_consts() + i] = value;
@@ -120,7 +185,7 @@ public:
     return w.str();
   }
 
-  RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector* args, const ObjVector* kw);
+  RegisterFrame(RegisterCode* func, PyObject* obj, const ObjVector& args, const ObjVector& kw);
   ~RegisterFrame();
 };
 
@@ -129,6 +194,9 @@ private:
   void collect_info(int opcode);
   int32_t op_counts_[256];
   int64_t op_times_[256];
+
+  int64_t hint_hits_;
+  int64_t hint_misses_;
 
   int32_t total_count_;
   int64_t last_clock_;
@@ -148,7 +216,7 @@ public:
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
   RegisterFrame* frame_from_codeobj(PyObject* code);
 
-  Hint hints[kMaxHints];
+  Hint hints[kMaxHints + 1];
 };
 
 RegisterCode* Evaluator::compile(PyObject* obj) {

@@ -189,9 +189,9 @@ RegisterCode* Compiler::compile(PyObject* func) {
   try {
     RegisterCode* code = compile_(func);
     cache_[func] = code;
-    Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
+//    Log_Info("Compiled: (%s) %p -- %d registers", PyEval_GetFuncName(func), func, code->num_registers);
   } catch (RException& e) {
-    Log_Info("Failed to compile bytecode for %s: %s", PyEval_GetFuncName(func), obj_to_str(e.value));
+//    Log_Info("Failed to compile bytecode for %s: %s", PyEval_GetFuncName(func), obj_to_str(e.value));
     cache_[func] = NULL;
     throw e;
   }

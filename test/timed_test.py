@@ -70,8 +70,9 @@ class TimedTest(unittest.TestCase):
 
 # decorator for quickly creating simple test functions
 def simple_test(f):
-  class SimpleTestCase(TimedTest):
+  class TestCase(TimedTest):
     def test_function(self):
       self.time_compare(f)
-      
-  return SimpleTestCase
+  
+  TestCase.__name__ = f.func_name
+  return TestCase

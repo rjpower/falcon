@@ -122,7 +122,7 @@ struct RegOp {
 
   // The hint field is used by certain operations to cache information
   // at runtime.  It is default initialized to kInvalidHint;
-  HintOffset hint;
+  HintOffset hint_pos;
 
   Register reg[num_registers];
 

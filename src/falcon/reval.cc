@@ -52,7 +52,8 @@ struct RefHelper {
 #define GilHelper(v) static int MustInitWithVar[-1];
 #define RefHelper(v) static int MustInitWithVar[-1];
 
-// Wrapper around PyXXXObject*, allows implicit casting to PyObject.
+// Wrapper around PyXXXObject* which allows implicit casting to PyObject.
+// This let's us access member variables and call API functions easily.
 template<class T>
 struct PyObjHelper {
   T val_;
@@ -82,7 +83,7 @@ struct PyObjHelper {
   }
 };
 
-RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector* args, const ObjVector* kw) :
+RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector& args, const ObjVector& kw) :
     code(rcode) {
   instructions_ = code->instructions.data();
   current_hint = -1;
@@ -95,7 +96,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
     locals_ = PyEval_GetGlobals();
   }
 
-  Reg_Assert(kw == NULL || kw->empty(), "Keyword args not supported.");
+  Reg_Assert(kw.empty(), "Keyword args not supported.");
 
   builtins_ = PyEval_GetBuiltins();
 
@@ -109,7 +110,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   const int num_cellvars = PyTuple_GET_SIZE(rcode->code()->co_cellvars);
   const int num_cells = num_freevars + num_cellvars;
 
-  const int num_args = args->size();
+
+  const int num_args = args.size();
   freevars = new PyObject*[num_cells];
   if (num_cells > 0) {
 
@@ -120,7 +122,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       for (int arg_idx = 0; arg_idx < num_args; ++arg_idx) {
         char* argname = PyString_AS_STRING(PyTuple_GET_ITEM(rcode->code()->co_varnames, arg_idx));
         if (strcmp(cellname, argname) == 0) {
-          PyObject* arg_value = args->at(arg_idx);
+          PyObject* arg_value = args[arg_idx];
           freevars[i] = PyCell_New(arg_value);
           found_argname = true;
           break;
@@ -129,19 +131,24 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       if (!found_argname) {
         freevars[i] = PyCell_New(NULL);
       }
-      Reg_Assert(freevars[i] != NULL, "NULL cell");
     }
-    PyObject* closure =((PyFunctionObject*) rcode->function)->func_closure;
+
+    PyObject* closure = ((PyFunctionObject*) rcode->function)->func_closure;
     if (closure) {
-      for (i = num_cellvars; i < num_cells; ++i) {
-        freevars[i] = PyTuple_GET_ITEM(closure, i - num_cellvars);
+      for (int i = num_cellvars; i < num_cells; ++i) {
+        freevars[i] = PyTuple_GET_ITEM(closure, i - num_cellvars) ;
+        Py_INCREF(freevars[i]);
       }
     } else {
-      for (i = num_cellvars; i < num_cells; ++i) {
+      for (int i = num_cellvars; i < num_cells; ++i) {
         freevars[i] = PyCell_New(NULL);
       }
     }
   }
+
+//  for (int i = 0; i < num_cells; ++i) {
+//    Log_Info("Cell: %d [%d] %p", i, freevars[i]->ob_refcnt, freevars[i]);
+//  }
 
   const int num_registers = code->num_registers;
 
@@ -168,14 +175,14 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   if (code->function) {
     PyObject* def_args = PyFunction_GET_DEFAULTS(code->function);
     int num_def_args = def_args == NULL ? 0 : PyTuple_GET_SIZE(def_args);
-    int num_args = args->size();
+    int num_args = args.size();
     if (num_args + num_def_args < needed_args) {
       throw RException(PyExc_TypeError, "Wrong number of arguments for %s, expected %d, got %d.",
                        PyEval_GetFuncName(code->function), needed_args - num_def_args, num_args);
     }
 
     for (int i = 0; i < needed_args; ++i) {
-      PyObject* v = (i < num_args) ? args->at(i) : PyTuple_GET_ITEM(def_args, i - num_args) ;
+      PyObject* v = (i < num_args) ? args[i] : PyTuple_GET_ITEM(def_args, i - num_args) ;
       Py_INCREF(v);
       registers[offset++] = v;
     }
@@ -197,7 +204,8 @@ RegisterFrame::~RegisterFrame() {
   const int num_freevars = PyTuple_GET_SIZE(code->code()->co_freevars);
   const int num_cellvars = PyTuple_GET_SIZE(code->code()->co_cellvars);
   const int num_cells = num_freevars + num_cellvars;
-  for (i = 0; i <  num_cells; ++i) {
+  for (i = 0; i < num_cells; ++i) {
+//    Log_Info("Cell: %d [%d] %p", i, freevars[i]->ob_refcnt, freevars[i]);
     Py_XDECREF(freevars[i]);
   }
   delete[] freevars;
@@ -208,8 +216,16 @@ Evaluator::Evaluator() {
   bzero(op_times_, sizeof(op_times_));
   total_count_ = 0;
   last_clock_ = 0;
+  hint_hits_ = 0;
+  hint_misses_ = 0;
   compiler_ = new Compiler;
   bzero(hints, sizeof(Hint) * kMaxHints);
+
+  // We use a sentinel value for the invalid hint index.
+  hints[kInvalidHint].guard.obj = NULL;
+  hints[kInvalidHint].key = NULL;
+  hints[kInvalidHint].value = NULL;
+  hints[kInvalidHint].version = (unsigned int) -1;
 }
 
 Evaluator::~Evaluator() {
@@ -227,7 +243,8 @@ RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
   RegisterCode* regcode = compile((PyObject*) frame->f_code);
 
   ObjVector v_args;
-  RegisterFrame* f = new RegisterFrame(regcode, (PyObject*) frame->f_code, &v_args, NULL);
+  ObjVector kw_args;
+  RegisterFrame* f = new RegisterFrame(regcode, (PyObject*) frame->f_code, v_args, kw_args);
   PyFrame_FastToLocals(frame);
   f->fill_locals(frame->f_locals);
   return f;
@@ -251,13 +268,13 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 //    kw_args.push_back()
   }
 
-  return new RegisterFrame(regcode, obj, &v_args, NULL);
+  return new RegisterFrame(regcode, obj, v_args, kw_args);
 }
 
 RegisterFrame* Evaluator::frame_from_codeobj(PyObject* code) {
   ObjVector args, kw;
   RegisterCode *regcode = compile(code);
-  return new RegisterFrame(regcode, code, &args, &kw);
+  return new RegisterFrame(regcode, code, args, kw);
 }
 
 void Evaluator::dump_status() {
@@ -633,7 +650,6 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
   }
 };
 
-
 struct LoadFast: public RegOpImpl<RegOp<2>, LoadFast> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
     Py_INCREF(registers[op.reg[0]]);
@@ -651,7 +667,6 @@ struct StoreFast: public RegOpImpl<RegOp<2>, StoreFast> {
     registers[op.reg[1]] = registers[op.reg[0]];
   }
 };
-
 
 struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
@@ -734,28 +749,16 @@ static size_t dict_getoffset(PyDictObject* dict, PyObject* key) {
 // Most of this is taken from _PyObject_GenericGetAttrWithDict
 static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyObject *name) {
   PyObjHelper<PyTypeObject*> type(Py_TYPE(obj) );
-  PyObject *res = NULL;
+  PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
+  PyObject *descr = NULL;
+  Hint op_hint = eval->hints[op.hint_pos];
 
-//  static int op_hits = 0;
-//  static int key_hits = 0;
-//  static int count = 0;
-//  ++count;
-//  if (op.hint != kInvalidHint) {
-//    ++op_hits;
-//  }
-//
-//  EVERY_N(100000, Log_Info("%d/%d/%d", key_hits, op_hits, count));
-
-  if (op.hint != kInvalidHint) {
-    Hint h = eval->hints[op.hint];
-    if (h.obj == type && h.key == name) {
-      PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
-      PyDictEntry e(dict->ma_table[h.version]);
-      if (e.me_key == name) {
-//        ++key_hits;
-        Py_INCREF(e.me_value);
-        return e.me_value;
-      }
+  // A hint for an instance dictionary lookup.
+  if (op_hint.guard.dict_size == dict->ma_mask && op_hint.value == type) {
+    PyDictEntry e(dict->ma_table[op_hint.version]);
+    if (e.me_key == name) {
+      Py_INCREF(e.me_value);
+      return e.me_value;
     }
   }
 
@@ -769,40 +772,57 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
     }
   }
 
-  PyObject* descr = _PyType_Lookup(type, name);
+  // A hint for a type dictionary lookup, we've cached the 'descr' object.
+//  if (op_hint.guard.obj == type && op_hint.key == name && op_hint.version == type->tp_version_tag) {
+//    descr = op_hint.value;
+//  } else {
+    descr = _PyType_Lookup(type, name);
+//  }
+
   descrgetfunc getter = NULL;
   if (descr != NULL && PyType_HasFeature(descr->ob_type, Py_TPFLAGS_HAVE_CLASS)) {
     getter = descr->ob_type->tp_descr_get;
     if (getter != NULL && PyDescr_IsData(descr)) {
-      res = getter(descr, obj, (PyObject*) type);
-      return res;
+      return getter(descr, obj, (PyObject*) type);
     }
   }
 
   // Look for a match in our object dictionary
-  PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
   if (dict != NULL) {
-    res = PyDict_GetItem(dict, name);
-  }
+    PyObject* res = PyDict_GetItem(dict, name);
+    // We found a match.  Create a hint for where to look next time.
+    if (res != NULL) {
+      size_t hint_pos = hint_offset(type, name);
+      size_t dict_pos = dict_getoffset(dict, name);
 
-  // We found a match.  Create a hint for where to look in objects of this type.
-  if (res != NULL) {
-    size_t hint_pos = hint_offset(type, name);
-    size_t dict_pos = dict_getoffset(dict, name);
+      Hint h;
+      h.guard.dict_size = dict->ma_mask;
+      h.key = name;
+      h.value = type;
+      h.version = dict_pos;
+      eval->hints[hint_pos] = h;
+      op.hint_pos = hint_pos;
 
-    eval->hints[hint_pos] = {type, name, NULL, (unsigned int)dict_pos};
-    op.hint = hint_pos;
-    Py_INCREF(res);
-    return res;
+      Py_INCREF(res);
+      return res;
+    }
   }
 
   // Instance dictionary lookup failed, try to find a match in the class hierarchy.
   if (getter != NULL) {
-    res = getter(descr, obj, (PyObject*) type);
-  }
+    PyObject* res = getter(descr, obj, (PyObject*) type);
+    if (res != NULL) {
+      size_t hint_pos = hint_offset(type, name);
+      Hint h;
+      h.guard.obj = type;
+      h.key = name;
+      h.value = descr;
+      h.version = type->tp_version_tag;
+      eval->hints[hint_pos] = h;
+      op.hint_pos = hint_pos;
 
-  if (res != NULL) {
-    return res;
+      return res;
+    }
   }
 
   if (descr != NULL) {
@@ -823,24 +843,21 @@ struct LoadAttr: public RegOpImpl<RegOp<2>, LoadAttr> {
   }
 };
 
-
 struct LoadDeref: public RegOpImpl<RegOp<1>, LoadDeref> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
     PyObject* closure_cell = frame->freevars[op.arg];
     PyObject* closure_value = PyCell_Get(closure_cell);
-    Py_INCREF(closure_value);
     SET_REGISTER(op.reg[0], closure_value);
   }
 };
 
-struct StoreDeref : public RegOpImpl<RegOp<1>, StoreDeref> {
+struct StoreDeref: public RegOpImpl<RegOp<1>, StoreDeref> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
     PyObject* value = registers[op.reg[0]];
     PyObject* dest_cell = frame->freevars[op.arg];
     PyCell_Set(dest_cell, value);
   }
 };
-
 
 struct LoadClosure: public RegOpImpl<RegOp<1>, LoadClosure> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
@@ -849,7 +866,6 @@ struct LoadClosure: public RegOpImpl<RegOp<1>, LoadClosure> {
     SET_REGISTER(op.reg[0], closure_cell);
   }
 };
-
 
 struct MakeFunction: public VarArgsOpImpl<MakeFunction> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
@@ -863,7 +879,6 @@ struct MakeFunction: public VarArgsOpImpl<MakeFunction> {
     SET_REGISTER(op->reg[op->arg + 1], func);
   }
 };
-
 
 struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
@@ -883,7 +898,6 @@ struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
     SET_REGISTER(op->reg[op->arg + 2], func);
   }
 };
-
 
 struct CallFunction: public VarArgsOpImpl<CallFunction> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
@@ -936,13 +950,14 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
         res = PyObject_Call(fn, args, kwdict);
       }
     } else {
-      ObjVector& args = frame->reg_call_args;
-      args.resize(na);
+      ObjVector args, kw;
+//      ObjVector& args = frame->reg_call_args;
+//      args.resize(na);
       for (i = 0; i < na; ++i) {
         CHECK_VALID(registers[op->reg[i]]);
-        args[i] = registers[op->reg[i]];
+        args.push_back(registers[op->reg[i]]);
       }
-      RegisterFrame f(code, fn, &args, NULL);
+      RegisterFrame f(code, fn, args, kw);
       res = eval->eval(&f);
     }
 
@@ -1100,7 +1115,8 @@ struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
     }
 
     result = PyObject_CallFunctionObjArgs(metaclass, name, bases, methods, NULL);
-    EVAL_LOG("Building a class -- methods: %s\n bases: %s\n name: %s\n result: %s", obj_to_str(methods), obj_to_str(bases), obj_to_str(name), obj_to_str(result));
+    EVAL_LOG(
+        "Building a class -- methods: %s\n bases: %s\n name: %s\n result: %s", obj_to_str(methods), obj_to_str(bases), obj_to_str(name), obj_to_str(result));
 
     Py_DECREF(metaclass);
 
