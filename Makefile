@@ -18,9 +18,11 @@ dbg:
 clean:
 	rm -rf build/
 else
-SRCDIR := ../../src
+TOPDIR := ../..
+SRCDIR := $(TOPDIR)/src
+
 VPATH := $(SRCDIR)/falcon
-CPPFLAGS := -I$(SRCDIR) -I/usr/include/python2.7 -I$(SRCDIR)/sparsehash-2.0.2/src
+CPPFLAGS := -I$(SRCDIR) -I$(TOPDIR)/include/python2.7 -I$(SRCDIR)/sparsehash-2.0.2/src
 CFLAGS := $(CPPFLAGS) -pthread -fno-strict-aliasing -fwrapv -Wall -fno-omit-frame-pointer -fPIC  -fno-gcse -fno-crossjumping -ggdb2 -std=c++0x
 CXXFLAGS := $(CFLAGS) 
 INCLUDES := $(shell find $(SRCDIR) -name '*.h') ../../Makefile

@@ -13,9 +13,17 @@ from timed_test import TimedTest, simple_test
 def print_item():
   print 'hello'
 
-
 def add(a, b):
   return a + b
+
+def add1(a):
+  return add(a, 1)
+
+@simple_test
+def add_loop():
+  for i in xrange(100000):
+    temp = add1(i)
+  return temp
 
 def compare(a, b):
   if a < b:
@@ -60,7 +68,7 @@ def nested_closure(x):
   return f(x)
 
 def nested_closure_repeat():
-  for i in xrange(10**5):
+  for i in xrange(50000):
     temp = nested_closure(i)
   return temp 
 
