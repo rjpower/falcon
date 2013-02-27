@@ -13,8 +13,6 @@ struct RException {
   const char* file;
   int line;
 
-  void set_python_err();
-
   RException();
   RException(PyObject* exc, const char* fmt, ...);
 };

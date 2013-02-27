@@ -6,7 +6,7 @@ import sys
 evaluator = Evaluator()
 
 def run_function(f, *args, **kw):
-  frame = evaluator.frame_from_python(f, args, kw)
+  frame = evaluator.frame_from_pyfunc(f, args, kw)
   return evaluator.eval(frame)
 
 

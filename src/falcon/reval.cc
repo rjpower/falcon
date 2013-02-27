@@ -690,7 +690,9 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
     CHECK_VALID(key);
     CHECK_VALID(list);
     CHECK_VALID(value);
-    PyObject_SetItem(list, key, value);
+    if (PyObject_SetItem(list, key, value) != 0) {
+      throw RException();
+    }
   }
 };
 
@@ -1344,7 +1346,7 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
 
 PyObject * Evaluator::eval(RegisterFrame* f) {
   register RegisterFrame* frame = f;
-  register PyObject** registers = frame->registers;
+  register PyObject** registers asm("r15") = frame->registers;
   register const char* pc = frame->instructions();
 
   Reg_Assert(frame != NULL, "NULL frame object.");
@@ -1515,6 +1517,16 @@ EVAL_LOG("Entering frame: %s", frame->str().c_str());
 try {
     JUMP_TO(frame->next_code(pc));
 
+
+    op_RETURN_VALUE: {
+          result = ReturnValue::eval(this, frame, &pc, registers);
+          goto done;
+        }
+
+    op_BADCODE: {
+          EVAL_LOG("Jump to invalid opcode!?");
+          throw RException(PyExc_SystemError, "Invalid jump.");
+        }
 BAD_OP(STOP_CODE);
 
 BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
@@ -1579,11 +1591,6 @@ DEFINE_OP(CONST_INDEX, ConstIndex);
 DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);
 DEFINE_OP(BREAK_LOOP, BreakLoop);
-
-op_RETURN_VALUE: {
-      result = ReturnValue::eval(this, frame, &pc, registers);
-      goto done;
-    }
 
     DEFINE_OP(BUILD_TUPLE, BuildTuple);
 DEFINE_OP(BUILD_LIST, BuildList);
@@ -1656,19 +1663,21 @@ BAD_OP(ROT_THREE);
 BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 
-op_BADCODE: {
-      EVAL_LOG("Jump to invalid opcode!?");
-throw RException(PyExc_SystemError, "Invalid jump.");
-    }
   } catch (RException &error) {
     EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
-Reg_Assert(error.exception != NULL, "Error without exception set.");
-error.set_python_err();
+    if (error.exception != NULL) {
+      PyErr_SetObject(error.exception, error.value);
+    }
+
+    // TODO(power) - create a frame object here and attach it to the traceback.
+    PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
+    PyTraceBack_Here(py_frame);
     return NULL;
   }
-  done:
-  EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
-return result;
+  done: {
+    EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
+    return result;
+  }
 }
 
 //void StartTracing(Evaluator* eval) {
