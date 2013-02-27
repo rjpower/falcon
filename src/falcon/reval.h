@@ -78,7 +78,11 @@ struct SmallVector {
 typedef SmallVector<PyObject*> ObjVector;
 
 struct Hint {
-  PyObject* obj;
+  union {
+    PyObject* obj;
+    int dict_size;
+  } guard;
+
   PyObject* key;
   PyObject* value;
   unsigned int version;

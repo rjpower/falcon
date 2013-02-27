@@ -743,23 +743,12 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
   PyObjHelper<PyTypeObject*> type(Py_TYPE(obj) );
   PyObject *res = NULL;
 
-//  static int op_hits = 0;
-//  static int key_hits = 0;
-//  static int count = 0;
-//  ++count;
-//  if (op.hint != kInvalidHint) {
-//    ++op_hits;
-//  }
-//
-//  EVERY_N(100000, Log_Info("%d/%d/%d", key_hits, op_hits, count));
-
   if (op.hint != kInvalidHint) {
     Hint h = eval->hints[op.hint];
-    if (h.obj == type && h.key == name) {
-      PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
+    PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
+    if (h.guard.dict_size == dict->ma_mask) {
       PyDictEntry e(dict->ma_table[h.version]);
       if (e.me_key == name) {
-//        ++key_hits;
         Py_INCREF(e.me_value);
         return e.me_value;
       }
@@ -797,7 +786,12 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
     size_t hint_pos = hint_offset(type, name);
     size_t dict_pos = dict_getoffset(dict, name);
 
-    eval->hints[hint_pos] = {type, name, NULL, (unsigned int)dict_pos};
+    Hint h;
+    h.guard.dict_size = dict->ma_mask;
+    h.key = name;
+    h.value = NULL;
+    h.version = dict_pos;
+    eval->hints[hint_pos] = h;
     op.hint = hint_pos;
     Py_INCREF(res);
     return res;
