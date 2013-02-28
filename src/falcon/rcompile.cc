@@ -1333,7 +1333,7 @@ void optimize(CompilerState* fn) {
   DeadCodeElim()(fn);
   CompactRegisters()(fn);
   RenameRegisters()(fn);
-  //Log_Info(fn->str().c_str());
+  Log_Info(fn->str().c_str());
 }
 
 void lower_register_code(CompilerState* state, std::string *out) {
