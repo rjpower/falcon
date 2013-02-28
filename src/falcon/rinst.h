@@ -50,14 +50,14 @@ static inline const char* obj_to_str(PyObject* o) {
   return PyString_AsString(obj_repr);
 }
 
-typedef uint16_t Register;
+typedef uint8_t Register;
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
 static const Register kInvalidRegister = (Register) -1;
 
-typedef uint16_t HintOffset;
-static const uint16_t kMaxHints = 1024;
+typedef uint8_t HintOffset;
+static const uint16_t kMaxHints = 32;
 static const uint16_t kInvalidHint = kMaxHints;
 
 static inline size_t hint_offset(void* obj, void* name) {

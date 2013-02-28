@@ -56,7 +56,7 @@ struct RefHelper {
 // This let's us access member variables and call API functions easily.
 template<class T>
 struct PyObjHelper {
-  T val_;
+  const T& val_;
   PyObjHelper(T t) :
       val_(t) {
   }
@@ -110,11 +110,9 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   const int num_cellvars = PyTuple_GET_SIZE(rcode->code()->co_cellvars);
   const int num_cells = num_freevars + num_cellvars;
 
-
   const int num_args = args.size();
-  freevars = new PyObject*[num_cells];
   if (num_cells > 0) {
-
+    freevars = new PyObject*[num_cells];
     int i;
     for (i = 0; i < num_cellvars; ++i) {
       bool found_argname = false;
@@ -144,6 +142,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
         freevars[i] = PyCell_New(NULL);
       }
     }
+  } else {
+    freevars = NULL;
   }
 
 //  for (int i = 0; i < num_cells; ++i) {
@@ -154,10 +154,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
   // setup const and local register aliases.
   int num_consts = PyTuple_GET_SIZE(consts());
-
   for (int i = 0; i < num_consts; ++i) {
     registers[i] = PyTuple_GET_ITEM(consts(), i) ;
-    Py_INCREF(registers[i]);
   }
 
   int needed_args = code->code()->co_argcount;
@@ -194,9 +192,9 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 RegisterFrame::~RegisterFrame() {
   Py_XDECREF(py_call_args);
 
+  const int num_consts = PyTuple_GET_SIZE(consts());
   const int num_registers = code->num_registers;
-  register int i;
-  for (i = 0; i < num_registers; ++i) {
+  for (register int i = num_consts; i < num_registers; ++i) {
     Py_XDECREF(registers[i]);
   }
   delete[] registers;
@@ -204,7 +202,7 @@ RegisterFrame::~RegisterFrame() {
   const int num_freevars = PyTuple_GET_SIZE(code->code()->co_freevars);
   const int num_cellvars = PyTuple_GET_SIZE(code->code()->co_cellvars);
   const int num_cells = num_freevars + num_cellvars;
-  for (i = 0; i < num_cells; ++i) {
+  for (register int i = 0; i < num_cells; ++i) {
 //    Log_Info("Cell: %d [%d] %p", i, freevars[i]->ob_refcnt, freevars[i]);
     Py_XDECREF(freevars[i]);
   }
@@ -307,30 +305,33 @@ void Evaluator::collect_info(int opcode) {
 
 template<class OpType, class SubType>
 struct RegOpImpl {
-  static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
-    OpType& op = *((OpType*) *pc);
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(*pc), op.str(registers).c_str());
-    *pc += op.size();
+  static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, PyObject** registers) {
+    OpType& op = *((OpType*) pc);
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
+    pc += op.size();
     SubType::_eval(eval, frame, op, registers);
+    return pc;
   }
 };
 
 template<class SubType>
 struct VarArgsOpImpl {
-  static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
-    VarRegOp *op = (VarRegOp*) (*pc);
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(*pc), op->str(registers).c_str());
-    *pc += op->size();
+  static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, PyObject** registers) {
+    VarRegOp *op = (VarRegOp*) pc;
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op->str(registers).c_str());
+    pc += op->size();
     SubType::_eval(eval, frame, op, registers);
+    return pc;
   }
 };
 
 template<class SubType>
 struct BranchOpImpl {
-  static f_inline void eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
-    BranchOp& op = *((BranchOp*) *pc);
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(*pc), op.str().c_str());
-    SubType::_eval(eval, frame, op, pc, registers);
+  static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, PyObject** registers) {
+    BranchOp& op = *((BranchOp*) pc);
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str().c_str());
+    SubType::_eval(eval, frame, op, &pc, registers);
+    return pc;
   }
 };
 
@@ -737,14 +738,13 @@ static PyDictObject* obj_getdictptr(PyObject* obj, PyTypeObject* type) {
 }
 
 static size_t dict_getoffset(PyDictObject* dict, PyObject* key) {
-  PyDictEntry* pos = dict->ma_table;
-  for (int offset = 0; offset < dict->ma_mask + 1; ++offset, ++pos) {
-    if (pos->me_key == key) {
-      return offset;
-    }
+  long hash;
+  if (!PyString_CheckExact(key) || (hash = ((PyStringObject *) key)->ob_shash) == -1) {
+    hash = PyObject_Hash(key);
   }
 
-  throw RException(PyExc_SystemError, "Requested offset of non-existent key!");
+  PyDictEntry* pos = dict->ma_lookup(dict, key, hash);
+  return pos - dict->ma_table;
 }
 
 // LOAD_ATTR is common enough to warrant inlining some common code.
@@ -753,11 +753,11 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
   PyObjHelper<PyTypeObject*> type(Py_TYPE(obj) );
   PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
   PyObject *descr = NULL;
-  Hint op_hint = eval->hints[op.hint_pos];
+  const Hint &op_hint = eval->hints[op.hint_pos];
 
   // A hint for an instance dictionary lookup.
-  if (false && op_hint.guard.dict_size == dict->ma_mask && op_hint.value == type) {
-    PyDictEntry e(dict->ma_table[op_hint.version]);
+  if (op_hint.guard.dict_size == dict->ma_mask) {
+    const PyDictEntry &e(dict->ma_table[op_hint.version]);
     if (e.me_key == name) {
       Py_INCREF(e.me_value);
       return e.me_value;
@@ -778,7 +778,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
 //  if (op_hint.guard.obj == type && op_hint.key == name && op_hint.version == type->tp_version_tag) {
 //    descr = op_hint.value;
 //  } else {
-    descr = _PyType_Lookup(type, name);
+  descr = _PyType_Lookup(type, name);
 //  }
 
   descrgetfunc getter = NULL;
@@ -1045,9 +1045,9 @@ struct BreakLoop: public BranchOpImpl<BreakLoop> {
 // can't use the exception mechanism to jump to our exit point.  Instead, we return a value
 // here and jump to the exit of our frame.
 struct ReturnValue {
-  static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* frame, const char** pc, PyObject** registers) {
-    RegOp<1>& op = *((RegOp<1>*) *pc);
-    EVAL_LOG("%5d: %s", frame->offset(*pc), op.str(registers).c_str());
+  static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, PyObject** registers) {
+    RegOp<1>& op = *((RegOp<1>*) pc);
+    EVAL_LOG("%5d: %s", frame->offset(pc), op.str(registers).c_str());
     PyObject* result = registers[op.reg[0]];
     Py_INCREF(result);
     return result;
@@ -1322,7 +1322,7 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
 
 #define _DEFINE_OP(opname, impl)\
       /*collectInfo(opname);\*/\
-      impl::eval(this, frame, &pc, registers);\
+      pc = impl::eval(this, frame, pc, registers);\
       JUMP_TO(frame->next_code(pc));
 
 #define DEFINE_OP(opname, impl)\
@@ -1347,7 +1347,7 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
 PyObject * Evaluator::eval(RegisterFrame* f) {
   register RegisterFrame* frame = f;
   register PyObject** registers asm("r15") = frame->registers;
-  register const char* pc = frame->instructions();
+  register const char* pc asm("r14") = frame->instructions();
 
   Reg_Assert(frame != NULL, "NULL frame object.");
   // Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
@@ -1517,15 +1517,14 @@ EVAL_LOG("Entering frame: %s", frame->str().c_str());
 try {
     JUMP_TO(frame->next_code(pc));
 
-
-    op_RETURN_VALUE: {
-          result = ReturnValue::eval(this, frame, &pc, registers);
+op_RETURN_VALUE: {
+          result = ReturnValue::eval(this, frame, pc, registers);
           goto done;
         }
 
     op_BADCODE: {
           EVAL_LOG("Jump to invalid opcode!?");
-          throw RException(PyExc_SystemError, "Invalid jump.");
+throw RException(PyExc_SystemError, "Invalid jump.");
         }
 BAD_OP(STOP_CODE);
 
@@ -1592,7 +1591,7 @@ DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);
 DEFINE_OP(BREAK_LOOP, BreakLoop);
 
-    DEFINE_OP(BUILD_TUPLE, BuildTuple);
+DEFINE_OP(BUILD_TUPLE, BuildTuple);
 DEFINE_OP(BUILD_LIST, BuildList);
 
 DEFINE_OP(PRINT_NEWLINE, PrintNewline);
@@ -1663,9 +1662,9 @@ BAD_OP(ROT_THREE);
 BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 
-  } catch (RException &error) {
+} catch (RException &error) {
     EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
-    if (error.exception != NULL) {
+if (error.exception != NULL) {
       PyErr_SetObject(error.exception, error.value);
     }
 
@@ -1676,8 +1675,8 @@ BAD_OP(POP_TOP);
   }
   done: {
     EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
-    return result;
-  }
+return result;
+}
 }
 
 //void StartTracing(Evaluator* eval) {
