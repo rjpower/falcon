@@ -50,7 +50,7 @@ static inline const char* obj_to_str(PyObject* o) {
   return PyString_AsString(obj_repr);
 }
 
-typedef uint8_t Register;
+typedef uint16_t Register;
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
