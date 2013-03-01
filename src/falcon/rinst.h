@@ -38,7 +38,7 @@
 
 const char* obj_to_str(PyObject* o);
 
-typedef uint8_t Register;
+typedef uint16_t Register;
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
