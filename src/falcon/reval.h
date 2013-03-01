@@ -50,6 +50,11 @@ struct SmallVector {
     return (*this)[idx];
   }
 
+  void resize(const size_t sz) {
+    ensure(sz);
+    count_ = sz;
+  }
+
   void push_back(const T& t) {
     if (count_ < kSVBuiltinSlots) {
       vals_[count_++] = t;
@@ -98,8 +103,6 @@ private:
   const char* instructions_;
 
 public:
-  PyObject* py_call_args;
-  ObjVector reg_call_args;
   PyObject** registers;
   PyObject** freevars;
   const RegisterCode* code;

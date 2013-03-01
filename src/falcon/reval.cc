@@ -100,7 +100,6 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
   builtins_ = PyEval_GetBuiltins();
 
-  py_call_args = NULL;
   names_ = code->names();
   consts_ = code->consts();
 
@@ -190,8 +189,6 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 }
 
 RegisterFrame::~RegisterFrame() {
-  Py_XDECREF(py_call_args);
-
   const int num_consts = PyTuple_GET_SIZE(consts());
   const int num_registers = code->num_registers;
   for (register int i = num_consts; i < num_registers; ++i) {
@@ -299,9 +296,10 @@ void Evaluator::collect_info(int opcode) {
 }
 
 #define SET_REGISTER(regnum, val)\
+    decltype(val) v__ = val;\
     Py_XDECREF(registers[regnum]);\
-    CHECK_VALID(val);\
-    registers[regnum] = val;
+    CHECK_VALID(v__);\
+    registers[regnum] = v__;
 
 template<class OpType, class SubType>
 struct RegOpImpl {
@@ -357,6 +355,23 @@ struct IntegerOps {
   _OP(div, /)
   _OP(mod, %)
 
+#define _SIMPLE_OP(name, op)\
+    static f_inline PyObject* name(PyObject* w, PyObject* v) {\
+      if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {\
+        return NULL;\
+      }\
+      register long a, b;\
+      a = PyInt_AS_LONG(w);\
+      b = PyInt_AS_LONG(v);\
+      return PyInt_FromLong(a op b);\
+}
+
+  _SIMPLE_OP(Or, |)
+  _SIMPLE_OP(Xor, ^)
+  _SIMPLE_OP(And, &)
+  _SIMPLE_OP(Rshift, >>)
+  _SIMPLE_OP(Lshift, <<)
+
   static f_inline PyObject* compare(PyObject* w, PyObject* v, int arg) {
     if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {
       return NULL;
@@ -396,8 +411,8 @@ struct FloatOps {
       return NULL;
     }
 
-    double a = PyFloat_AsDouble(w);
-    double b = PyFloat_AsDouble(v);
+    double a = PyFloat_AS_DOUBLE(w);
+    double b = PyFloat_AS_DOUBLE(v);
 
     switch (arg) {
     case PyCmp_LT:
@@ -525,8 +540,7 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
 
     CHECK_VALID(res);
 
-    Py_XDECREF(registers[op.reg[2]]);
-    registers[op.reg[2]] = res;
+    SET_REGISTER(op.reg[2], res);
   }
 };
 
@@ -537,9 +551,7 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
     PyObject* r2 = registers[op.reg[1]];
     CHECK_VALID(r2);
     PyObject* r3 = PyNumber_Power(r1, r2, Py_None);
-    Py_XDECREF(registers[op.reg[1]]);
-    CHECK_VALID(r3);
-    registers[op.reg[2]] = r3;
+    SET_REGISTER(op.reg[2], r3);
   }
 };
 
@@ -562,8 +574,7 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
     CHECK_VALID(r3);
 
     EVAL_LOG("Compare: %s, %s -> %s", obj_to_str(r1), obj_to_str(r2), obj_to_str(r3));
-    Py_XDECREF(registers[op.reg[2]]);
-    registers[op.reg[2]] = r3;
+    SET_REGISTER(op.reg[2], r3);
   }
 };
 
@@ -583,9 +594,8 @@ struct DecRef: public RegOpImpl<RegOp<1>, DecRef> {
 
 struct LoadLocals: public RegOpImpl<RegOp<1>, LoadLocals> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
-    Py_XDECREF(registers[op.reg[0]]);
     Py_INCREF(frame->locals());
-    registers[op.reg[0]] = frame->locals();
+    SET_REGISTER(op.reg[0], frame->locals());
   }
 };
 
@@ -600,9 +610,7 @@ struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
       throw RException(PyExc_NameError, "Global name %.200s not defined.", obj_to_str(r1));
     }
     Py_INCREF(r2);
-    Py_XDECREF(registers[op.reg[0]]);
-    CHECK_VALID(r2);
-    registers[op.reg[0]] = r2;
+    SET_REGISTER(op.reg[0], r2);
   }
 };
 
@@ -635,9 +643,8 @@ struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
       throw RException(PyExc_NameError, "Name %.200s not defined.", r1);
     }
     Py_INCREF(r2);
-    Py_XDECREF(registers[op.reg[0]]);
-    CHECK_VALID(r2);
-    registers[op.reg[0]] = r2;
+
+    SET_REGISTER(op.reg[0], r2);
   }
 };
 
@@ -653,19 +660,17 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
 
 struct LoadFast: public RegOpImpl<RegOp<2>, LoadFast> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
-    Py_INCREF(registers[op.reg[0]]);
-    Py_XDECREF(registers[op.reg[1]]);
-    CHECK_VALID(registers[op.reg[0]]);
-    registers[op.reg[1]] = registers[op.reg[0]];
+    PyObject* src = registers[op.reg[0]];
+    Py_INCREF(src);
+    SET_REGISTER(op.reg[1], src);
   }
 };
 
 struct StoreFast: public RegOpImpl<RegOp<2>, StoreFast> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
-    Py_XDECREF(registers[op.reg[1]]);
-    Py_INCREF(registers[op.reg[0]]);
-    CHECK_VALID(registers[op.reg[0]]);
-    registers[op.reg[1]] = registers[op.reg[0]];
+    PyObject* src = registers[op.reg[0]];
+    Py_INCREF(src);
+    SET_REGISTER(op.reg[1], src);
   }
 };
 
@@ -704,12 +709,10 @@ struct ConstIndex: public RegOpImpl<RegOp<2>, ConstIndex> {
     if (op.reg[1] == kInvalidRegister) {
       return;
     }
-    Py_XDECREF(registers[op.reg[1]]);
+
     PyObject* pykey = PyInt_FromLong(key);
-    registers[op.reg[1]] = PyObject_GetItem(list, pykey);
+    SET_REGISTER(op.reg[1], PyObject_GetItem(list, pykey));
     Py_DECREF(pykey);
-    Py_INCREF(registers[op.reg[1]]);
-    CHECK_VALID(registers[op.reg[1]]);
   }
 };
 
@@ -906,7 +909,6 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
-    int i;
     PyObject* fn = registers[op->reg[n]];
     assert(n + 2 == op->num_registers);
 
@@ -923,13 +925,9 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     }
 
     if (code == NULL || nk > 0) {
-      if (frame->py_call_args == NULL || PyTuple_GET_SIZE(frame->py_call_args) != na) {
-        Py_XDECREF(frame->py_call_args);
-        frame->py_call_args = PyTuple_New(na);
-      }
+      PyObject* args = PyTuple_New(na);
 
-      PyObject* args = frame->py_call_args;
-      for (i = 0; i < na; ++i) {
+      for (register int i = 0; i < na; ++i) {
         CHECK_VALID(registers[op->reg[i]]);
         Py_INCREF(registers[op->reg[i]]);
         PyTuple_SET_ITEM(args, i, registers[op->reg[i]]);
@@ -938,7 +936,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       PyObject* kwdict = NULL;
       if (nk > 0) {
         kwdict = PyDict_New();
-        for (i = na; i < nk * 2; i += 2) {
+        for (register int i = na; i < nk * 2; i += 2) {
           CHECK_VALID(registers[op->reg[i]]);
           CHECK_VALID(registers[op->reg[i+i]]);
           Py_INCREF(registers[op->reg[i]]);
@@ -946,18 +944,20 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
           PyDict_SetItem(kwdict, registers[op->reg[i]], registers[op->reg[i + 1]]);
         }
       }
+
       if (PyCFunction_Check(fn)) {
         res = PyCFunction_Call(fn, args, kwdict);
       } else {
         res = PyObject_Call(fn, args, kwdict);
       }
+
+      Py_DECREF(args);
     } else {
       ObjVector args, kw;
-//      ObjVector& args = frame->reg_call_args;
-//      args.resize(na);
-      for (i = 0; i < na; ++i) {
+      args.resize(na);
+      for (register int i = 0; i < na; ++i) {
         CHECK_VALID(registers[op->reg[i]]);
-        args.push_back(registers[op->reg[i]]);
+        args[i] = registers[op->reg[i]];
       }
       RegisterFrame f(code, fn, args, kw);
       res = eval->eval(&f);
@@ -968,17 +968,14 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     }
 
     int dst = op->reg[n + 1];
-    if (dst != kInvalidRegister) {
-      SET_REGISTER(dst, res);
-    }
+    SET_REGISTER(dst, res);
   }
 };
 
 struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, PyObject** registers) {
     PyObject* res = PyObject_GetIter(registers[op.reg[0]]);
-    Py_XDECREF(registers[op.reg[1]]);
-    registers[op.reg[1]] = res;
+    SET_REGISTER(op.reg[1], res);
   }
 };
 
@@ -986,10 +983,9 @@ struct ForIter: public BranchOpImpl<ForIter> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc,
                              PyObject** registers) {
     CHECK_VALID(registers[op.reg[0]]);
-    PyObject* r1 = PyIter_Next(registers[op.reg[0]]);
-    if (r1) {
-      Py_XDECREF(registers[op.reg[1]]);
-      registers[op.reg[1]] = r1;
+    PyObject* iter = PyIter_Next(registers[op.reg[0]]);
+    if (iter) {
+      SET_REGISTER(op.reg[1], iter);
       *pc += sizeof(BranchOp);
     } else {
       *pc = frame->instructions() + op.label;
@@ -1062,27 +1058,27 @@ struct Nop: public RegOpImpl<RegOp<0>, Nop> {
 
 struct BuildTuple: public VarArgsOpImpl<BuildTuple> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
-    int i;
-    PyObject* t = PyTuple_New(op->arg);
-    for (i = 0; i < op->arg; ++i) {
+    register int count = op->arg;
+    PyObject* t = PyTuple_New(count);
+    for (register int i = 0; i < count; ++i) {
       PyObject* v = registers[op->reg[i]];
       Py_INCREF(v);
       PyTuple_SET_ITEM(t, i, v);
     }
-    SET_REGISTER(op->reg[op->arg], t);
+    SET_REGISTER(op->reg[count], t);
   }
 };
 
 struct BuildList: public VarArgsOpImpl<BuildList> {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, PyObject** registers) {
-    int i;
-    PyObject* t = PyList_New(op->arg);
-    for (i = 0; i < op->arg; ++i) {
+    register int count = op->arg;
+    PyObject* t = PyList_New(count);
+    for (register int i = 0; i < count; ++i) {
       PyObject* v = registers[op->reg[i]];
       Py_INCREF(v);
       PyList_SET_ITEM(t, i, v);
     }
-    SET_REGISTER(op->reg[op->arg], t);
+    SET_REGISTER(op->reg[count], t);
   }
 };
 
@@ -1221,7 +1217,7 @@ struct Slice: public RegOpImpl<RegOp<4>, Slice> {
     PyObject* list = registers[op.reg[0]];
     PyObject* left = op.reg[1] != kInvalidRegister ? registers[op.reg[1]] : NULL;
     PyObject* right = op.reg[2] != kInvalidRegister ? registers[op.reg[2]] : NULL;
-    registers[op.reg[3]] = apply_slice(list, left, right);
+    SET_REGISTER(op.reg[3], apply_slice(list, left, right));
   }
 };
 
@@ -1254,9 +1250,7 @@ struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
     }
 
     PyObject* res = PyEval_CallObject(import, args);
-    Py_XDECREF(registers[op.reg[2]]);
-    registers[op.reg[2]] = res;
-    CHECK_VALID(registers[op.reg[2]]);
+    SET_REGISTER(op.reg[2], res);
   }
 };
 
@@ -1308,7 +1302,7 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
       }
     }
 
-    registers[op.reg[1]] = val;
+    SET_REGISTER(op.reg[1], val);
   }
 };
 
@@ -1532,12 +1526,11 @@ BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
 BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
 BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
 BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-
-BINARY_OP2(BINARY_OR, PyNumber_Or);
-BINARY_OP2(BINARY_XOR, PyNumber_Xor);
-BINARY_OP2(BINARY_AND, PyNumber_And);
-BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
-BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
+BINARY_OP3(BINARY_OR, PyNumber_Or, IntegerOps::Or);
+BINARY_OP3(BINARY_XOR, PyNumber_Xor, IntegerOps::Xor);
+BINARY_OP3(BINARY_AND, PyNumber_And, IntegerOps::And);
+BINARY_OP3(BINARY_RSHIFT, PyNumber_Rshift, IntegerOps::Rshift);
+BINARY_OP3(BINARY_LSHIFT, PyNumber_Lshift, IntegerOps::Lshift);
 BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
 BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
 

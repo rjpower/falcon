@@ -22,6 +22,13 @@ except:
 class TimedTest(unittest.TestCase):
   def timed(self, function, *args, **kw):
     return self.time_compare(function, *args, **kw)
+  
+  def run_falcon(self, function, *args, **kw):
+    evaluator = falcon.Evaluator()
+    frame = evaluator.frame_from_pyfunc(function, args, None)
+    falcon_result = evaluator.eval(frame)
+    return falcon_result
+
 
   def time_compare(self, function, *args, **kw):
     print 'Original bytecode, %s:\n' % function.func_name

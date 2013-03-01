@@ -19,12 +19,13 @@ def qs(x):
 
 
 from timed_test import TimedTest
-import unittest 
 import random
+import unittest
 class TestQuicksort(TimedTest):
     def test_qs(self):
         x = [random.random() for _ in xrange(100000)] 
-        self.time_compare(qs, x, repeat=1)
+        self.time_compare(qs, x, repeat=10)
+#        self.run_falcon(qs, x)
 
 if __name__ == '__main__':
     unittest.main()
