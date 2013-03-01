@@ -1,8 +1,9 @@
 #ifndef RINST_H_
 #define RINST_H_
 
-#include <string>
 #include "Python.h"
+
+#include <string>
 #include "oputil.h"
 #include "util.h"
 
@@ -30,25 +31,12 @@
 #define f_inline __attribute__((noinline))
 #define n_inline __attribute__((noinline))
 #else
-// #define f_inline __attribute__((noinline))
+//#define f_inline __attribute__((noinline))
 #define f_inline __attribute__((always_inline))
 #define n_inline __attribute__((noinline))
 #endif
 
-static inline const char* obj_to_str(PyObject* o) {
-  if (o == NULL) {
-    return "<NULL>";
-  }
-  if (PyString_Check(o)) {
-    return PyString_AsString(o);
-  }
-
-  PyObject* obj_repr = PyObject_Repr(o);
-  if (obj_repr == NULL) {
-    return "<INVALID __repr__>";
-  }
-  return PyString_AsString(obj_repr);
-}
+const char* obj_to_str(PyObject* o);
 
 typedef uint8_t Register;
 typedef uint16_t JumpLoc;
@@ -147,49 +135,6 @@ struct VarRegOp {
     return sizeof(VarRegOp) + num_registers * sizeof(Register);
   }
 };
-
-template<int num_registers>
-inline std::string RegOp<num_registers>::str(PyObject** registers) const {
-  StringWriter w;
-  w.printf("%s.%d (", OpUtil::name(code), arg);
-  for (int i = 0; i < num_registers; ++i) {
-    if (registers == NULL) {
-      w.printf("%d,", reg[i]);
-    } else {
-      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
-    }
-  }
-  w.printf(")");
-  return w.str();
-}
-
-inline std::string VarRegOp::str(PyObject** registers) const {
-  StringWriter w;
-  w.printf("%s.%d (", OpUtil::name(code), arg);
-  for (int i = 0; i < num_registers; ++i) {
-    if (registers == NULL) {
-      w.printf("%d,", reg[i]);
-    } else {
-      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
-    }
-  }
-  w.printf(")");
-  return w.str();
-}
-
-inline std::string BranchOp::str() const {
-  StringWriter w;
-  w.printf("%s (", OpUtil::name(code));
-  if (reg[0] != kInvalidRegister) {
-    w.printf("%d, ", reg[0]);
-  }
-  if (reg[1] != kInvalidRegister) {
-    w.printf("%d, ", reg[1]);
-  }
-  w.printf(")");
-  w.printf(" -> [%d]", label);
-  return w.str();
-}
 
 #pragma pack(pop)
 
