@@ -57,7 +57,7 @@ struct RefHelper {
 template<class T>
 struct PyObjHelper {
   const T& val_;
-  PyObjHelper(T t) :
+  PyObjHelper(const T& t) :
       val_(t) {
   }
   operator PyObject*() {
@@ -756,7 +756,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
   const Hint &op_hint = eval->hints[op.hint_pos];
 
   // A hint for an instance dictionary lookup.
-  if (op_hint.guard.dict_size == dict->ma_mask) {
+  if (dict.val_ && op_hint.guard.dict_size == dict->ma_mask) {
     const PyDictEntry &e(dict->ma_table[op_hint.version]);
     if (e.me_key == name) {
       Py_INCREF(e.me_value);
@@ -814,14 +814,14 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
   if (getter != NULL) {
     PyObject* res = getter(descr, obj, (PyObject*) type);
     if (res != NULL) {
-      size_t hint_pos = hint_offset(type, name);
-      Hint h;
-      h.guard.obj = type;
-      h.key = name;
-      h.value = descr;
-      h.version = type->tp_version_tag;
-      eval->hints[hint_pos] = h;
-      op.hint_pos = hint_pos;
+//      size_t hint_pos = hint_offset(type, name);
+//      Hint h;
+//      h.guard.obj = type;
+//      h.key = name;
+//      h.value = descr;
+//      h.version = type->tp_version_tag;
+//      eval->hints[hint_pos] = h;
+//      op.hint_pos = hint_pos;
 
       return res;
     }
