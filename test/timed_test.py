@@ -24,8 +24,8 @@ class TimedTest(unittest.TestCase):
     return self.time_compare(function, *args, **kw)
 
   def time_compare(self, function, *args, **kw):
-    #print 'Original bytecode, %s:\n' % function.func_name
-    #dis.dis(function)
+    print 'Original bytecode, %s:\n' % function.func_name
+    dis.dis(function)
     
     repeat = kw.get('repeat', 1)
     if falcon:
