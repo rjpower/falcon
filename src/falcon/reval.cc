@@ -100,7 +100,6 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
   builtins_ = PyEval_GetBuiltins();
 
-  py_call_args = NULL;
   names_ = code->names();
   consts_ = code->consts();
 
@@ -190,8 +189,6 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 }
 
 RegisterFrame::~RegisterFrame() {
-  Py_XDECREF(py_call_args);
-
   const int num_consts = PyTuple_GET_SIZE(consts());
   const int num_registers = code->num_registers;
   for (register int i = num_consts; i < num_registers; ++i) {
@@ -357,6 +354,23 @@ struct IntegerOps {
   _OP(mul, *)
   _OP(div, /)
   _OP(mod, %)
+
+#define _SIMPLE_OP(name, op)\
+    static f_inline PyObject* name(PyObject* w, PyObject* v) {\
+      if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {\
+        return NULL;\
+      }\
+      register long a, b;\
+      a = PyInt_AS_LONG(w);\
+      b = PyInt_AS_LONG(v);\
+      return PyInt_FromLong(a op b);\
+}
+
+  _SIMPLE_OP(Or, |)
+  _SIMPLE_OP(Xor, ^)
+  _SIMPLE_OP(And, &)
+  _SIMPLE_OP(Rshift, >>)
+  _SIMPLE_OP(Lshift, <<)
 
   static f_inline PyObject* compare(PyObject* w, PyObject* v, int arg) {
     if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {
@@ -940,11 +954,10 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       Py_DECREF(args);
     } else {
       ObjVector args, kw;
-//      ObjVector& args = frame->reg_call_args;
-//      args.resize(na);
+      args.resize(na);
       for (register int i = 0; i < na; ++i) {
         CHECK_VALID(registers[op->reg[i]]);
-        args.push_back(registers[op->reg[i]]);
+        args[i] = registers[op->reg[i]];
       }
       RegisterFrame f(code, fn, args, kw);
       res = eval->eval(&f);
@@ -1513,12 +1526,11 @@ BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
 BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
 BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
 BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-
-BINARY_OP2(BINARY_OR, PyNumber_Or);
-BINARY_OP2(BINARY_XOR, PyNumber_Xor);
-BINARY_OP2(BINARY_AND, PyNumber_And);
-BINARY_OP2(BINARY_RSHIFT, PyNumber_Rshift);
-BINARY_OP2(BINARY_LSHIFT, PyNumber_Lshift);
+BINARY_OP3(BINARY_OR, PyNumber_Or, IntegerOps::Or);
+BINARY_OP3(BINARY_XOR, PyNumber_Xor, IntegerOps::Xor);
+BINARY_OP3(BINARY_AND, PyNumber_And, IntegerOps::And);
+BINARY_OP3(BINARY_RSHIFT, PyNumber_Rshift, IntegerOps::Rshift);
+BINARY_OP3(BINARY_LSHIFT, PyNumber_Lshift, IntegerOps::Lshift);
 BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
 BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
 
