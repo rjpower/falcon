@@ -23,7 +23,9 @@ import random
 import unittest
 class TestQuicksort(TimedTest):
     def test_qs(self):
-        x = [random.random() for _ in xrange(100000)] 
+        n = 100000
+        #x = [random.random() for _ in xrange(100000)] 
+        x = [random.randint(0,10000000) for _ in xrange(n)]
         self.time_compare(qs, x, repeat=10)
 #        self.run_falcon(qs, x)
 

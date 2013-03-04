@@ -103,17 +103,18 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   names_ = code->names();
   consts_ = code->consts();
 
+#ifndef STACK_ALLOC_REGISTERS
   registers = new PyObject*[rcode->num_registers];
+#endif
 
-  const int num_freevars = PyTuple_GET_SIZE(rcode->code()->co_freevars);
-  const int num_cellvars = PyTuple_GET_SIZE(rcode->code()->co_cellvars);
-  const int num_cells = num_freevars + num_cellvars;
+
+
 
   const int num_args = args.size();
-  if (num_cells > 0) {
-    freevars = new PyObject*[num_cells];
+  if (rcode->num_cells > 0) {
+    freevars = new PyObject*[rcode->num_cells];
     int i;
-    for (i = 0; i < num_cellvars; ++i) {
+    for (i = 0; i < rcode->num_cellvars; ++i) {
       bool found_argname = false;
       char *cellname = PyString_AS_STRING(PyTuple_GET_ITEM(rcode->code()->co_cellvars, i));
       for (int arg_idx = 0; arg_idx < num_args; ++arg_idx) {
@@ -132,12 +133,12 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
     PyObject* closure = ((PyFunctionObject*) rcode->function)->func_closure;
     if (closure) {
-      for (int i = num_cellvars; i < num_cells; ++i) {
-        freevars[i] = PyTuple_GET_ITEM(closure, i - num_cellvars) ;
+      for (int i = rcode->num_cellvars; i < rcode->num_cells; ++i) {
+        freevars[i] = PyTuple_GET_ITEM(closure, i - rcode->num_cellvars) ;
         Py_INCREF(freevars[i]);
       }
     } else {
-      for (int i = num_cellvars; i < num_cells; ++i) {
+      for (int i = rcode->num_cellvars; i < rcode->num_cells; ++i) {
         freevars[i] = PyCell_New(NULL);
       }
     }
@@ -194,7 +195,10 @@ RegisterFrame::~RegisterFrame() {
   for (register int i = num_consts; i < num_registers; ++i) {
     Py_XDECREF(registers[i]);
   }
-  delete[] registers;
+#ifndef STACK_ALLOC_REGISTERS
+    delete[] registers;
+#endif
+
 
   const int num_freevars = PyTuple_GET_SIZE(code->code()->co_freevars);
   const int num_cellvars = PyTuple_GET_SIZE(code->code()->co_cellvars);
@@ -529,6 +533,9 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
       if (i >= 0 && i < PyList_GET_SIZE(list) ) {
         res = PyList_GET_ITEM(list, i) ;
         Py_INCREF(res);
+        CHECK_VALID(res);
+        SET_REGISTER(op.reg[2], res);
+        return;
       }
     }
     if (!res) {
@@ -539,7 +546,6 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
     }
 
     CHECK_VALID(res);
-
     SET_REGISTER(op.reg[2], res);
   }
 };

@@ -14,6 +14,8 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 
+#define STACK_ALLOC_REGISTERS
+
 // A vector which we can normally stack allocate, and which
 // contains a small number of slots internally.
 static const size_t kSVBuiltinSlots = 8;
@@ -93,7 +95,16 @@ struct Hint {
 };
 
 struct RegisterFrame: private boost::noncopyable {
-private:
+public:
+#ifdef STACK_ALLOC_REGISTERS
+  PyObject* registers[128];
+#else
+  PyObject** registers;
+#endif
+  PyObject** freevars;
+  const RegisterCode* code;
+
+
   PyObject* builtins_;
   PyObject* globals_;
   PyObject* locals_;
@@ -102,10 +113,6 @@ private:
 
   const char* instructions_;
 
-public:
-  PyObject** registers;
-  PyObject** freevars;
-  const RegisterCode* code;
 
   size_t current_hint;
 

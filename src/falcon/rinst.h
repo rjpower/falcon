@@ -38,7 +38,9 @@
 
 const char* obj_to_str(PyObject* o);
 
-typedef uint16_t Register;
+
+typedef uint8_t Register;
+
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
@@ -64,6 +66,10 @@ struct RegisterCode {
   PyObject* function;
 
   PyObject* code_;
+
+  int16_t num_freevars;
+  int16_t num_cellvars;
+  int16_t num_cells;
 
   PyCodeObject* code() const {
     return (PyCodeObject*) code_;

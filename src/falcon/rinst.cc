@@ -5,8 +5,8 @@ std::string RegOp<num_registers>::str(PyObject** registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
-    if (registers == NULL) {
-      w.printf("%d,", reg[i]);
+    if (registers == NULL || reg[i] == kInvalidRegister) {
+      w.printf("[%d],", reg[i]);
     } else {
       w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
     }
@@ -19,8 +19,8 @@ std::string VarRegOp::str(PyObject** registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
-    if (registers == NULL) {
-      w.printf("%d,", reg[i]);
+    if (registers == NULL || reg[i] == kInvalidRegister) {
+      w.printf("[%d],", reg[i]);
     } else {
       w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
     }

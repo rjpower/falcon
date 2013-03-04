@@ -23,7 +23,7 @@ struct CompilerOp {
   // is the last register argument a destination we're writing to?
   bool has_dest;
 
-  std::vector<Register> regs;
+  std::vector<int> regs;
 
   std::string str() const;
 
@@ -34,7 +34,7 @@ struct CompilerOp {
     this->has_dest = false;
   }
 
-  Register dest() {
+  int dest() {
     size_t n_regs = this->regs.size();
     assert(n_regs > 0);
     assert(this->has_dest);

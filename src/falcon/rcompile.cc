@@ -267,7 +267,6 @@ Frame RegisterStack::pop_frame() {
 
 int RegisterStack::push_register(int reg) {
   // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
-  Reg_AssertNe(reg, kInvalidRegister);
   regs.push_back(reg);
   return reg;
 }
@@ -275,7 +274,6 @@ int RegisterStack::push_register(int reg) {
 int RegisterStack::pop_register() {
   Reg_AssertGt((int)regs.size(), 0);
   int reg = regs.back();
-  Reg_AssertNe(reg, kInvalidRegister);
   regs.pop_back();
   return reg;
 }
@@ -506,7 +504,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case SLICE + 2:
     case SLICE + 3: {
       int list, left, right;
-      left = right = kInvalidRegister;
+      left = right = -1;
       if ((opcode - SLICE) & 2) right = stack->pop_register();
       if ((opcode - SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
@@ -519,7 +517,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case STORE_SLICE + 2:
     case STORE_SLICE + 3: {
       int list, left, right, value;
-      left = right = kInvalidRegister;
+      left = right = -1;
       if ((opcode - STORE_SLICE) & 2) right = stack->pop_register();
       if ((opcode - STORE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
@@ -532,7 +530,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case DELETE_SLICE + 2:
     case DELETE_SLICE + 3: {
       int list, left, right;
-      left = right = kInvalidRegister;
+      left = right = -1;
       if ((opcode - DELETE_SLICE) & 2) right = stack->pop_register();
       if ((opcode - DELETE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
@@ -611,7 +609,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case PRINT_ITEM: {
       int r1 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1, kInvalidRegister);
+      bb->add_op(opcode, oparg, r1, -1);
       break;
     }
     case PRINT_ITEM_TO: {
@@ -626,7 +624,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case PRINT_NEWLINE: {
-      bb->add_op(opcode, oparg, kInvalidRegister);
+      bb->add_op(opcode, oparg, -1);
       break;
     }
     case IMPORT_STAR: {
@@ -688,10 +686,10 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case UNPACK_SEQUENCE: {
-      Register seq = stack->pop_register();
+      int seq = stack->pop_register();
 
       for (r = oparg; r >= 1; --r) {
-        Register elt = stack->push_register(state->num_reg++);
+        int elt = stack->push_register(state->num_reg++);
         bb->add_dest_op(CONST_INDEX, r - 1, seq, elt);
       }
       break;
@@ -709,7 +707,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case RAISE_VARARGS: {
       int r1, r2, r3;
-      r1 = r2 = r3 = kInvalidRegister;
+      r1 = r2 = r3 = -1;
       CompilerOp* op = bb->add_varargs_op(opcode, 0, oparg);
       if (oparg == 3) {
         r1 = stack->pop_register();
@@ -942,7 +940,6 @@ public:
 
 };
 
-
 class MarkEntries: public CompilerPass {
 public:
   void visit_bb(BasicBlock* bb) {
@@ -994,9 +991,9 @@ public:
 class CopyPropagation: public CompilerPass {
 public:
   void visit_bb(BasicBlock* bb) {
-    std::map<Register, Register> env;
+    std::map<int, int> env;
     size_t n_ops = bb->code.size();
-    Register source, target;
+    int source, target;
     for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp * op = bb->code[i];
 
@@ -1023,18 +1020,18 @@ public:
 
 class UseCounts {
 protected:
-  std::map<Register, int> counts;
+  std::map<int, int> counts;
 
-  int get_count(Register r) {
-    std::map<Register, int>::iterator iter = counts.find(r);
+  int get_count(int r) {
+    std::map<int, int>::iterator iter = counts.find(r);
     return iter == counts.end() ? 0 : iter->second;
   }
 
-  void incr_count(Register r) {
+  void incr_count(int r) {
     this->counts[r] = this->get_count(r) + 1;
   }
 
-  void decr_count(Register r) {
+  void decr_count(int r) {
     this->counts[r] = this->get_count(r) - 1;
   }
 
@@ -1086,7 +1083,7 @@ class StoreElim: public CompilerPass, UseCounts {
 public:
   void visit_bb(BasicBlock* bb) {
     // map from registers to their last definition in the basic block
-    std::map<Register, CompilerOp*> env;
+    std::map<int, CompilerOp*> env;
 
     // if we encounter a move X->Y when:
     //   - X is locally defined in the basic block
@@ -1095,7 +1092,7 @@ public:
     // to directly write to Y and mark the move X->Y as dead
 
     size_t n_ops = bb->code.size();
-    Register source, target;
+    int source, target;
     for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp * op = bb->code[i];
       // check all the registers and forward any that are in the env
@@ -1161,7 +1158,7 @@ public:
 
     size_t n_inputs = op->num_inputs();
     if ((n_inputs > 0) && (op->has_dest)) {
-      Register dest = op->regs[n_inputs];
+      int dest = op->regs[n_inputs];
       if (this->is_pure(op->code) && this->get_count(dest) == 0) {
         op->dead = true;
         // if an operation is marked dead, decrement the use counts
@@ -1216,7 +1213,7 @@ public:
     }
 
     // A few fixed-register opcodes special case the invalid register.
-    register_map_[kInvalidRegister] = kInvalidRegister;
+    register_map_[-1] = -1;
 
     // Don't remap the const/local register aliases, even if we
     // don't see a usage point for them.
@@ -1239,8 +1236,8 @@ public:
     }
 
     CompilerPass::visit_fn(fn);
-    Log_Info("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)",
-             curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
+    //Log_Info("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)",
+    //         curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
     fn->num_reg = curr;
   }
 };
@@ -1248,13 +1245,13 @@ public:
 class CompactRegisters: public SortedPass, UseCounts {
 private:
   // Mapping from old -> new register names
-  std::map<Register, Register> register_map;
-  std::stack<Register> free_registers;
-  Register num_frozen;
-  Register max_register;
+  std::map<int, int> register_map;
+  std::stack<int> free_registers;
+  int num_frozen;
+  int max_register;
 
-  std::set<Register> bb_defs;
-  bool defined_locally(Register r) {
+  std::set<int> bb_defs;
+  bool defined_locally(int r) {
     return bb_defs.find(r) != bb_defs.end();
   }
 
@@ -1269,24 +1266,26 @@ public:
     } else {
       n_input_regs = n_regs;
     }
-    Register old_reg;
-    Register new_reg;
+    int old_reg;
+    int new_reg;
     for (size_t i = 0; i < n_input_regs; ++i) {
       old_reg = op->regs[i];
-      if (old_reg != kInvalidRegister) {
+      if (old_reg >= num_frozen) {
         new_reg = register_map[old_reg];
-        op->regs[i] = new_reg;
-        this->decr_count(old_reg);
-        if (this->get_count(old_reg) == 0 && old_reg >= num_frozen) {
-          if (!this->in_cycle || this->defined_locally(old_reg)) {
-            this->free_registers.push(new_reg);
+        if (new_reg != 0) {
+          op->regs[i] = new_reg;
+          this->decr_count(old_reg);
+          if (this->get_count(old_reg) == 0) {
+            if (!this->in_cycle || this->defined_locally(old_reg)) {
+              this->free_registers.push(new_reg);
+            }
           }
         }
       }
     }
     if (op->has_dest) {
       old_reg = op->regs[n_input_regs];
-      if (old_reg != kInvalidRegister) {
+      if (old_reg >= 0) {
         bb_defs.insert(old_reg);
         if (register_map.find(old_reg) != register_map.end()) {
           new_reg = register_map[old_reg];
@@ -1306,9 +1305,9 @@ public:
 
   void visit_bb(BasicBlock* bb) {
     this->bb_defs.clear();
-    //printf("Defs before bb %d\n", this->bb_defs.size());
     SortedPass::visit_bb(bb);
-    //printf("Defs after bb %d\n", this->bb_defs.size());
+
+
   }
   void visit_fn(CompilerState* fn) {
 
@@ -1317,21 +1316,150 @@ public:
     // don't rename inputs, locals, or constants
     num_frozen = fn->num_locals + fn->num_consts;
     max_register = num_frozen;
-    for (Register i = 0; i < max_register; ++i) {
+    for (int i = 0; i < max_register; ++i) {
       register_map[i] = i;
     }
     SortedPass::visit_fn(fn);
   }
 };
 
+enum StaticType {
+  UNKNOWN,
+  INT,
+  FLOAT,
+  LIST,
+  TUPLE,
+  DICT,
+  OBJ
+};
+
+class TypeInference {
+protected:
+  std::map<int, StaticType> types;
+
+  StaticType get_type(int r) {
+    std::map<int, StaticType>::iterator iter = this->types.find(r);
+    if (iter == this->types.end()) {
+      return UNKNOWN;
+    } else {
+      return iter->second;
+    }
+  }
+
+  void update_type(int r, StaticType t) {
+    StaticType old_t = this->get_type(r);
+    if (old_t == UNKNOWN) {
+      this->types[r] = t;
+    } else if (old_t != t && old_t != OBJ) {
+      this->types[r] = OBJ;
+    }
+  }
+
+public:
+  void infer(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
+
+      BasicBlock* bb = fn->bbs[bb_idx];
+      size_t n_ops = bb->code.size();
+      for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
+        CompilerOp* op = bb->code[op_idx];
+        size_t n_inputs = op->num_inputs();
+        if (op->has_dest) {
+          int dest = op->regs[n_inputs];
+          StaticType t = OBJ;
+          switch (op->code) {
+          case BUILD_LIST:
+            t = LIST;
+            break;
+          case BUILD_TUPLE:
+            t = TUPLE;
+            break;
+          case BUILD_MAP:
+            t = DICT;
+            break;
+          case LOAD_FAST:
+            // todo: constant integers and floats
+            break;
+          }
+          this->update_type(dest, t);
+        }
+      }
+    }
+  }
+};
+
+enum KnownMethod {
+  METHOD_LIST_APPEND
+};
+
+class LocalTypeSpecialization: public CompilerPass, public TypeInference  {
+private:
+  std::map<int, KnownMethod> known_methods;
+  std::map<int, int> known_bound_objects;
+
+  PyObject* names;
+public:
+  void visit_op(CompilerOp* op) {
+    switch (op->code) {
+    case LOAD_ATTR: {
+
+      PyObject* attr_name_obj = PyTuple_GetItem(this->names, op->arg);
+      char* attr_name = PyString_AsString(attr_name_obj);
+      if (strcmp(attr_name, "append") == 0) {
+        this->known_methods[op->regs[1]] = METHOD_LIST_APPEND;
+        this->known_bound_objects[op->regs[1]] = op->regs[0];
+      }
+    }
+      break;
+
+    case CALL_FUNCTION: {
+      int fn_reg = op->regs[op->num_inputs() - 1];
+      auto iter = this->known_methods.find(fn_reg);
+      if (iter != this->known_methods.end()) {
+        switch (iter->second) {
+        case METHOD_LIST_APPEND: {
+          op->code = LIST_APPEND;
+
+          int item = op->regs[0];
+          int fn = op->regs[1];
+          op->arg = 0;
+          op->regs.clear();
+
+          op->regs.push_back(this->known_bound_objects[fn]);
+          op->regs.push_back(item);
+          break;
+        }
+        }
+      }
+    }
+      break;
+    }
+  }
+
+  void visit_fn(CompilerState* fn) {
+    this->infer(fn);
+    this->names = fn->names;
+    CompilerPass::visit_fn(fn);
+
+  }
+};
 
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
-  CopyPropagation()(fn);
-  StoreElim()(fn);
+  if (!getenv("DISABLE_OPT")) {
+    if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
+    if (!getenv("DISABLE_STORE")) StoreElim()(fn);
+    if (!getenv("DISABLE_TYPE_INFERENCE")) LocalTypeSpecialization()(fn);
+  }
+
   DeadCodeElim()(fn);
-  CompactRegisters()(fn);
+
+  if (!getenv("DISABLE_OPT") && !getenv("DISABLE_COMPACT")) {
+    CompactRegisters()(fn);
+  }
+
   RenameRegisters()(fn);
   Log_Info(fn->str().c_str());
 }
@@ -1432,7 +1560,9 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   optimize(&state);
 
   RegisterCode *regcode = new RegisterCode;
+
   lower_register_code(&state, &regcode->instructions);
+
   regcode->code_ = (PyObject*) code;
   regcode->version = 1;
   if (PyFunction_Check(func)) {
@@ -1443,6 +1573,10 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   regcode->mapped_registers = 0;
   regcode->mapped_labels = 0;
   regcode->num_registers = state.num_reg;
+
+  regcode->num_freevars = PyTuple_GET_SIZE(code->co_freevars);
+  regcode->num_cellvars = PyTuple_GET_SIZE(code->co_cellvars);
+  regcode->num_cells = regcode->num_freevars + regcode->num_cellvars;
 
   return regcode;
 }
