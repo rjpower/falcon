@@ -690,6 +690,19 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_dest_op(opcode, oparg, r1, r2, r3, tgt);
       break;
     }
+    case BUILD_SLICE: {
+      int r1, r2, r3;
+      if (oparg == 3) {
+        r1 = stack->pop_register();
+      } else {
+        r1 = -1;
+      }
+      r2 = stack->pop_register();
+      r3 = stack->pop_register();
+      int dst = stack->push_register(state->num_reg++);
+      bb->add_dest_op(opcode, 0, r1, r2, r3, dst);
+      break;
+    }
     case UNPACK_SEQUENCE: {
       int seq = stack->pop_register();
 

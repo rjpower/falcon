@@ -202,7 +202,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   }
 
   for (register int i = offset; i < num_registers; ++i) {
-    registers[i].store((PyObject*)NULL);
+    registers[i].store((PyObject*) NULL);
   }
 }
 
@@ -1124,11 +1124,21 @@ struct BuildList: public VarArgsOpImpl<BuildList> {
   }
 };
 
-struct BuildMap : public RegOpImpl<RegOp<1>, BuildMap> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+struct BuildMap: public RegOpImpl<RegOp<1>, BuildMap> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
     // for now ignore the size hint in the op arg
     PyObject* dict = PyDict_New();
-    SET_REGISTER(op.reg[0], dict);
+    STORE_REG(op.reg[0], dict);
+  }
+};
+
+struct BuildSlice: public RegOpImpl<RegOp<4>, BuildSlice> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
+    PyObject* w = LOAD_OBJ(op.reg[0]);
+    PyObject* v = LOAD_OBJ(op.reg[1]);
+    PyObject* u = LOAD_OBJ(op.reg[2]);
+
+    STORE_REG(op.reg[3], PySlice_New(u, v, w))
   }
 };
 
@@ -1642,6 +1652,7 @@ DEFINE_OP(BREAK_LOOP, BreakLoop);
 DEFINE_OP(BUILD_TUPLE, BuildTuple);
 DEFINE_OP(BUILD_LIST, BuildList);
 DEFINE_OP(BUILD_MAP, BuildMap);
+DEFINE_OP(BUILD_SLICE, BuildSlice);
 
 DEFINE_OP(PRINT_NEWLINE, PrintNewline);
 DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
@@ -1683,7 +1694,6 @@ BAD_OP(MAP_ADD);
 BAD_OP(SET_ADD);
 BAD_OP(EXTENDED_ARG);
 BAD_OP(SETUP_WITH);
-BAD_OP(BUILD_SLICE);
 BAD_OP(RAISE_VARARGS);
 BAD_OP(DELETE_FAST);
 BAD_OP(SETUP_FINALLY);
