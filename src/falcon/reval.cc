@@ -22,7 +22,10 @@ static bool logging_enabled() {
 //#define CHECK_VALID(obj) Reg_AssertGt(obj->ob_refcnt, 0);
 #endif
 
-typedef PyObject* (*BinaryFunction)(PyObject*, PyObject*);
+#define REUSE_INT_REGISTERS 0
+
+typedef long (*IntegerBinaryOp)(long, long);
+typedef PyObject* (*PythonBinaryOp)(PyObject*, PyObject*);
 typedef PyObject* (*UnaryFunction)(PyObject*);
 
 struct GilHelper {
@@ -103,16 +106,15 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   names_ = code->names();
   consts_ = code->consts();
 
-#ifndef STACK_ALLOC_REGISTERS
+#if ! STACK_ALLOC_REGISTERS
   registers = new PyObject*[rcode->num_registers];
 #endif
 
-
-
-
   const int num_args = args.size();
   if (rcode->num_cells > 0) {
+#if ! STACK_ALLOC_REGISTERS
     freevars = new PyObject*[rcode->num_cells];
+#endif
     int i;
     for (i = 0; i < rcode->num_cellvars; ++i) {
       bool found_argname = false;
@@ -143,12 +145,13 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       }
     }
   } else {
+#if ! STACK_ALLOC_REGISTERS
     freevars = NULL;
+#endif
   }
 
-//  for (int i = 0; i < num_cells; ++i) {
-//    Log_Info("Cell: %d [%d] %p", i, freevars[i]->ob_refcnt, freevars[i]);
-//  }
+  Log_Info("Alignments: reg: %d code: %d consts: %d globals: %d, this: %d",
+           ((long)registers) % 64, ((long)rcode->instructions.data()) % 64, (long)consts_ % 64, (long)globals_ % 64, (long)this % 64);
 
   const int num_registers = code->num_registers;
 
@@ -195,10 +198,6 @@ RegisterFrame::~RegisterFrame() {
   for (register int i = num_consts; i < num_registers; ++i) {
     Py_XDECREF(registers[i]);
   }
-#ifndef STACK_ALLOC_REGISTERS
-    delete[] registers;
-#endif
-
 
   const int num_freevars = PyTuple_GET_SIZE(code->code()->co_freevars);
   const int num_cellvars = PyTuple_GET_SIZE(code->code()->co_cellvars);
@@ -207,7 +206,11 @@ RegisterFrame::~RegisterFrame() {
 //    Log_Info("Cell: %d [%d] %p", i, freevars[i]->ob_refcnt, freevars[i]);
     Py_XDECREF(freevars[i]);
   }
+
+#if ! STACK_ALLOC_REGISTERS
+  delete[] registers;
   delete[] freevars;
+#endif
 }
 
 Evaluator::Evaluator() {
@@ -337,20 +340,12 @@ struct BranchOpImpl {
   }
 };
 
+#define OP_OVERFLOWED(a, b, i) ((i ^ a) < 0 && (i ^ b) < 0)
+
 struct IntegerOps {
 #define _OP(name, op)\
-  static f_inline PyObject* name(PyObject* w, PyObject* v) {\
-    if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {\
-      return NULL;\
-    }\
-    register long a, b, i;\
-    a = PyInt_AS_LONG(w);\
-    b = PyInt_AS_LONG(v);\
-    i = (long) ((unsigned long) a op b);\
-    if ((i ^ a) < 0 && (i ^ b) < 0) {\
-      return NULL;\
-    }\
-    return PyInt_FromLong(i);\
+  static f_inline long name(long a, long b) {\
+    return (long) ((unsigned long) a op b);\
   }
 
   _OP(add, +)
@@ -360,15 +355,9 @@ struct IntegerOps {
   _OP(mod, %)
 
 #define _SIMPLE_OP(name, op)\
-    static f_inline PyObject* name(PyObject* w, PyObject* v) {\
-      if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {\
-        return NULL;\
-      }\
-      register long a, b;\
-      a = PyInt_AS_LONG(w);\
-      b = PyInt_AS_LONG(v);\
-      return PyInt_FromLong(a op b);\
-}
+    static f_inline long name(long a, long b) {\
+      return a op b;\
+    }
 
   _SIMPLE_OP(Or, |)
   _SIMPLE_OP(Xor, ^)
@@ -443,21 +432,42 @@ struct FloatOps {
   }
 };
 
-template<int OpCode, BinaryFunction ObjF, BinaryFunction IntegerF>
+template<int OpCode, PythonBinaryOp ObjF, IntegerBinaryOp IntegerF>
 struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
     PyObject* r2 = registers[op.reg[1]];
-    PyObject* r3 = NULL;
-    r3 = IntegerF(r1, r2);
-    if (r3 == NULL) {
-      r3 = ObjF(r1, r2);
+    CHECK_VALID(r1);
+    CHECK_VALID(r2);
+
+    register int dst_reg = op.reg[2];
+    if (!PyInt_CheckExact(r1) || !PyInt_CheckExact(r2)) {
+      SET_REGISTER(dst_reg, ObjF(r1, r2));
+    } else {
+      register long a = PyInt_AS_LONG(r1);
+      register long b = PyInt_AS_LONG(r2);
+      register long val = IntegerF(a, b);
+
+      if (OP_OVERFLOWED(a, b, val)) {
+        SET_REGISTER(dst_reg, ObjF(r1, r2));
+      } else {
+#if REUSE_INT_REGISTERS
+        PyObject* tgt = registers[dst_reg];
+        if (PyInt_CheckExact(tgt) && ((PyIntObject*)tgt)->ob_ival > 300) {
+          ((PyIntObject*)tgt)->ob_ival = val;
+          ((PyIntObject*)tgt)->ob_refcnt = 1;
+        } else {
+          SET_REGISTER(dst_reg, PyInt_FromLong(val));
+        }
+#else
+        SET_REGISTER(dst_reg, PyInt_FromLong(val));
+#endif
+      }
     }
-    SET_REGISTER(op.reg[2], r3);
   }
 };
 
-template<int OpCode, BinaryFunction ObjF>
+template<int OpCode, PythonBinaryOp ObjF>
 struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, PyObject** registers) {
     PyObject* r1 = registers[op.reg[0]];
@@ -494,7 +504,11 @@ struct BinaryModulo: public RegOpImpl<RegOp<3>, BinaryModulo> {
     CHECK_VALID(r1);
     PyObject* r2 = registers[op.reg[1]];
     CHECK_VALID(r2);
-    PyObject* r3 = IntegerOps::mod(r1, r2);
+    PyObject* r3 = NULL;
+    if (PyInt_CheckExact(r1) && PyInt_CheckExact(r2)) {
+      r3 = PyInt_FromLong(PyInt_AS_LONG(r1) % PyInt_AS_LONG(r2) );
+    }
+
     if (r3 == NULL) {
       if (PyString_CheckExact(r1)) {
         r3 = PyString_Format(r1, r2);
@@ -557,6 +571,9 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
     PyObject* r2 = registers[op.reg[1]];
     CHECK_VALID(r2);
     PyObject* r3 = PyNumber_Power(r1, r2, Py_None);
+    if (!r3) {
+      throw RException();
+    }
     SET_REGISTER(op.reg[2], r3);
   }
 };
@@ -577,8 +594,9 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
     } else {
       r3 = PyObject_RichCompare(r1, r2, op.arg);
     }
-    CHECK_VALID(r3);
-
+    if (!r3) {
+      throw RException();
+    }
     EVAL_LOG("Compare: %s, %s -> %s", obj_to_str(r1), obj_to_str(r2), obj_to_str(r3));
     SET_REGISTER(op.reg[2], r3);
   }
