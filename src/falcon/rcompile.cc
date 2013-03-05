@@ -90,9 +90,9 @@ struct RCompilerUtil {
 
 std::string CompilerOp::str() const {
   std::string out;
-  out += StringPrintf("%s ", OpUtil::name(code));
+  out += StringPrintf("%s", OpUtil::name(code));
   if (HAS_ARG(code)) {
-    out += StringPrintf("(%d) ", arg);
+    out += StringPrintf(".%d", arg);
   }
   out += "[";
   out += StrUtil::join(regs.begin(), regs.end(), ",");

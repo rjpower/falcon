@@ -14,7 +14,7 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 
-#define STACK_ALLOC_REGISTERS
+#define STACK_ALLOC_REGISTERS 1
 
 // A vector which we can normally stack allocate, and which
 // contains a small number of slots internally.
@@ -96,12 +96,13 @@ struct Hint {
 
 struct RegisterFrame: private boost::noncopyable {
 public:
-#ifdef STACK_ALLOC_REGISTERS
+#if STACK_ALLOC_REGISTERS
   PyObject* registers[128];
+  PyObject* freevars[8];
 #else
   PyObject** registers;
-#endif
   PyObject** freevars;
+#endif
   const RegisterCode* code;
 
 
