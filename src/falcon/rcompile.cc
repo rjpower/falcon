@@ -109,11 +109,11 @@ void CompilerState::dump(Writer* w) {
       continue;
     }
 
-    w->printf("bb_%d: \n  ", bb->idx);
+    w->printf("bb_%d: \n  ", bb->py_offset);
     w->write(StrUtil::join(bb->code, "\n  "));
     w->write(" -> ");
     w->write(StrUtil::join(bb->exits.begin(), bb->exits.end(), ",", [](BasicBlock* n) {
-      return StringPrintf("bb_%d", n->idx);
+      return StringPrintf("bb_%d", n->py_offset);
     }));
     w->write("\n");
   }
@@ -143,7 +143,6 @@ CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
   code.push_back(op);
   return op;
 }
-
 
 CompilerOp* BasicBlock::_add_dest_op(int opcode, int arg, int num_regs) {
   CompilerOp* op = _add_op(opcode, arg, num_regs);
@@ -339,12 +338,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-//    const char* name = NULL;
-//    if (oparg < PyTuple_Size(state->names)) {
-//      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
-//    }
-//    Log_Info("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());fn
-
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     for (size_t i = 0; i < state->bbs.size(); ++i) {
@@ -367,6 +360,13 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     if (!entry_point) {
       entry_point = bb;
     }
+
+    const char* name = NULL;
+    if (oparg < PyTuple_Size(state->names)) {
+      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+    }
+    Log_Info("%5d: %s(%d) [%s] %s",
+             offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
 
     if (last) {
       last->exits.push_back(bb);
@@ -680,7 +680,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case BUILD_MAP:
-      bb->add_dest_op(BUILD_MAP,  oparg, stack->push_register(state->num_reg++));
+      bb->add_dest_op(BUILD_MAP, oparg, stack->push_register(state->num_reg++));
       break;
     case BUILD_CLASS: {
       int r1 = stack->pop_register();
@@ -1327,7 +1327,6 @@ public:
     this->bb_defs.clear();
     SortedPass::visit_bb(bb);
 
-
   }
   void visit_fn(CompilerState* fn) {
 
@@ -1413,7 +1412,7 @@ enum KnownMethod {
   METHOD_LIST_APPEND
 };
 
-class LocalTypeSpecialization: public CompilerPass, public TypeInference  {
+class LocalTypeSpecialization: public CompilerPass, public TypeInference {
 private:
   std::map<int, KnownMethod> known_methods;
   std::map<int, int> known_bound_objects;

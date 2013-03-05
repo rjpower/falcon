@@ -48,7 +48,7 @@ import unittest
 
 class TestF(TimedTest):
     def test_f(self):
-      self.time_compare(fannkuch, 10, repeat=5)
+      self.time_compare(fannkuch, 5, repeat=1)
       
 if __name__ == '__main__':
   unittest.main() 

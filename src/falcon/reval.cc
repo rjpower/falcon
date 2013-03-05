@@ -970,7 +970,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       try {
         code = eval->compile(fn);
       } catch (RException& e) {
-        Log_Info("Failed to compile function, executing using ceval: %s", obj_to_str(e.value));
+//        Log_Info("Failed to compile function, executing using ceval: %s", obj_to_str(e.value));
         code = NULL;
       }
     }

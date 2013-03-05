@@ -11,7 +11,7 @@
 // These defines enable/disable certain optimizations in the
 // evaluator:
 #ifndef USED_TYPED_REGISTERS
-#define USED_TYPED_REGISTERS 1
+#define USED_TYPED_REGISTERS 0
 #endif
 
 #ifndef STACK_ALLOC_REGISTERS

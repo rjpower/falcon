@@ -5,11 +5,11 @@ std::string RegOp<num_registers>::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
-//    if (registers == NULL || reg[i] == kInvalidRegister) {
+    if (registers == NULL || reg[i] == kInvalidRegister) {
       w.printf("[%d],", reg[i]);
-//    } else {
-//      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
-//    }
+    } else {
+      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
+    }
   }
   w.printf(")");
   return w.str();
@@ -19,11 +19,11 @@ std::string VarRegOp::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
-//    if (registers == NULL || reg[i] == kInvalidRegister) {
+    if (registers == NULL || reg[i] == kInvalidRegister) {
       w.printf("[%d],", reg[i]);
-//    } else {
-//      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
-//    }
+    } else {
+      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
+    }
   }
   w.printf(")");
   return w.str();
