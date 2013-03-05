@@ -33,7 +33,7 @@ using namespace std;
 struct RCompilerUtil {
   static int op_size(CompilerOp* op) {
     if (OpUtil::is_varargs(op->code)) {
-      return sizeof(VarRegOp) + sizeof(Register) * op->regs.size();
+      return sizeof(VarRegOp) + sizeof(RegisterOffset) * op->regs.size();
     } else if (OpUtil::is_branch(op->code)) {
       return sizeof(BranchOp);
     } else if (op->regs.size() == 0) {

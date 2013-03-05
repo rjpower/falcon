@@ -14,11 +14,11 @@
 #include <vector>
 #include <boost/noncopyable.hpp>
 
-#define STACK_ALLOC_REGISTERS 1
 
 // A vector which we can normally stack allocate, and which
 // contains a small number of slots internally.
 static const size_t kSVBuiltinSlots = 8;
+
 template<class T>
 struct SmallVector {
   SmallVector() :
@@ -97,14 +97,13 @@ struct Hint {
 struct RegisterFrame: private boost::noncopyable {
 public:
 #if STACK_ALLOC_REGISTERS
-  PyObject* registers[128];
+  Register registers[128];
   PyObject* freevars[8];
 #else
-  PyObject** registers;
+  Register* registers;
   PyObject** freevars;
 #endif
   const RegisterCode* code;
-
 
   PyObject* builtins_;
   PyObject* globals_;
@@ -113,7 +112,6 @@ public:
   PyObject* names_;
 
   const char* instructions_;
-
 
   size_t current_hint;
 
@@ -140,35 +138,9 @@ public:
     return names_;
   }
 
-  void fill_locals(PyObject* ldict) {
-    PyObject* varnames = code->varnames();
-    for (int i = 0; i < PyTuple_GET_SIZE(varnames) ; ++i) {
-      PyObject* name = PyTuple_GET_ITEM(varnames, i) ;
-      PyObject* value = PyDict_GetItem(ldict, name);
-      registers[num_consts() + i] = value;
-    }
+  void fill_locals(PyObject* ldict);
 
-    Py_INCREF(ldict);
-    locals_ = ldict;
-  }
-
-  f_inline PyObject* locals() {
-    if (!locals_) {
-      locals_ = PyDict_New();
-    }
-
-    PyObject* varnames = code->varnames();
-    const int num_consts = PyTuple_Size(consts());
-    const int num_locals = code->code()->co_nlocals;
-    for (int i = 0; i < num_locals; ++i) {
-      PyObject* v = registers[num_consts + i];
-      if (v != NULL) {
-        Py_INCREF(v);
-        PyDict_SetItem(locals_, PyTuple_GetItem(varnames, i), v);
-      }
-    }
-    return locals_;
-  }
+  PyObject* locals();
 
   f_inline int offset(const char* pc) const {
     return (int) (pc - instructions_);
@@ -181,10 +153,10 @@ public:
   std::string str() const {
     StringWriter w;
     if (code->function) {
-      PyFunctionObject* f = (PyFunctionObject*)code->function;
+      PyFunctionObject* f = (PyFunctionObject*) code->function;
       w.printf("func: %s ", obj_to_str(f->func_name));
     }
-    PyCodeObject* c = (PyCodeObject*)code->code_;
+    PyCodeObject* c = (PyCodeObject*) code->code_;
     w.printf("file: %s, line: %d", obj_to_str(c->co_filename), c->co_firstlineno);
     return w.str();
   }
@@ -229,5 +201,6 @@ RegisterCode* Evaluator::compile(PyObject* obj) {
 
 //void StartTracing(Evaluator*);
 //int TraceFunction(PyObject *obj, PyFrameObject *frame, int what, PyObject *arg);
+
 
 #endif /* REVAL_H_ */

@@ -6,6 +6,13 @@
 #include <string>
 #include "oputil.h"
 #include "util.h"
+#include "rexcept.h"
+
+// These defines enable/disable certain optimizations in the
+// evaluator:
+#define USED_TYPED_REGISTERS 1
+#define STACK_ALLOC_REGISTERS 1
+#define REUSE_INT_REGISTERS 0
 
 // This file defines the format used by the register evalulator.
 //
@@ -38,13 +45,140 @@
 
 const char* obj_to_str(PyObject* o);
 
+typedef uint8_t RegisterOffset;
+static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 
-typedef uint8_t Register;
+enum RegisterType {
+  IntType,
+  FloatType,
+  ObjType,
+};
+
+#if USED_TYPED_REGISTERS
+struct Register {
+  RegisterType type;
+  union {
+    long intval;
+    double floatval;
+    PyObject* objval;
+  };
+
+  f_inline PyObject* as_obj() {
+    if (type == ObjType) {
+      return objval;
+    } else if (type == IntType) {
+      type = ObjType;
+      objval = PyInt_FromLong(intval);
+      return objval;
+    } else {
+      type = ObjType;
+      objval = PyFloat_FromDouble(floatval);
+      return objval;
+    }
+  }
+
+  f_inline RegisterType get_type() const {
+    return (RegisterType) type;
+  }
+
+  f_inline long as_int() const {
+    return intval;
+  }
+
+  f_inline double as_float() const {
+    return floatval;
+  }
+
+  f_inline void decref() {
+    if (type == ObjType) {
+      Py_XDECREF(objval);
+    }
+  }
+
+  f_inline void incref() {
+    if (type == ObjType) {
+      Py_INCREF(objval);
+    }
+  }
+
+  f_inline void store(PyObject* obj) {
+    if (obj == NULL) {
+      type = ObjType;
+      objval = obj;
+    } else if (PyInt_CheckExact(obj)) {
+      type = IntType;
+      intval = PyInt_AS_LONG(obj);
+      Py_DECREF(obj);
+    } else if (PyFloat_CheckExact(obj)) {
+      type = FloatType;
+      floatval = PyFloat_AS_DOUBLE(obj);
+      Py_DECREF(obj);
+    } else {
+      type = ObjType;
+      objval = obj;
+    }
+  }
+
+  f_inline void store(int v) {
+    type = IntType;
+    intval = v;
+  }
+
+  f_inline void store(long v) {
+    type = IntType;
+    intval = v;
+  }
+
+  f_inline void store(double v) {
+    type = FloatType;
+    floatval = v;
+  }
+};
+
+#else
+struct Register {
+  PyObject* v;
+
+  f_inline RegisterType get_type() {
+    return ObjType;
+  }
+
+  f_inline PyObject* as_obj() {
+    return v;
+  }
+
+  f_inline long as_int() {
+    return PyInt_AsLong(intval);
+  }
+
+  f_inline double as_float() {
+    return PyFloat_AsDouble(v);
+  }
+
+  f_inline void decref() {
+    Py_XDECREF(v);
+  }
+
+  f_inline void incref() {
+    Py_INCREF(v);
+  }
+
+  f_inline void store(PyObject* obj) {
+    v = obj;
+  }
+
+  f_inline void store(long v) {
+    v = PyInt_FromLong(v);
+  }
+
+  f_inline void store(double v) {
+    v = PyFloat_FromDouble(v);
+  }
+};
+#endif
 
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
-
-static const Register kInvalidRegister = (Register) -1;
 
 typedef uint8_t HintOffset;
 static const uint16_t kMaxHints = 32;
@@ -90,7 +224,7 @@ struct RegisterCode {
   std::string instructions;
 };
 
-#pragma pack(push, 0)
+//#pragma pack(push, 0)
 struct OpHeader {
   uint8_t code;
   uint8_t arg;
@@ -100,7 +234,7 @@ struct BranchOp {
   uint8_t code;
   uint8_t arg;
   JumpLoc label;
-  Register reg[2];
+  RegisterOffset reg[2];
 
   std::string str() const;
 
@@ -118,9 +252,9 @@ struct RegOp {
   // at runtime.  It is default initialized to kInvalidHint;
   HintOffset hint_pos;
 
-  Register reg[num_registers];
+  RegisterOffset reg[num_registers];
 
-  std::string str(PyObject** registers = NULL) const;
+  std::string str(Register* registers = NULL) const;
 
   inline size_t size() const {
     return sizeof(*this);
@@ -133,15 +267,14 @@ struct VarRegOp {
   uint8_t code;
   uint8_t arg;
   uint8_t num_registers;
-  Register reg[0];
+  RegisterOffset reg[0];
 
-  std::string str(PyObject** registers = NULL) const;
+  std::string str(Register* registers = NULL) const;
 
   inline size_t size() const {
-    return sizeof(VarRegOp) + num_registers * sizeof(Register);
+    return sizeof(VarRegOp) + num_registers * sizeof(RegisterOffset);
   }
 };
-
-#pragma pack(pop)
+//#pragma pack(pop)
 
 #endif /* RINST_H_ */

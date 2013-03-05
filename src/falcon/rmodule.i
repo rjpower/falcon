@@ -39,7 +39,7 @@
 
 %template(CodeVector) std::vector<CompilerOp*>;
 %template(BlockVector) std::vector<BasicBlock*>;
-%template(RegVector) std::vector<Register>;
+%template(RegVector) std::vector<RegisterOffset>;
 %template(SmallIntVector) SmallVector<int>;
 
 %pythoncode %{

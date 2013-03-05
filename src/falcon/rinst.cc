@@ -1,28 +1,28 @@
 #include "rinst.h"
 
 template<int num_registers>
-std::string RegOp<num_registers>::str(PyObject** registers) const {
+std::string RegOp<num_registers>::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
     if (registers == NULL || reg[i] == kInvalidRegister) {
       w.printf("[%d],", reg[i]);
     } else {
-      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
+      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
     }
   }
   w.printf(")");
   return w.str();
 }
 
-std::string VarRegOp::str(PyObject** registers) const {
+std::string VarRegOp::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
     if (registers == NULL || reg[i] == kInvalidRegister) {
       w.printf("[%d],", reg[i]);
     } else {
-      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]]));
+      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
     }
   }
   w.printf(")");
@@ -58,9 +58,8 @@ const char* obj_to_str(PyObject* o) {
   return PyString_AsString(obj_repr);
 }
 
-
-template class RegOp<0>;
-template class RegOp<1>;
-template class RegOp<2>;
-template class RegOp<3>;
-template class RegOp<4>;
+template class RegOp<0> ;
+template class RegOp<1> ;
+template class RegOp<2> ;
+template class RegOp<3> ;
+template class RegOp<4> ;
