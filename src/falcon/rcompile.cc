@@ -144,6 +144,7 @@ CompilerOp* BasicBlock::_add_op(int opcode, int arg, int num_regs) {
   return op;
 }
 
+
 CompilerOp* BasicBlock::_add_dest_op(int opcode, int arg, int num_regs) {
   CompilerOp* op = _add_op(opcode, arg, num_regs);
   op->has_dest = true;
@@ -667,6 +668,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       op->regs[oparg + 2] = stack->push_register(state->num_reg++);
       break;
     }
+
     case BUILD_LIST:
     case BUILD_SET:
     case BUILD_TUPLE: {
@@ -677,6 +679,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       f->regs[oparg] = stack->push_register(state->num_reg++);
       break;
     }
+    case BUILD_MAP:
+      bb->add_dest_op(BUILD_MAP,  oparg, stack->push_register(state->num_reg++));
+      break;
     case BUILD_CLASS: {
       int r1 = stack->pop_register();
       int r2 = stack->pop_register();
@@ -1448,6 +1453,7 @@ public:
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
+
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);
