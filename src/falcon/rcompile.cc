@@ -1453,7 +1453,7 @@ public:
 void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
-  Log_Info(fn->str().c_str());
+
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);
