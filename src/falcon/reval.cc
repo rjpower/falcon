@@ -756,12 +756,15 @@ static size_t dict_getoffset(PyDictObject* dict, PyObject* key) {
   return pos - dict->ma_table;
 }
 
+#define GETATTR_HINTS
+
 // LOAD_ATTR is common enough to warrant inlining some common code.
 // Most of this is taken from _PyObject_GenericGetAttrWithDict
 static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyObject *name) {
   PyObjHelper<PyTypeObject*> type(Py_TYPE(obj) );
   PyObjHelper<PyDictObject*> dict(obj_getdictptr(obj, type));
   PyObject *descr = NULL;
+#ifdef GETATTR_HINTS
   const Hint &op_hint = eval->hints[op.hint_pos];
 
   // A hint for an instance dictionary lookup.
@@ -772,6 +775,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
       return e.me_value;
     }
   }
+#endif
 
   if (!PyString_Check(name)) {
     throw RException(PyExc_SystemError, "attribute name must be string, not '%.200s'", Py_TYPE(name) ->tp_name);
@@ -803,6 +807,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
     PyObject* res = PyDict_GetItem(dict, name);
     // We found a match.  Create a hint for where to look next time.
     if (res != NULL) {
+#ifdef GETATTR_HINTS
       size_t hint_pos = hint_offset(type, name);
       size_t dict_pos = dict_getoffset(dict, name);
 
@@ -813,7 +818,7 @@ static PyObject * obj_getattr(Evaluator* eval, RegOp<2>& op, PyObject *obj, PyOb
       h.version = dict_pos;
       eval->hints[hint_pos] = h;
       op.hint_pos = hint_pos;
-
+#endif
       Py_INCREF(res);
       return res;
     }
@@ -1085,6 +1090,14 @@ struct BuildList: public VarArgsOpImpl<BuildList> {
       PyList_SET_ITEM(t, i, v);
     }
     SET_REGISTER(op->reg[count], t);
+  }
+};
+
+struct BuildMap : public RegOpImpl<RegOp<1>, BuildMap> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, PyObject** registers) {
+    // for now ignore the size hint in the op arg
+    PyObject* dict = PyDict_New();
+    SET_REGISTER(op.reg[0], dict);
   }
 };
 
@@ -1592,6 +1605,7 @@ DEFINE_OP(BREAK_LOOP, BreakLoop);
 
 DEFINE_OP(BUILD_TUPLE, BuildTuple);
 DEFINE_OP(BUILD_LIST, BuildList);
+DEFINE_OP(BUILD_MAP, BuildMap);
 
 DEFINE_OP(PRINT_NEWLINE, PrintNewline);
 DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
@@ -1639,7 +1653,6 @@ BAD_OP(DELETE_FAST);
 BAD_OP(SETUP_FINALLY);
 BAD_OP(SETUP_EXCEPT);
 BAD_OP(CONTINUE_LOOP);
-BAD_OP(BUILD_MAP);
 BAD_OP(BUILD_SET);
 BAD_OP(DUP_TOPX);
 BAD_OP(DELETE_ATTR);
