@@ -201,6 +201,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
     }
   }
 
+  Reg_AssertLt(num_registers, kMaxRegisters);
   for (register int i = offset; i < num_registers; ++i) {
     registers[i].store((PyObject*) NULL);
   }

@@ -699,7 +699,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       }
       r2 = stack->pop_register();
       r3 = stack->pop_register();
+
       int dst = stack->push_register(state->num_reg++);
+      Log_Info("BUILD_SLICE %d %d %d %d", r1, r2, r3, dst);
       bb->add_dest_op(opcode, 0, r1, r2, r3, dst);
       break;
     }

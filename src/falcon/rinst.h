@@ -45,6 +45,7 @@
 
 const char* obj_to_str(PyObject* o);
 
+static const int kMaxRegisters = 255;
 typedef uint8_t RegisterOffset;
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 

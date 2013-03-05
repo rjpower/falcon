@@ -97,7 +97,7 @@ struct Hint {
 struct RegisterFrame: private boost::noncopyable {
 public:
 #if STACK_ALLOC_REGISTERS
-  Register registers[128];
+  Register registers[kMaxRegisters];
   PyObject* freevars[8];
 #else
   Register* registers;
