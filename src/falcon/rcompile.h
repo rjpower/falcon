@@ -48,6 +48,34 @@ struct CompilerOp {
   }
 };
 
+struct Frame {
+  int target;
+  int stack_pos;
+};
+
+struct RegisterStack {
+  std::vector<int> regs;
+  std::vector<Frame> frames;
+
+  RegisterStack() {
+  }
+
+  RegisterStack(const RegisterStack& other) {
+    this->regs = other.regs;
+    this->frames = other.frames;
+  }
+
+  void push_frame(int target);
+  Frame pop_frame();
+
+  int push_register(int reg);
+  int pop_register();
+  int peek_register(int reg);
+
+  std::string str();
+};
+
+
 struct BasicBlock {
 private:
   std::vector<CompilerOp*> alloc_;
@@ -66,12 +94,14 @@ public:
   // Have we been visited by the current pass already?
   int visited;
   int dead;
+  RegisterStack* entry_stack;
 
-  BasicBlock(int offset, int idx);
+  BasicBlock(int offset, int idx, RegisterStack* entry_stack);
   ~BasicBlock() {
     for (auto op : alloc_) {
       delete op;
     }
+    delete entry_stack;
   }
 
   /* operations without a destination register */
@@ -92,27 +122,6 @@ public:
   CompilerOp* add_varargs_op(int opcode, int arg, int num_regs);
 };
 
-struct Frame {
-  int target;
-  int stack_pos;
-};
-
-struct RegisterStack {
-  std::vector<int> regs;
-  std::vector<Frame> frames;
-
-  RegisterStack() {
-  }
-
-  void push_frame(int target);
-  Frame pop_frame();
-
-  int push_register(int reg);
-  int pop_register();
-  int peek_register(int reg);
-
-  std::string str();
-};
 
 struct CompilerState {
 private:
@@ -129,6 +138,8 @@ public:
   Py_ssize_t py_codelen;
 
   PyObject* names;
+
+  std::map<int, BasicBlock*> bb_offsets;
 
   CompilerState() :
       num_reg(0), num_consts(0), num_locals(0), py_codestr(NULL), py_codelen(0), names(NULL) {
@@ -155,7 +166,8 @@ public:
     }
   }
 
-  BasicBlock* alloc_bb(int offset);
+  BasicBlock* alloc_bb(int offset, RegisterStack* entry_stack);
+  void remove_bb(BasicBlock* bb);
   std::string str();
   void dump(Writer* w);
 };

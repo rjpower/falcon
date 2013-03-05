@@ -30,6 +30,46 @@
 
 using namespace std;
 
+
+
+void RegisterStack::push_frame(int target) {
+  Frame f;
+  f.stack_pos = regs.size();
+  f.target = target;
+  frames.push_back(f);
+}
+
+Frame RegisterStack::pop_frame() {
+  Frame f = frames.back();
+  frames.pop_back();
+  regs.resize(f.stack_pos);
+  return f;
+}
+
+int RegisterStack::push_register(int reg) {
+  // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
+  regs.push_back(reg);
+  return reg;
+}
+
+int RegisterStack::pop_register() {
+  Reg_AssertGt((int)regs.size(), 0);
+  int reg = regs.back();
+  regs.pop_back();
+  return reg;
+}
+
+// Implement ceval's slightly odd PEEK semantics.  To wit: offset
+// zero is invalid, the offset of the top register on the stack is
+// 1.
+int RegisterStack::peek_register(int offset) {
+  Reg_AssertGt(offset, 0);
+  Reg_AssertGe((int)regs.size(), offset);
+  int val = regs[regs.size() - offset];
+//  Log_Info("Peek: %d = %d", offset, val);
+  return val;
+}
+
 struct RCompilerUtil {
   static int op_size(CompilerOp* op) {
     if (OpUtil::is_varargs(op->code)) {
@@ -125,11 +165,18 @@ std::string CompilerState::str() {
   return w.str();
 }
 
-BasicBlock* CompilerState::alloc_bb(int offset) {
-  BasicBlock* bb = new BasicBlock(offset, bbs.size());
+BasicBlock* CompilerState::alloc_bb(int offset, RegisterStack* entry_stack) {
+  RegisterStack* entry_stack_copy = new RegisterStack(*entry_stack);
+  BasicBlock* bb = new BasicBlock(offset, bbs.size(), entry_stack_copy);
   alloc_.push_back(bb);
   bbs.push_back(bb);
+  this->bb_offsets[offset] = bb;
   return bb;
+}
+
+void CompilerState::remove_bb(BasicBlock* bb) {
+  bbs.erase(std::find(bbs.begin(), bbs.end(), bb));
+  this->bb_offsets.erase(this->bb_offsets.find(bb->py_offset));
 }
 
 std::string RegisterStack::str() {
@@ -150,12 +197,13 @@ CompilerOp* BasicBlock::_add_dest_op(int opcode, int arg, int num_regs) {
   return op;
 }
 
-BasicBlock::BasicBlock(int offset, int idx) {
+BasicBlock::BasicBlock(int offset, int idx, RegisterStack* entry_stack) {
   reg_offset = 0;
   py_offset = offset;
   visited = 0;
   dead = false;
   this->idx = idx;
+  this->entry_stack = entry_stack;
 }
 
 CompilerOp* BasicBlock::add_op(int opcode, int arg) {
@@ -251,48 +299,6 @@ CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
   return _add_dest_op(opcode, arg, num_regs);
 }
 
-void RegisterStack::push_frame(int target) {
-  Frame f;
-  f.stack_pos = regs.size();
-  f.target = target;
-  frames.push_back(f);
-}
-
-Frame RegisterStack::pop_frame() {
-  Frame f = frames.back();
-  frames.pop_back();
-  regs.resize(f.stack_pos);
-  return f;
-}
-
-int RegisterStack::push_register(int reg) {
-  // Log_Info("Pushing register %d, pos %d", reg, stack_pos + 1);
-  regs.push_back(reg);
-  return reg;
-}
-
-int RegisterStack::pop_register() {
-  Reg_AssertGt((int)regs.size(), 0);
-  int reg = regs.back();
-  regs.pop_back();
-  return reg;
-}
-
-// Implement ceval's slightly odd PEEK semantics.  To wit: offset
-// zero is invalid, the offset of the top register on the stack is
-// 1.
-int RegisterStack::peek_register(int offset) {
-  Reg_AssertGt(offset, 0);
-  Reg_AssertGe((int)regs.size(), offset);
-  int val = regs[regs.size() - offset];
-//  Log_Info("Peek: %d = %d", offset, val);
-  return val;
-}
-
-void copy_stack(RegisterStack *from, RegisterStack* to) {
-  to->frames = from->frames;
-  to->regs = from->regs;
-}
 
 /*
  * The main event: convert from a stack machine to an infinite register machine.
@@ -313,6 +319,36 @@ void copy_stack(RegisterStack *from, RegisterStack* to) {
  * int r2 = 2 ('push' r2)
  * int r3 = add r1, r2 ('pop' r1, r2)
  */
+
+BasicBlock* jump_prelude(CompilerState* state, RegisterStack *stack, int offset, BasicBlock* old) {
+  // when revisiting a basic block, make sure we have the same registers
+  // on the stack as whoever passed through here before
+
+  BasicBlock* prelude = state->alloc_bb(-offset, stack);
+  Reg_AssertEq(stack->regs.size(), old->entry_stack->regs.size());
+
+  int n_moves = 0;
+  for (size_t i = 0; i < stack->regs.size(); ++i) {
+    int old_reg = old->entry_stack->regs[i];
+    int curr_reg = stack->regs[i];
+    if (old_reg != curr_reg) {
+      // todo: if we ever change the interpreter to have a MOVE instruction
+      // use that here
+      prelude->add_dest_op(STORE_FAST, 0, curr_reg, old_reg);
+      n_moves++;
+    }
+  }
+  if (n_moves > 0) {
+    //offset will get patched up later since we're adding 'old' to exits
+    prelude->add_op(JUMP_ABSOLUTE, 0);
+    prelude->exits.push_back(old);
+    return prelude;
+  } else {
+    state->remove_bb(prelude);
+    return old;
+  }
+
+}
 BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, int offset) {
   Py_ssize_t r;
   int oparg = 0;
@@ -323,12 +359,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
   BasicBlock *last = NULL;
   BasicBlock *entry_point = NULL;
 
-  // If we've already visited this opcode, return the previous block for it.
-  for (size_t i = 0; i < state->bbs.size(); ++i) {
-    BasicBlock *old = state->bbs[i];
-    if (old->py_offset == offset) {
-      return old;
-    }
+  auto iter = state->bb_offsets.find(offset);
+  if (iter != state->bb_offsets.end()) {
+    return jump_prelude(state, stack, offset, iter->second);
   }
 
   for (; offset < state->py_codelen; offset += CODESIZE(codestr[offset])) {
@@ -340,23 +373,22 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
 
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
-    for (size_t i = 0; i < state->bbs.size(); ++i) {
-      BasicBlock *old = state->bbs[i];
-      if (old->py_offset == offset) {
-        Reg_Assert(entry_point != NULL, "Bad entry point.");
-        Reg_Assert(last != NULL, "Bad entry point.");
-        // If our previous block won't fall-through into this one, then
-        // generate an explicit jump instruction.
-        if (last->idx != old->idx - 1) {
-          // The argument for jump absolute will be generated from the block exit information.
-          last->add_op(JUMP_ABSOLUTE, 0);
-        }
-        last->exits.push_back(old);
-        return entry_point;
+    iter = state->bb_offsets.find(offset);
+    if (iter != state->bb_offsets.end()) {
+      Reg_Assert(entry_point != NULL, "Bad entry point.");
+      Reg_Assert(last != NULL, "Bad entry point.");
+      BasicBlock* old = jump_prelude(state, stack, offset, iter->second);
+      // If our previous block won't fall-through into this one, then
+      // generate an explicit jump instruction.
+      if (last->idx != old->idx - 1) {
+        // The argument for jump absolute will be generated from the block exit information.
+        last->add_op(JUMP_ABSOLUTE, 0);
       }
+      last->exits.push_back(old);
+      return entry_point;
     }
 
-    BasicBlock *bb = state->alloc_bb(offset);
+    BasicBlock *bb = state->alloc_bb(offset, stack);
     if (!entry_point) {
       entry_point = bb;
     }
@@ -763,10 +795,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       return entry_point;
     }
     case FOR_ITER: {
-      RegisterStack a, b;
       int r1 = stack->pop_register();
-      copy_stack(stack, &a);
-      copy_stack(stack, &b);
+      RegisterStack a(*stack);
+      RegisterStack b(*stack);
       a.push_register(r1);
       int r2 = a.push_register(state->num_reg++);
 
@@ -781,10 +812,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case JUMP_IF_FALSE_OR_POP:
     case JUMP_IF_TRUE_OR_POP: {
-      RegisterStack a, b;
-      copy_stack(stack, &a);
+      RegisterStack a(*stack);
       int r1 = stack->pop_register();
-      copy_stack(stack, &b);
+      RegisterStack b(*stack);
       bb->add_op(opcode, oparg, r1);
 
       BasicBlock* right = registerize(state, &a, oparg);
@@ -796,9 +826,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case POP_JUMP_IF_FALSE:
     case POP_JUMP_IF_TRUE: {
       int r1 = stack->pop_register();
-      RegisterStack a, b;
-      copy_stack(stack, &a);
-      copy_stack(stack, &b);
+      RegisterStack a(*stack);
+      RegisterStack b(*stack);
       bb->add_op(opcode, oparg, r1);
       BasicBlock* left = registerize(state, &a, offset + CODESIZE(opcode));
       BasicBlock* right = registerize(state, &b, oparg);
