@@ -10,9 +10,18 @@
 
 // These defines enable/disable certain optimizations in the
 // evaluator:
+#ifndef USED_TYPED_REGISTERS
 #define USED_TYPED_REGISTERS 1
+#endif
+
+#ifndef STACK_ALLOC_REGISTERS
 #define STACK_ALLOC_REGISTERS 1
+#endif
+
+#ifndef REUSE_INT_REGISTERS
 #define REUSE_INT_REGISTERS 0
+#endif
+
 
 // This file defines the format used by the register evalulator.
 //
@@ -141,7 +150,13 @@ struct Register {
   PyObject* v;
 
   f_inline RegisterType get_type() {
-    return ObjType;
+    if (PyInt_CheckExact(v)) {
+      return IntType;
+    } else if (PyFloat_CheckExact(v)) {
+      return FloatType;
+    } else {
+      return ObjType;
+    }
   }
 
   f_inline PyObject* as_obj() {
@@ -149,7 +164,7 @@ struct Register {
   }
 
   f_inline long as_int() {
-    return PyInt_AsLong(intval);
+    return PyInt_AsLong(v);
   }
 
   f_inline double as_float() {
@@ -168,12 +183,15 @@ struct Register {
     v = obj;
   }
 
-  f_inline void store(long v) {
-    v = PyInt_FromLong(v);
+  f_inline void store(int ival) {
+    v = PyInt_FromLong(ival);
+  }
+  f_inline void store(long ival) {
+    v = PyInt_FromLong(ival);
   }
 
-  f_inline void store(double v) {
-    v = PyFloat_FromDouble(v);
+  f_inline void store(double fval) {
+    v = PyFloat_FromDouble(fval);
   }
 };
 #endif

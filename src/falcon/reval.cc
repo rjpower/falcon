@@ -116,7 +116,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   consts_ = code->consts();
 
 #if ! STACK_ALLOC_REGISTERS
-  registers = new Register*[rcode->num_registers];
+  registers = new Register[rcode->num_registers];
 #endif
 
   const int num_args = args.size();
