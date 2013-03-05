@@ -150,8 +150,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 #endif
   }
 
-  Log_Info("Alignments: reg: %d code: %d consts: %d globals: %d, this: %d",
-           ((long)registers) % 64, ((long)rcode->instructions.data()) % 64, (long)consts_ % 64, (long)globals_ % 64, (long)this % 64);
+//  Log_Info("Alignments: reg: %d code: %d consts: %d globals: %d, this: %d",
+//           ((long)registers) % 64, ((long)rcode->instructions.data()) % 64, (long)consts_ % 64, (long)globals_ % 64, (long)this % 64);
 
   const int num_registers = code->num_registers;
 
