@@ -371,7 +371,7 @@ template<class SubType>
 struct BranchOpImpl {
   static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     BranchOp& op = *((BranchOp*) pc);
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str().c_str());
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
     SubType::_eval(eval, frame, op, &pc, registers);
     return pc;
   }

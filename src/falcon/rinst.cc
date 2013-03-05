@@ -1,15 +1,19 @@
 #include "rinst.h"
 
+static void print_register(Writer& w, Register* registers, int reg_num) {
+  if (registers == NULL || reg_num == kInvalidRegister) {
+    w.printf("[%d],", reg_num);
+  } else {
+    w.printf("[%d] %.20s, ", reg_num, obj_to_str(registers[reg_num].as_obj()));
+  }
+}
+
 template<int num_registers>
 std::string RegOp<num_registers>::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
-    if (registers == NULL || reg[i] == kInvalidRegister) {
-      w.printf("[%d],", reg[i]);
-    } else {
-      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
-    }
+    print_register(w, registers, reg[i]);
   }
   w.printf(")");
   return w.str();
@@ -19,25 +23,17 @@ std::string VarRegOp::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);
   for (int i = 0; i < num_registers; ++i) {
-    if (registers == NULL || reg[i] == kInvalidRegister) {
-      w.printf("[%d],", reg[i]);
-    } else {
-      w.printf("[%d] %.20s, ", reg[i], obj_to_str(registers[reg[i]].as_obj()));
-    }
+    print_register(w, registers, reg[i]);
   }
   w.printf(")");
   return w.str();
 }
 
-std::string BranchOp::str() const {
+std::string BranchOp::str(Register* registers) const {
   StringWriter w;
   w.printf("%s (", OpUtil::name(code));
-  if (reg[0] != kInvalidRegister) {
-    w.printf("%d, ", reg[0]);
-  }
-  if (reg[1] != kInvalidRegister) {
-    w.printf("%d, ", reg[1]);
-  }
+  print_register(w, registers, reg[0]);
+  print_register(w, registers, reg[1]);
   w.printf(")");
   w.printf(" -> [%d]", label);
   return w.str();

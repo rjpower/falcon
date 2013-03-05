@@ -255,7 +255,7 @@ struct BranchOp {
   JumpLoc label;
   RegisterOffset reg[2];
 
-  std::string str() const;
+  std::string str(Register* registers = NULL) const;
 
   inline size_t size() const {
     return sizeof(*this);
