@@ -166,6 +166,8 @@ public:
 };
 
 class Evaluator {
+public:
+  Hint hints[kMaxHints + 1];
 private:
   void collect_info(int opcode);
   int32_t op_counts_[256];
@@ -192,7 +194,7 @@ public:
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
   RegisterFrame* frame_from_codeobj(PyObject* code);
 
-  Hint hints[kMaxHints + 1];
+
 };
 
 RegisterCode* Evaluator::compile(PyObject* obj) {

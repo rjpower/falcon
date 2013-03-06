@@ -26,6 +26,11 @@
 #define PACK_INSTRUCTIONS 0
 #endif
 
+#ifndef GETATTR_HINTS
+#define GETATTR_HINTS 1
+#endif
+
+
 // This file defines the format used by the register evalulator.
 //
 // Operation types:
@@ -152,6 +157,9 @@ struct Register {
 struct Register {
   PyObject* v;
 
+  Register() {}
+  Register(PyObject* o) : v(o) {}
+
   f_inline RegisterType get_type() {
     if (PyInt_CheckExact(v)) {
       return IntType;
@@ -198,7 +206,7 @@ typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
 typedef uint8_t HintOffset;
-static const uint16_t kMaxHints = 32;
+static const uint16_t kMaxHints = 31;
 static const uint16_t kInvalidHint = kMaxHints;
 
 static inline size_t hint_offset(void* obj, void* name) {

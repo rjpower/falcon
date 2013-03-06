@@ -441,10 +441,12 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       if (oparg == 2) {
         int r1 = stack->pop_register();
         int r2 = stack->pop_register();
-        stack->push_register(r1);
+
         stack->push_register(r2);
         stack->push_register(r1);
         stack->push_register(r2);
+        stack->push_register(r1);
+
       } else {
         int r1 = stack->pop_register();
         int r2 = stack->pop_register();
