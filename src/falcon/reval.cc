@@ -37,6 +37,7 @@ typedef long (*IntegerBinaryOp)(long, long);
 typedef PyObject* (*PythonBinaryOp)(PyObject*, PyObject*);
 typedef PyObject* (*UnaryFunction)(PyObject*);
 
+// Some scoped object helpers for tracking refcounts.
 struct GilHelper {
   PyGILState_STATE state_;
 
@@ -131,7 +132,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       for (int arg_idx = 0; arg_idx < num_args; ++arg_idx) {
         char* argname = PyString_AS_STRING(PyTuple_GET_ITEM(rcode->code()->co_varnames, arg_idx));
         if (strcmp(cellname, argname) == 0) {
-          PyObject* arg_value = args[arg_idx];
+          PyObject* arg_value = args[arg_idx].as_obj();
           freevars[i] = PyCell_New(arg_value);
           found_argname = true;
           break;
@@ -194,9 +195,12 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
     }
 
     for (int i = 0; i < needed_args; ++i) {
-      PyObject* v = (i < num_args) ? args[i] : PyTuple_GET_ITEM(def_args, i - num_args) ;
-      Py_INCREF(v);
-      registers[offset].store(v);
+      if (i < num_args) {
+        registers[offset].store(args[i]);
+      } else {
+        registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args));
+      }
+      registers[offset].incref();
       ++offset;
     }
   }
@@ -303,8 +307,9 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
   RegisterCode* regcode = compile(obj);
 
   ObjVector v_args;
-  for (int i = 0; i < PyTuple_GET_SIZE(args) ; ++i) {
-    v_args.push_back(PyTuple_GET_ITEM(args, i) );
+  v_args.resize(PyTuple_GET_SIZE(args));
+  for (int i = 0; i < v_args.size(); ++i) {
+    v_args[i].store(PyTuple_GET_ITEM(args, i));
   }
 
   ObjVector kw_args;
@@ -994,7 +999,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       ObjVector args, kw;
       args.resize(na);
       for (register int i = 0; i < na; ++i) {
-        args[i] = LOAD_OBJ(op->reg[i]);
+        args[i].store(registers[op->reg[i]]);
       }
       RegisterFrame f(code, fn, args, kw);
       res = eval->eval(&f);

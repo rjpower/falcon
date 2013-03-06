@@ -81,7 +81,7 @@ struct SmallVector {
   T* rest_;
 };
 
-typedef SmallVector<PyObject*> ObjVector;
+typedef SmallVector<Register> ObjVector;
 
 struct Hint {
   union {
