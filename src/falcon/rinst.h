@@ -50,8 +50,8 @@
 #define f_inline __attribute__((noinline))
 #define n_inline __attribute__((noinline))
 #else
-#define f_inline __attribute__((noinline))
-//#define f_inline __attribute__((always_inline))
+//#define f_inline __attribute__((noinline))
+#define f_inline __attribute__((always_inline))
 #define n_inline __attribute__((noinline))
 #endif
 
@@ -69,8 +69,10 @@ enum RegisterType {
 #if USED_TYPED_REGISTERS
 struct Register {
   union {
-    uint64_t value :63;
-    uint64_t type_flag :1;
+    struct {
+      uint64_t value :63;
+      uint64_t type_flag :1;
+    };
     PyObject* objval;
   };
 
@@ -102,7 +104,7 @@ struct Register {
 
   f_inline long as_int() const {
 //    Log_Info("load: %p : %d", this, value);
-    return value >> 1;
+    return value;
   }
 
   f_inline void decref() {
@@ -129,7 +131,7 @@ struct Register {
 
   f_inline void store(long v) {
 //    Log_Info("store: %p : %d", this, v);
-    value = v << 1;
+    value = v;
     type_flag = IntType;
   }
 
