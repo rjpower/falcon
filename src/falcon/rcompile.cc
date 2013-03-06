@@ -128,6 +128,10 @@ struct RCompilerUtil {
 };
 
 std::string CompilerOp::str() const {
+  if (code == LOAD_FAST || code == STORE_FAST) {
+    return StringPrintf("r%d = r%d", regs[1], regs[0]);
+  }
+
   StringWriter w;
   int num_args = regs.size();
   if (has_dest) {
@@ -137,12 +141,12 @@ std::string CompilerOp::str() const {
 
   w.printf("%s", OpUtil::name(code));
   if (OpUtil::has_arg(code)) {
-    w.printf(".%d", arg);
+    w.printf("[%d]", arg);
   }
   w.printf("(");
 
   for (int i = 0; i < num_args; ++i) {
-    w.printf("%d", regs[i]);
+    w.printf("r%d", regs[i]);
     if (i < num_args - 1) {
       w.printf(", ");
     }
@@ -285,7 +289,7 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int
 
 CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4) {
   /* operation with 4 inputs and a destination register */
-  CompilerOp* op = _add_op(opcode, arg, 4);
+  CompilerOp* op = _add_dest_op(opcode, arg, 4);
   op->regs[0] = reg1;
   op->regs[1] = reg2;
   op->regs[2] = reg3;
@@ -295,7 +299,7 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int
 
 CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4, int reg5) {
   /* operation with 5 inputs and a destination register */
-  CompilerOp* op = _add_op(opcode, arg, 4);
+  CompilerOp* op = _add_dest_op(opcode, arg, 4);
   op->regs[0] = reg1;
   op->regs[1] = reg2;
   op->regs[2] = reg3;
