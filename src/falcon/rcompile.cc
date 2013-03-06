@@ -27,10 +27,9 @@
 
 #define GETARG(arr, i) ((int)((arr[i+2]<<8) + arr[i+1]))
 #define CODESIZE(op)  (HAS_ARG(op) ? 3 : 1)
+#define COMPILE_LOG(...) do { if (getenv("COMPILE_LOG")) { Log_Info(__VA_ARGS__); } } while (0)
 
 using namespace std;
-
-
 
 void RegisterStack::push_frame(int target) {
   Frame f;
@@ -393,12 +392,14 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       entry_point = bb;
     }
 
-    const char* name = NULL;
-    if (oparg < PyTuple_Size(state->names)) {
-      name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+    if (getenv("COMPILE_LOG")) {
+      const char* name = NULL;
+      if (oparg < PyTuple_Size(state->names)) {
+        name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+      }
+      COMPILE_LOG("%5d: %s(%d) [%s] %s",
+               offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
     }
-    Log_Info("%5d: %s(%d) [%s] %s",
-             offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
 
     if (last) {
       last->exits.push_back(bb);
@@ -733,7 +734,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       r3 = stack->pop_register();
 
       int dst = stack->push_register(state->num_reg++);
-      Log_Info("BUILD_SLICE %d %d %d %d", r1, r2, r3, dst);
+      COMPILE_LOG("BUILD_SLICE %d %d %d %d", r1, r2, r3, dst);
       bb->add_dest_op(opcode, 0, r1, r2, r3, dst);
       break;
     }
@@ -783,7 +784,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       // Control flow instructions - recurse down each branch with a copy of the current stack.
     case BREAK_LOOP: {
       Frame f = stack->pop_frame();
-      Log_Info("Break loop -- jumping to %d", f.target);
+      COMPILE_LOG("Break loop -- jumping to %d", f.target);
       bb->add_op(opcode, 0);
       bb->exits.push_back(registerize(state, stack, f.target));
       return entry_point;
@@ -1285,8 +1286,8 @@ public:
     }
 
     CompilerPass::visit_fn(fn);
-    //Log_Info("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)",
-    //         curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
+    COMPILE_LOG("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)",
+             curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
     fn->num_reg = curr;
   }
 };
@@ -1510,7 +1511,7 @@ void optimize(CompilerState* fn) {
   }
 
   RenameRegisters()(fn);
-  Log_Info(fn->str().c_str());
+  COMPILE_LOG(fn->str().c_str());
 }
 
 void lower_register_code(CompilerState* state, std::string *out) {

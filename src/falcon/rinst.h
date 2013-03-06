@@ -22,6 +22,10 @@
 #define REUSE_INT_REGISTERS 0
 #endif
 
+#ifndef PACK_INSTRUCTIONS
+#define PACK_INSTRUCTIONS 0
+#endif
+
 
 // This file defines the format used by the register evalulator.
 //
@@ -243,7 +247,10 @@ struct RegisterCode {
   std::string instructions;
 };
 
-//#pragma pack(push, 0)
+#if PACK_INSTRUCTIONS
+#pragma pack(push, 0)
+#endif
+
 struct OpHeader {
   uint8_t code;
   uint8_t arg;
@@ -294,6 +301,8 @@ struct VarRegOp {
     return sizeof(VarRegOp) + num_registers * sizeof(RegisterOffset);
   }
 };
-//#pragma pack(pop)
+#if PACK_INSTRUCTIONS
+#pragma pack(pop)
+#endif
 
 #endif /* RINST_H_ */

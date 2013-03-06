@@ -1570,8 +1570,8 @@ static const void* labels[] = {
   OFFSET(MAP_ADD),
   OFFSET(INCREF),
   OFFSET(DECREF),
-  OFFSET(CONST_INDEX)}
-;
+  OFFSET(CONST_INDEX),
+};
 
 EVAL_LOG("Entering frame: %s", frame->str().c_str());
 try {
