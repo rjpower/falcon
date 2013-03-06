@@ -390,17 +390,11 @@ struct IntegerOps {
   _OP(mul, *)
   _OP(div, /)
   _OP(mod, %)
-
-#define _SIMPLE_OP(name, op)\
-    static f_inline long name(long a, long b) {\
-      return a op b;\
-    }
-
-  _SIMPLE_OP(Or, |)
-  _SIMPLE_OP(Xor, ^)
-  _SIMPLE_OP(And, &)
-  _SIMPLE_OP(Rshift, >>)
-  _SIMPLE_OP(Lshift, <<)
+  _OP(Or, |)
+  _OP(Xor, ^)
+  _OP(And, &)
+  _OP(Rshift, >>)
+  _OP(Lshift, <<)
 
   static f_inline PyObject* compare(PyObject* w, PyObject* v, int arg) {
     if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {
@@ -469,8 +463,8 @@ struct FloatOps {
   }
 };
 
-template<int OpCode, PythonBinaryOp ObjF, IntegerBinaryOp IntegerF>
-struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF> > {
+template<int OpCode, PythonBinaryOp ObjF, IntegerBinaryOp IntegerF, bool CanOverFlow>
+struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF, CanOverFlow> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     Register r1 = registers[op.reg[0]];
     Register r2 = registers[op.reg[1]];
@@ -479,7 +473,7 @@ struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecia
       register long a = r1.as_int();
       register long b = r2.as_int();
       register long val = IntegerF(a, b);
-      if (!OP_OVERFLOWED(a, b, val)) {
+      if (!CanOverFlow || !OP_OVERFLOWED(a, b, val)) {
         STORE_REG(op.reg[2], val);
         return;
       }
@@ -559,12 +553,11 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
 struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
-    PyObject* key = LOAD_OBJ(op.reg[1]);
+    Register key = registers[op.reg[1]];
     CHECK_VALID(list);
-    CHECK_VALID(key);
     PyObject* res = NULL;
-    if (PyList_CheckExact(list) && PyInt_CheckExact(key)) {
-      Py_ssize_t i = PyInt_AsSsize_t(key);
+    if (PyList_CheckExact(list) && key.get_type() == IntType) {
+      Py_ssize_t i = key.as_int();
       if (i < 0) i += PyList_GET_SIZE(list);
       if (i >= 0 && i < PyList_GET_SIZE(list) ) {
         res = PyList_GET_ITEM(list, i);
@@ -575,7 +568,7 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
       }
     }
     if (!res) {
-      res = PyObject_GetItem(list, key);
+      res = PyObject_GetItem(list, key.as_obj());
     }
     if (!res) {
       throw RException();
@@ -704,21 +697,17 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
   }
 };
 
+// LOAD_FAST and STORE_FAST both perform the same operation in the register VM.
 struct LoadFast: public RegOpImpl<RegOp<2>, LoadFast> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
-    PyObject* src = LOAD_OBJ(op.reg[0]);
-    Py_INCREF(src);
-    STORE_REG(op.reg[1], src);
+    Register& a = registers[op.reg[0]];
+    Register& b = registers[op.reg[1]];
+    a.incref();
+    b.decref();
+    b.store(a);
   }
 };
-
-struct StoreFast: public RegOpImpl<RegOp<2>, StoreFast> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
-    PyObject* src = LOAD_OBJ(op.reg[0]);
-    Py_INCREF(src);
-    STORE_REG(op.reg[1], src);
-  }
-};
+typedef LoadFast StoreFast;
 
 struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -1086,7 +1075,7 @@ struct BreakLoop: public BranchOpImpl<BreakLoop> {
 struct ReturnValue {
   static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     RegOp<1>& op = *((RegOp<1>*) pc);
-    EVAL_LOG("%5d: %s", frame->offset(pc), op.str(registers).c_str());
+    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
     PyObject* result = LOAD_OBJ(op.reg[0]);
     Py_INCREF(result);
     return result;
@@ -1395,8 +1384,8 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
 
 #define FALLTHROUGH(opname) op_##opname:
 
-#define BINARY_OP3(opname, objfn, intfn)\
-    op_##opname: _DEFINE_OP(opname, BinaryOpWithSpecialization<CONCAT(opname, objfn, intfn)>)
+#define BINARY_OP3(opname, objfn, intfn, can_overflow)\
+    op_##opname: _DEFINE_OP(opname, BinaryOpWithSpecialization<CONCAT(opname, objfn, intfn, can_overflow)>)
 
 #define BINARY_OP2(opname, objfn)\
     op_##opname: _DEFINE_OP(opname, BinaryOp<CONCAT(opname, objfn)>)
@@ -1573,7 +1562,7 @@ static const void* labels[] = {
   OFFSET(CONST_INDEX),
 };
 
-EVAL_LOG("Entering frame: %s", frame->str().c_str());
+//EVAL_LOG("Entering frame: %s", frame->str().c_str());
 try {
     JUMP_TO(frame->next_code(pc));
 
@@ -1588,15 +1577,15 @@ throw RException(PyExc_SystemError, "Invalid jump.");
         }
 BAD_OP(STOP_CODE);
 
-BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul);
-BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div);
-BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add);
-BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub);
-BINARY_OP3(BINARY_OR, PyNumber_Or, IntegerOps::Or);
-BINARY_OP3(BINARY_XOR, PyNumber_Xor, IntegerOps::Xor);
-BINARY_OP3(BINARY_AND, PyNumber_And, IntegerOps::And);
-BINARY_OP3(BINARY_RSHIFT, PyNumber_Rshift, IntegerOps::Rshift);
-BINARY_OP3(BINARY_LSHIFT, PyNumber_Lshift, IntegerOps::Lshift);
+BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul, true);
+BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div, true);
+BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add, true);
+BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub, true);
+BINARY_OP3(BINARY_OR, PyNumber_Or, IntegerOps::Or, false);
+BINARY_OP3(BINARY_XOR, PyNumber_Xor, IntegerOps::Xor, false);
+BINARY_OP3(BINARY_AND, PyNumber_And, IntegerOps::And, false);
+BINARY_OP3(BINARY_RSHIFT, PyNumber_Rshift, IntegerOps::Rshift, false);
+BINARY_OP3(BINARY_LSHIFT, PyNumber_Lshift, IntegerOps::Lshift, false);
 BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
 BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
 
@@ -1604,11 +1593,11 @@ DEFINE_OP(BINARY_POWER, BinaryPower);
 DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
 DEFINE_OP(BINARY_MODULO, BinaryModulo);
 
-BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul);
-BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div);
-BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add);
-BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub);
-BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod);
+BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul, true);
+BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div, true);
+BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add, true);
+BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub, true);
+BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod, true);
 
 BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
 BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
@@ -1722,7 +1711,7 @@ BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 
 } catch (RException &error) {
-    EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
+//    EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
 if (error.exception != NULL) {
       PyErr_SetObject(error.exception, error.value);
     }
@@ -1733,7 +1722,7 @@ if (error.exception != NULL) {
     return NULL;
   }
   done: {
-    EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
+//    EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
 return result;
 }
 }

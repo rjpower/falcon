@@ -17,7 +17,7 @@ def add1(a):
 
 @simple_test
 def add_loop():
-  for i in xrange(100000):
+  for i in xrange(10):
     temp = add1(i)
   return temp
 
@@ -64,7 +64,7 @@ def nested_closure(x):
   return f(x)
 
 def nested_closure_repeat():
-  for i in xrange(50000):
+  for i in xrange(50):
     temp = nested_closure(i)
   return temp 
 
@@ -83,13 +83,13 @@ class Simple(TimedTest):
     self.time_compare(loop, 100)
     
   def test_count_threshold(self):
-    self.time_compare(count_threshold, 1*1000*1000, 4*100*1000, repeat=5)
+    self.time_compare(count_threshold, 100, 40, repeat=5)
     
   def test_count_threshold_generator(self):
-    self.time_compare(count_threshold_generator, 1*1000*1000, 4*100*1000, repeat=5)
+    self.time_compare(count_threshold_generator, 100, 40, repeat=5)
 
   def test_global_load(self): 
-    self.time_compare(global_math, 1000, repeat=5)
+    self.time_compare(global_math, 10, repeat=5)
   
   def test_unpack_first(self):
     self.time_compare(unpack_first, (1,2,3), repeat = 1)

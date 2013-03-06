@@ -26,7 +26,6 @@
 #define PACK_INSTRUCTIONS 0
 #endif
 
-
 // This file defines the format used by the register evalulator.
 //
 // Operation types:
@@ -63,89 +62,73 @@ typedef uint8_t RegisterOffset;
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 
 enum RegisterType {
-  IntType,
-  FloatType,
-  ObjType,
+  ObjType = 0,
+  IntType = 1,
 };
 
 #if USED_TYPED_REGISTERS
+// The bottom 2  bits are used to indicate our type.
+#define REGISTER_MASK 0xfffffffffffffffc
 struct Register {
-  RegisterType type;
   union {
-    long intval;
-    double floatval;
+    uint64_t value :63;
+    uint64_t type_flag :1;
     PyObject* objval;
   };
 
   f_inline PyObject* as_obj() {
-    if (type == ObjType) {
-      return objval;
-    } else if (type == IntType) {
-      type = ObjType;
-      objval = PyInt_FromLong(intval);
+    if (get_type() == ObjType) {
       return objval;
     } else {
-      type = ObjType;
-      objval = PyFloat_FromDouble(floatval);
+      objval = PyInt_FromLong(as_int());
       return objval;
     }
   }
 
   f_inline RegisterType get_type() const {
-    return (RegisterType) type;
+    return (RegisterType) type_flag;
   }
 
   f_inline long as_int() const {
-    return intval;
-  }
-
-  f_inline double as_float() const {
-    return floatval;
+//    Log_Info("load: %p : %d", this, value);
+    return value >> 1;
   }
 
   f_inline void decref() {
-    if (type == ObjType) {
+    if (get_type() == ObjType) {
       Py_XDECREF(objval);
     }
   }
 
   f_inline void incref() {
-    if (type == ObjType) {
+    if (get_type() == ObjType) {
       Py_INCREF(objval);
     }
   }
 
-  f_inline void store(PyObject* obj) {
-    if (obj == NULL) {
-      type = ObjType;
-      objval = obj;
-    } else if (PyInt_CheckExact(obj)) {
-      type = IntType;
-      intval = PyInt_AS_LONG(obj);
-      Py_DECREF(obj);
-    } else if (PyFloat_CheckExact(obj)) {
-      type = FloatType;
-      floatval = PyFloat_AS_DOUBLE(obj);
-      Py_DECREF(obj);
-    } else {
-      type = ObjType;
-      objval = obj;
-    }
+  f_inline void store(Register& r) {
+    objval = r.objval;
   }
 
   f_inline void store(int v) {
-    type = IntType;
-    intval = v;
+    store((long)v);
   }
 
   f_inline void store(long v) {
-    type = IntType;
-    intval = v;
+//    Log_Info("store: %p : %d", this, v);
+    value = v << 1;
+    type_flag = IntType;
   }
 
-  f_inline void store(double v) {
-    type = FloatType;
-    floatval = v;
+  f_inline void store(PyObject* obj) {
+    if (obj == NULL || !PyInt_CheckExact(obj)) {
+      // Type flag is implicitly set to zero as a result of pointer alignment.
+      objval = obj;
+      type_flag = ObjType;
+    } else {
+      store(PyInt_AS_LONG(obj) );
+//      Py_DECREF(obj);
+    }
   }
 };
 
@@ -156,8 +139,6 @@ struct Register {
   f_inline RegisterType get_type() {
     if (PyInt_CheckExact(v)) {
       return IntType;
-    } else if (PyFloat_CheckExact(v)) {
-      return FloatType;
     } else {
       return ObjType;
     }
@@ -169,10 +150,6 @@ struct Register {
 
   f_inline long as_int() {
     return PyInt_AsLong(v);
-  }
-
-  f_inline double as_float() {
-    return PyFloat_AsDouble(v);
   }
 
   f_inline void decref() {
@@ -187,15 +164,16 @@ struct Register {
     v = obj;
   }
 
-  f_inline void store(int ival) {
-    v = PyInt_FromLong(ival);
-  }
-  f_inline void store(long ival) {
-    v = PyInt_FromLong(ival);
+  f_inline void store(Register& r) {
+    v = r.v;
   }
 
-  f_inline void store(double fval) {
-    v = PyFloat_FromDouble(fval);
+  f_inline void store(int ival) {
+    store((long)ival);
+  }
+
+  f_inline void store(long ival) {
+    v = PyInt_FromLong(ival);
   }
 };
 #endif
@@ -287,7 +265,7 @@ struct RegOp {
   }
 };
 
-// A variable size can contain any number of registers off the end
+// A variable size instruction can contain any number of registers off the end
 // of the structure.
 struct VarRegOp {
   uint8_t code;

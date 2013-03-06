@@ -19,7 +19,6 @@ def make_matrix(m,n):
         mat.append(range(n))
     return mat 
 
-
 class TestMatMult(TimedTest):
     def test_matmult(self):
         x = make_matrix(200,200)
