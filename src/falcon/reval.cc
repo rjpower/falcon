@@ -169,6 +169,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
   int num_consts = PyTuple_GET_SIZE(consts());
   for (int i = 0; i < num_consts; ++i) {
     PyObject* v = PyTuple_GET_ITEM(consts(), i) ;
+    Py_INCREF(v);
     registers[i].store(v);
   }
 
@@ -198,7 +199,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       if (i < num_args) {
         registers[offset].store(args[i]);
       } else {
-        registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args));
+        registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args) );
       }
       registers[offset].incref();
       ++offset;
@@ -212,9 +213,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 }
 
 RegisterFrame::~RegisterFrame() {
-  const int num_consts = PyTuple_GET_SIZE(consts());
   const int num_registers = code->num_registers;
-  for (register int i = num_consts; i < num_registers; ++i) {
+  for (register int i = 0; i < num_registers; ++i) {
     registers[i].decref();
   }
 
@@ -258,7 +258,7 @@ void RegisterFrame::fill_locals(PyObject* ldict) {
   for (int i = 0; i < PyTuple_GET_SIZE(varnames) ; ++i) {
     PyObject* name = PyTuple_GET_ITEM(varnames, i) ;
     PyObject* value = PyDict_GetItem(ldict, name);
-    STORE_REG(num_consts() + i, value);
+    registers[num_consts() + i].store(value);
   }
   Py_INCREF(ldict);
   locals_ = ldict;
@@ -281,9 +281,9 @@ PyObject* RegisterFrame::locals() {
   return locals_;
 }
 
-PyObject* Evaluator::eval_python(PyObject* func, PyObject* args) {
+Register Evaluator::eval_python(PyObject* func, PyObject* args) {
   RegisterFrame* frame = frame_from_pyfunc(func, args, NULL);
-  PyObject* result = eval(frame);
+  Register result = eval(frame);
   delete frame;
   return result;
 }
@@ -307,9 +307,9 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
   RegisterCode* regcode = compile(obj);
 
   ObjVector v_args;
-  v_args.resize(PyTuple_GET_SIZE(args));
+  v_args.resize(PyTuple_GET_SIZE(args) );
   for (int i = 0; i < v_args.size(); ++i) {
-    v_args[i].store(PyTuple_GET_ITEM(args, i));
+    v_args[i].store(PyTuple_GET_ITEM(args, i) );
   }
 
   ObjVector kw_args;
@@ -401,14 +401,7 @@ struct IntegerOps {
   _OP(Rshift, >>)
   _OP(Lshift, <<)
 
-  static f_inline PyObject* compare(PyObject* w, PyObject* v, int arg) {
-    if (!PyInt_CheckExact(v) || !PyInt_CheckExact(w)) {
-      return NULL;
-    }
-
-    long a = PyInt_AS_LONG(w);
-    long b = PyInt_AS_LONG(v);
-
+  static f_inline PyObject* compare(long a, long b, int arg) {
     switch (arg) {
     case PyCmp_LT:
       return a < b ? Py_True : Py_False ;
@@ -423,9 +416,9 @@ struct IntegerOps {
     case PyCmp_GE:
       return a >= b ? Py_True : Py_False ;
     case PyCmp_IS:
-      return v == w ? Py_True : Py_False ;
+      return a == b ? Py_True : Py_False ;
     case PyCmp_IS_NOT:
-      return v != w ? Py_True : Py_False ;
+      return a != b ? Py_True : Py_False ;
     default:
       return NULL;
     }
@@ -469,7 +462,8 @@ struct FloatOps {
 };
 
 template<int OpCode, PythonBinaryOp ObjF, IntegerBinaryOp IntegerF, bool CanOverFlow>
-struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>, BinaryOpWithSpecialization<OpCode, ObjF, IntegerF, CanOverFlow> > {
+struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>,
+    BinaryOpWithSpecialization<OpCode, ObjF, IntegerF, CanOverFlow> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     Register r1 = registers[op.reg[0]];
     Register r2 = registers[op.reg[1]];
@@ -600,24 +594,24 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
 
 struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
-    PyObject* r1 = LOAD_OBJ(op.reg[0]);
-    CHECK_VALID(r1);
-    PyObject* r2 = LOAD_OBJ(op.reg[1]);
-    CHECK_VALID(r2);
-    PyObject* r3 = IntegerOps::compare(r1, r2, op.arg);
-    if (r3 == NULL) {
-      r3 = FloatOps::compare(r1, r2, op.arg);
+    Register& r1 = registers[op.reg[0]];
+    Register& r2 = registers[op.reg[1]];
+    PyObject* r3 = NULL;
+    if (r1.get_type() == IntType && r2.get_type() == IntType) {
+      r3 = IntegerOps::compare(r1.as_int(), r2.as_int(), op.arg);
+    } else {
+      r3 = FloatOps::compare(r1.as_obj(), r2.as_obj(), op.arg);
     }
 
     if (r3 != NULL) {
       Py_INCREF(r3);
     } else {
-      r3 = PyObject_RichCompare(r1, r2, op.arg);
+      r3 = PyObject_RichCompare(r1.as_obj(), r2.as_obj(), op.arg);
     }
     if (!r3) {
       throw RException();
     }
-    EVAL_LOG("Compare: %s, %s -> %s", obj_to_str(r1), obj_to_str(r2), obj_to_str(r3));
+
     STORE_REG(op.reg[2], r3);
   }
 };
@@ -954,10 +948,11 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
+    int dst = op->reg[n + 1];
+
     PyObject* fn = LOAD_OBJ(op->reg[n]);
     assert(n + 2 == op->num_registers);
 
-    PyObject* res = NULL;
     RegisterCode* code = NULL;
 
     if (!PyCFunction_Check(fn)) {
@@ -988,13 +983,19 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
         }
       }
 
+      PyObject* res = NULL;
       if (PyCFunction_Check(fn)) {
         res = PyCFunction_Call(fn, args, kwdict);
       } else {
         res = PyObject_Call(fn, args, kwdict);
       }
-
       Py_DECREF(args);
+
+      if (res == NULL) {
+        throw RException();
+      }
+
+      STORE_REG(dst, res);
     } else {
       ObjVector args, kw;
       args.resize(na);
@@ -1002,15 +1003,9 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
         args[i].store(registers[op->reg[i]]);
       }
       RegisterFrame f(code, fn, args, kw);
-      res = eval->eval(&f);
+      Register f_res = eval->eval(&f);
+      STORE_REG(dst, f_res);
     }
-
-    if (res == NULL) {
-      throw RException();
-    }
-
-    int dst = op->reg[n + 1];
-    STORE_REG(dst, res);
   }
 };
 
@@ -1078,12 +1073,12 @@ struct BreakLoop: public BranchOpImpl<BreakLoop> {
 // can't use the exception mechanism to jump to our exit point.  Instead, we return a value
 // here and jump to the exit of our frame.
 struct ReturnValue {
-  static f_inline PyObject* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
+  static f_inline Register* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     RegOp<1>& op = *((RegOp<1>*) pc);
     EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
-    PyObject* result = LOAD_OBJ(op.reg[0]);
-    Py_INCREF(result);
-    return result;
+    Register& r = registers[op.reg[0]];
+    r.incref();
+    return &r;
   }
 };
 
@@ -1398,7 +1393,7 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
 #define UNARY_OP2(opname, objfn)\
     op_##opname: _DEFINE_OP(opname, UnaryOp<CONCAT(opname, objfn)>)
 
-PyObject * Evaluator::eval(RegisterFrame* f) {
+Register Evaluator::eval(RegisterFrame* f) {
   register RegisterFrame* frame = f;
   register Register* registers asm("r15") = frame->registers;
   register const char* pc asm("r14") = frame->instructions();
@@ -1406,7 +1401,7 @@ PyObject * Evaluator::eval(RegisterFrame* f) {
   Reg_Assert(frame != NULL, "NULL frame object.");
   // Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
 
-  PyObject* result = Py_None;
+  Register* result;
 
 //  last_clock_ = rdtsc();
 
@@ -1565,21 +1560,22 @@ static const void* labels[] = {
   OFFSET(INCREF),
   OFFSET(DECREF),
   OFFSET(CONST_INDEX),
-};
+}
+;
 
 //EVAL_LOG("Entering frame: %s", frame->str().c_str());
 try {
     JUMP_TO(frame->next_code(pc));
 
 op_RETURN_VALUE: {
-          result = ReturnValue::eval(this, frame, pc, registers);
-          goto done;
-        }
+  result = ReturnValue::eval(this, frame, pc, registers);
+  goto done;
+}
 
-    op_BADCODE: {
-          EVAL_LOG("Jump to invalid opcode!?");
+op_BADCODE: {
+  EVAL_LOG("Jump to invalid opcode!?");
 throw RException(PyExc_SystemError, "Invalid jump.");
-        }
+}
 BAD_OP(STOP_CODE);
 
 BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul, true);
@@ -1718,17 +1714,17 @@ BAD_OP(POP_TOP);
 } catch (RException &error) {
 //    EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
 if (error.exception != NULL) {
-      PyErr_SetObject(error.exception, error.value);
-    }
+  PyErr_SetObject(error.exception, error.value);
+}
 
-    // TODO(power) - create a frame object here and attach it to the traceback.
-    PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
-    PyTraceBack_Here(py_frame);
-    return NULL;
-  }
-  done: {
+// TODO(power) - create a frame object here and attach it to the traceback.
+PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
+PyTraceBack_Here(py_frame);
+return Register(NULL);
+}
+done: {
 //    EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
-return result;
+return *result;
 }
 }
 

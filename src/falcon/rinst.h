@@ -50,8 +50,8 @@
 #define f_inline __attribute__((noinline))
 #define n_inline __attribute__((noinline))
 #else
-//#define f_inline __attribute__((noinline))
-#define f_inline __attribute__((always_inline))
+#define f_inline __attribute__((noinline))
+//#define f_inline __attribute__((always_inline))
 #define n_inline __attribute__((noinline))
 #endif
 
@@ -67,8 +67,6 @@ enum RegisterType {
 };
 
 #if USED_TYPED_REGISTERS
-// The bottom 2  bits are used to indicate our type.
-#define REGISTER_MASK 0xfffffffffffffffc
 struct Register {
   union {
     uint64_t value :63;
@@ -76,11 +74,24 @@ struct Register {
     PyObject* objval;
   };
 
+  Register() {
+
+  }
+
+  Register(PyObject* v) {
+    store(v);
+  }
+
+  Register(const Register& r) {
+    objval = r.objval;
+  }
+
   f_inline PyObject* as_obj() {
     if (get_type() == ObjType) {
       return objval;
     } else {
       objval = PyInt_FromLong(as_int());
+//      Log_Info("Coerced: %p %d", thiss, objval->ob_refcnt);
       return objval;
     }
   }
@@ -96,12 +107,14 @@ struct Register {
 
   f_inline void decref() {
     if (get_type() == ObjType) {
+//      Log_Info("Decref %p %d", this, objval == NULL ? -1 : objval->ob_refcnt);
       Py_XDECREF(objval);
     }
   }
 
   f_inline void incref() {
     if (get_type() == ObjType) {
+//      Log_Info("Incref %p %d", this, objval == NULL ? -1 : objval->ob_refcnt);
       Py_INCREF(objval);
     }
   }
@@ -111,7 +124,7 @@ struct Register {
   }
 
   f_inline void store(int v) {
-    store((long)v);
+    store((long) v);
   }
 
   f_inline void store(long v) {
@@ -121,13 +134,14 @@ struct Register {
   }
 
   f_inline void store(PyObject* obj) {
+//    Log_Info("store: %p : %p", this, obj);
     if (obj == NULL || !PyInt_CheckExact(obj)) {
       // Type flag is implicitly set to zero as a result of pointer alignment.
       objval = obj;
-      type_flag = ObjType;
     } else {
       store(PyInt_AS_LONG(obj) );
-//      Py_DECREF(obj);
+      Py_DECREF(obj);
+//      Log_Info("%d %d", as_int(), obj->ob_refcnt);
     }
   }
 };

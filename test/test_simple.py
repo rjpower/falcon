@@ -17,7 +17,7 @@ def add1(a):
 
 @simple_test
 def add_loop():
-  for i in xrange(10):
+  for i in xrange(1000):
     temp = add1(i)
   return temp
 

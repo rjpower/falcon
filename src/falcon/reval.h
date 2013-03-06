@@ -185,8 +185,8 @@ public:
 
   inline RegisterCode* compile(PyObject* f);
 
-  PyObject* eval(RegisterFrame* rf);
-  PyObject* eval_python(PyObject* func, PyObject* args);
+  Register eval(RegisterFrame* rf);
+  Register eval_python(PyObject* func, PyObject* args);
 
   RegisterFrame* frame_from_pyframe(PyFrameObject*);
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);

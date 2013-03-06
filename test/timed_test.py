@@ -27,7 +27,7 @@ class TimedTest(unittest.TestCase):
   def run_falcon(self, function, *args, **kw):
     evaluator = falcon.Evaluator()
     frame = evaluator.frame_from_pyfunc(function, args, None)
-    falcon_result = evaluator.eval(frame)
+    falcon_result = evaluator.eval(frame).as_obj()
     return falcon_result
 
 
@@ -51,7 +51,7 @@ class TimedTest(unittest.TestCase):
       if falcon:
         random.seed(10)
         st = time.time()
-        falcon_result = evaluator.eval(frame)
+        falcon_result = evaluator.eval(frame).as_obj()
         f_time = time.time() - st
       else:
         f_time = 0
