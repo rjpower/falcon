@@ -66,18 +66,15 @@ static const int kMaxRegisters = 255;
 typedef uint8_t RegisterOffset;
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 
-enum RegisterType {
-  ObjType = 0,
-  IntType = 1,
-};
+static const int ObjType = 0;
+static const int IntType = 1;
 
 #if USED_TYPED_REGISTERS
+#define TYPE_MASK 0x1
+
 struct Register {
   union {
-    struct {
-      int64_t value :63;
-      int64_t type_flag :1;
-    };
+    int64_t value;
     PyObject* objval;
   };
 
@@ -103,13 +100,13 @@ struct Register {
     }
   }
 
-  f_inline RegisterType get_type() const {
-    return (RegisterType) type_flag;
+  f_inline int get_type() const {
+    return (value & TYPE_MASK);
   }
 
   f_inline long as_int() const {
 //    Log_Info("load: %p : %d", this, value);
-    return value;
+    return value >> 1;
   }
 
   f_inline void decref() {
@@ -136,8 +133,8 @@ struct Register {
 
   f_inline void store(long v) {
 //    Log_Info("store: %p : %d", this, v);
-    value = v;
-    type_flag = IntType;
+    value = v << 1;
+    value |= IntType;
   }
 
   f_inline void store(PyObject* obj) {

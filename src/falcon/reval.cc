@@ -636,20 +636,19 @@ struct LoadLocals: public RegOpImpl<RegOp<1>, LoadLocals> {
 struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
     PyObject* key = PyTuple_GET_ITEM(frame->names(), op.arg) ;
-    PyObject* globals = frame->globals();
-    PyObject* builtins = frame->builtins();
-
-    PyObject* value = PyDict_GetItem(globals, key);
-    if (value == NULL) {
-      value = PyDict_GetItem(builtins, key);
+    PyObject* value = PyDict_GetItem(frame->globals(), key);
+    if (value != NULL) {
+      Py_INCREF(value);
+      STORE_REG(op.reg[0], value);
+      return;
     }
-
-    if (value == NULL) {
-      throw RException(PyExc_NameError, "Global name %.200s not defined.", obj_to_str(key));
+    value = PyDict_GetItem(frame->builtins(), key);
+    if (value != NULL) {
+      Py_INCREF(value);
+      STORE_REG(op.reg[0], value);
+      return;
     }
-
-    Py_INCREF(value);
-    STORE_REG(op.reg[0], value);
+    throw RException(PyExc_NameError, "Global name %.200s not defined.", obj_to_str(key));
   }
 };
 
@@ -739,8 +738,7 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
 
 // Copied from ceval.cc:
 #define ISINDEX(x) ((x) == NULL || PyInt_Check(x) || PyLong_Check(x) || PyIndex_Check(x))
-static int assign_slice(PyObject *u, PyObject *v, PyObject *w, PyObject *x)
-{
+static int assign_slice(PyObject *u, PyObject *v, PyObject *w, PyObject *x) {
   PyTypeObject *tp = u->ob_type;
   PySequenceMethods *sq = tp->tp_as_sequence;
 
