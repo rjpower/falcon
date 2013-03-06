@@ -218,11 +218,7 @@ RegisterFrame::~RegisterFrame() {
     registers[i].decref();
   }
 
-  const int num_freevars = PyTuple_GET_SIZE(code->code()->co_freevars);
-  const int num_cellvars = PyTuple_GET_SIZE(code->code()->co_cellvars);
-  const int num_cells = num_freevars + num_cellvars;
-  for (register int i = 0; i < num_cells; ++i) {
-//    Log_Info("Cell: %d [%d] %p", i, freevars[i]->ob_refcnt, freevars[i]);
+  for (register int i = 0; i < this->code->num_cells; ++i) {
     Py_XDECREF(freevars[i]);
   }
 
@@ -465,8 +461,8 @@ template<int OpCode, PythonBinaryOp ObjF, IntegerBinaryOp IntegerF, bool CanOver
 struct BinaryOpWithSpecialization: public RegOpImpl<RegOp<3>,
     BinaryOpWithSpecialization<OpCode, ObjF, IntegerF, CanOverFlow> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
-    Register r1 = registers[op.reg[0]];
-    Register r2 = registers[op.reg[1]];
+    Register& r1 = registers[op.reg[0]];
+    Register& r2 = registers[op.reg[1]];
 
     if (r1.get_type() == IntType && r2.get_type() == IntType) {
       register long a = r1.as_int();
@@ -552,7 +548,7 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
 struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
-    Register key = registers[op.reg[1]];
+    Register& key = registers[op.reg[1]];
     CHECK_VALID(list);
     PyObject* res = NULL;
     if (PyList_CheckExact(list) && key.get_type() == IntType) {
