@@ -75,8 +75,8 @@ enum RegisterType {
 struct Register {
   union {
     struct {
-      uint64_t value :63;
-      uint64_t type_flag :1;
+      int64_t value :63;
+      int64_t type_flag :1;
     };
     PyObject* objval;
   };

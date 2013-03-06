@@ -9,11 +9,13 @@ def fannkuch(n):
     nm = n - 1
     while 1:
         k = perm1[0]
+#        print k
         if k:
             perm = perm1[:]
             flipsCount = 1
             kk = perm[k]
             while kk:
+#                print 'while kk:: ', perm, k, kk
                 perm[:k+1] = perm[k::-1]
                 flipsCount += 1
                 k = kk
@@ -23,6 +25,7 @@ def fannkuch(n):
             checksum += flipsCount if permSign else -flipsCount
 
         # Use incremental change to generate another permutation
+#        print 'Permsign', permSign
         if permSign:
             perm1[0],perm1[1] = perm1[1],perm1[0]
             permSign = False
@@ -37,10 +40,11 @@ def fannkuch(n):
                 perm1[:r+1] = perm1[1:r+2]
                 perm1[r+1] = perm0
             else:
+#                print 'Count', count
                 r = nm
                 if not count[r]:
                     print( checksum )
-                    return maxFlipsCount
+                    return checksum
             count[r] -= 1
 
 from timed_test import TimedTest
@@ -48,7 +52,7 @@ import unittest
 
 class TestF(TimedTest):
     def test_f(self):
-      self.time_compare(fannkuch, 5, repeat=1)
+      self.time_compare(fannkuch, 8, repeat=1)
       
 if __name__ == '__main__':
   unittest.main() 

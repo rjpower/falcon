@@ -558,7 +558,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       if ((opcode - STORE_SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
       value = stack->pop_register();
-      bb->add_dest_op(STORE_SLICE, 0, list, left, right, value);
+//      Log_Info("%d[%d:%d] = %d", list, left, right, value);
+      bb->add_op(STORE_SLICE, 0, list, left, right, value);
       break;
     }
     case DELETE_SLICE + 0:

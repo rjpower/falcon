@@ -52,5 +52,11 @@ def load_slice3():
   y = x[:]
   return y
 
+@simple_test
+def load_slice4():
+  x = range(100)
+  y = x[1::-1]
+  return y
+
 if __name__ == '__main__':
   unittest.main()

@@ -1,7 +1,9 @@
 #include "rinst.h"
 
 static void print_register(Writer& w, Register* registers, int reg_num) {
-  if (registers == NULL || reg_num == kInvalidRegister) {
+  if (reg_num == kInvalidRegister) {
+    w.printf("NULL,");
+  } else if (registers == NULL) {
     w.printf("[%d],", reg_num);
   } else {
     w.printf("[%d] %.20s, ", reg_num, obj_to_str(registers[reg_num].as_obj()));

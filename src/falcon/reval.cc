@@ -635,16 +635,21 @@ struct LoadLocals: public RegOpImpl<RegOp<1>, LoadLocals> {
 
 struct LoadGlobal: public RegOpImpl<RegOp<1>, LoadGlobal> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
-    PyObject* r1 = PyTuple_GET_ITEM(frame->names(), op.arg) ;
-    PyObject* r2 = PyDict_GetItem(frame->globals(), r1);
-    if (r2 == NULL) {
-      r2 = PyDict_GetItem(frame->builtins(), r1);
+    PyObject* key = PyTuple_GET_ITEM(frame->names(), op.arg) ;
+    PyObject* globals = frame->globals();
+    PyObject* builtins = frame->builtins();
+
+    PyObject* value = PyDict_GetItem(globals, key);
+    if (value == NULL) {
+      value = PyDict_GetItem(builtins, key);
     }
-    if (r2 == NULL) {
-      throw RException(PyExc_NameError, "Global name %.200s not defined.", obj_to_str(r1));
+
+    if (value == NULL) {
+      throw RException(PyExc_NameError, "Global name %.200s not defined.", obj_to_str(key));
     }
-    Py_INCREF(r2);
-    STORE_REG(op.reg[0], r2);
+
+    Py_INCREF(value);
+    STORE_REG(op.reg[0], value);
   }
 };
 
@@ -732,6 +737,43 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
   }
 };
 
+// Copied from ceval.cc:
+#define ISINDEX(x) ((x) == NULL || PyInt_Check(x) || PyLong_Check(x) || PyIndex_Check(x))
+static int assign_slice(PyObject *u, PyObject *v, PyObject *w, PyObject *x)
+{
+  PyTypeObject *tp = u->ob_type;
+  PySequenceMethods *sq = tp->tp_as_sequence;
+
+  if (sq && sq->sq_ass_slice && ISINDEX(v) && ISINDEX(w)) {
+    Py_ssize_t ilow = 0, ihigh = PY_SSIZE_T_MAX;
+    if (!_PyEval_SliceIndex(v, &ilow)) return -1;
+    if (!_PyEval_SliceIndex(w, &ihigh)) return -1;
+    if (x == NULL) return PySequence_DelSlice(u, ilow, ihigh);
+    else return PySequence_SetSlice(u, ilow, ihigh, x);
+  } else {
+    PyObject *slice = PySlice_New(v, w, NULL);
+    if (slice != NULL) {
+      int res;
+      if (x != NULL) res = PyObject_SetItem(u, slice, x);
+      else res = PyObject_DelItem(u, slice);
+      Py_DECREF(slice);
+      return res;
+    } else return -1;
+  }
+}
+
+struct StoreSlice: public RegOpImpl<RegOp<4>, StoreSlice> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
+    PyObject* list = LOAD_OBJ(op.reg[0]);
+    PyObject* left = op.reg[1] != kInvalidRegister ? LOAD_OBJ(op.reg[1]) : NULL;
+    PyObject* right = op.reg[2] != kInvalidRegister ? LOAD_OBJ(op.reg[2]) : NULL;
+    PyObject* value = LOAD_OBJ(op.reg[3]);
+    if (assign_slice(list, left, right, value) != 0) {
+      throw RException();
+    }
+  }
+};
+
 struct ConstIndex: public RegOpImpl<RegOp<2>, ConstIndex> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
@@ -779,8 +821,6 @@ static size_t dict_getoffset(PyDictObject* dict, PyObject* key) {
   PyDictEntry* pos = dict->ma_lookup(dict, key, hash);
   return pos - dict->ma_table;
 }
-
-
 
 // LOAD_ATTR is common enough to warrant inlining some common code.
 // Most of this is taken from _PyObject_GenericGetAttrWithDict
@@ -1621,6 +1661,7 @@ DEFINE_OP(STORE_NAME, StoreName);
 DEFINE_OP(STORE_ATTR, StoreAttr);
 DEFINE_OP(STORE_SUBSCR, StoreSubscr);
 DEFINE_OP(STORE_FAST, StoreFast);
+DEFINE_OP(STORE_SLICE, StoreSlice);
 
 DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
 DEFINE_OP(STORE_GLOBAL, StoreGlobal);
@@ -1699,7 +1740,6 @@ BAD_OP(PRINT_EXPR);
 BAD_OP(DELETE_SUBSCR);
 BAD_OP(STORE_MAP);
 BAD_OP(DELETE_SLICE);
-BAD_OP(STORE_SLICE);
 BAD_OP(NOP);
 BAD_OP(ROT_FOUR);
 BAD_OP(DUP_TOP);
