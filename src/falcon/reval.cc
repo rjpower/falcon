@@ -511,24 +511,27 @@ struct UnaryNot: public RegOpImpl<RegOp<2>, UnaryNot> {
 
 struct BinaryModulo: public RegOpImpl<RegOp<3>, BinaryModulo> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
-    PyObject* r1 = LOAD_OBJ(op.reg[0]);
-    CHECK_VALID(r1);
-    PyObject* r2 = LOAD_OBJ(op.reg[1]);
-    CHECK_VALID(r2);
-    PyObject* r3 = NULL;
-    if (PyInt_CheckExact(r1) && PyInt_CheckExact(r2)) {
-      r3 = PyInt_FromLong(PyInt_AS_LONG(r1) % PyInt_AS_LONG(r2) );
+    Register& r1 = registers[op.reg[0]];
+    Register& r2 = registers[op.reg[1]];
+    if (r1.get_type() == IntType && r2.get_type() == IntType) {
+      Register& dst = registers[op.reg[2]];
+      dst.decref();
+      dst.store(r1.as_int() % r2.as_int());
+      return;
     }
 
-    if (r3 == NULL) {
-      if (PyString_CheckExact(r1)) {
-        r3 = PyString_Format(r1, r2);
-      } else {
-        r3 = PyNumber_Remainder(r1, r2);
-      }
+    PyObject* o1 = r1.as_obj();
+    PyObject* o2 = r2.as_obj();
+    PyObject* dst = NULL;
+    if (PyString_CheckExact(o1)) {
+      dst = PyString_Format(o1, o2);
+    } else {
+      dst = PyNumber_Remainder(o1, o2);
     }
-
-    STORE_REG(op.reg[2], r3);
+    if (!dst) {
+      throw RException();
+    }
+    STORE_REG(op.reg[2], dst);
   }
 };
 
