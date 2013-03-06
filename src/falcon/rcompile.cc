@@ -128,18 +128,28 @@ struct RCompilerUtil {
 };
 
 std::string CompilerOp::str() const {
-  std::string out;
-  out += StringPrintf("%s", OpUtil::name(code));
-  if (HAS_ARG(code)) {
-    out += StringPrintf(".%d", arg);
+  StringWriter w;
+  int num_args = regs.size();
+  if (has_dest) {
+    --num_args;
+    w.printf("r%d = ", regs[regs.size() - 1]);
   }
-  out += "[";
-  out += StrUtil::join(regs.begin(), regs.end(), ",");
-  out += "]";
-  if (dead) {
-    out += " DEAD ";
+
+  w.printf("%s", OpUtil::name(code));
+  if (OpUtil::has_arg(code)) {
+    w.printf(".%d", arg);
   }
-  return out;
+  w.printf("(");
+
+  for (int i = 0; i < num_args; ++i) {
+    w.printf("%d", regs[i]);
+    if (i < num_args - 1) {
+      w.printf(", ");
+    }
+  }
+  w.printf(")");
+
+  return w.str();
 }
 
 void CompilerState::dump(Writer* w) {
@@ -298,7 +308,6 @@ CompilerOp* BasicBlock::add_varargs_op(int opcode, int arg, int num_regs) {
   return _add_dest_op(opcode, arg, num_regs);
 }
 
-
 /*
  * The main event: convert from a stack machine to an infinite register machine.
  * We do this using a virtual stack.  Instead of opcodes pushing and popping
@@ -392,14 +401,13 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       entry_point = bb;
     }
 
-    if (getenv("COMPILE_LOG")) {
-      const char* name = NULL;
-      if (oparg < PyTuple_Size(state->names)) {
-        name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
-      }
-      COMPILE_LOG("%5d: %s(%d) [%s] %s",
-               offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
-    }
+//    if (getenv("COMPILE_LOG")) {
+//      const char* name = NULL;
+//      if (oparg < PyTuple_Size(state->names)) {
+//        name = PyString_AsString(PyTuple_GetItem(state->names, oparg));
+//      }
+//      COMPILE_LOG("%5d: %s(%d) [%s] %s", offset, OpUtil::name(opcode), oparg, name, stack->str().c_str());
+//    }
 
     if (last) {
       last->exits.push_back(bb);
@@ -1289,8 +1297,8 @@ public:
     }
 
     CompilerPass::visit_fn(fn);
-    COMPILE_LOG("Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)",
-             curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
+    COMPILE_LOG(
+        "Register rename: keeping %d of %d registers (%d const+local, with arg+const folding: %d)", curr, fn->num_reg, fn->num_consts + fn->num_locals, min_count);
     fn->num_reg = curr;
   }
 };
