@@ -11,7 +11,7 @@
 // These defines enable/disable certain optimizations in the
 // evaluator:
 #ifndef USED_TYPED_REGISTERS
-#define USED_TYPED_REGISTERS 1
+#define USED_TYPED_REGISTERS 0
 #endif
 
 #ifndef STACK_ALLOC_REGISTERS
@@ -157,7 +157,7 @@ struct Register {
   Register() {}
   Register(PyObject* o) : v(o) {}
 
-  f_inline RegisterType get_type() {
+  f_inline int get_type() {
     if (PyInt_CheckExact(v)) {
       return IntType;
     } else {
