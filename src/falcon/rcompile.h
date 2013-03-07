@@ -134,21 +134,27 @@ public:
   int num_locals;
 
 
+  PyCodeObject* py_code;
+  PyObject* consts_tuple;
   unsigned char* py_codestr;
   Py_ssize_t py_codelen;
-
   PyObject* names;
+
 
   std::map<int, BasicBlock*> bb_offsets;
 
   CompilerState() :
-      num_reg(0), num_consts(0), num_locals(0), py_codestr(NULL), py_codelen(0), names(NULL) {
-  }
+      num_reg(0), num_consts(0), num_locals(0),
+      py_code(NULL),  consts_tuple(NULL),
+      py_codestr(NULL), py_codelen(0),
+      names(NULL) { }
 
   CompilerState(PyCodeObject* code) {
-    int codelen = PyString_GET_SIZE(code->co_code);
 
-    num_consts = PyTuple_Size(code->co_consts);
+    int codelen = PyString_GET_SIZE(code->co_code);
+    py_code = code;
+    consts_tuple = code->co_consts;
+    num_consts = PyTuple_Size(consts_tuple);
     num_locals = code->co_nlocals;
     // Offset by the number of constants and locals.
     num_reg = num_consts + num_locals;
@@ -158,6 +164,7 @@ public:
     py_codestr = (unsigned char*) PyString_AsString(code->co_code);
 
     names = code->co_names;
+
   }
 
   ~CompilerState() {

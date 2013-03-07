@@ -1,7 +1,7 @@
 #include "rinst.h"
 
 static void print_register(Writer& w, Register* registers, int reg_num) {
-  if (reg_num == kInvalidRegister) {
+  if (reg_num >= kInvalidRegister) {
     w.printf("NULL,");
   } else if (registers == NULL) {
     w.printf("[%d],", reg_num);
@@ -20,6 +20,8 @@ std::string RegOp<num_registers>::str(Register* registers) const {
   w.printf(")");
   return w.str();
 }
+
+
 
 std::string VarRegOp::str(Register* registers) const {
   StringWriter w;

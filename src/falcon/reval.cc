@@ -201,6 +201,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       } else {
         registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args) );
       }
+
       registers[offset].incref();
       ++offset;
     }
@@ -490,6 +491,9 @@ struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
   }
 };
 
+
+
+
 template<int OpCode, UnaryFunction ObjF>
 struct UnaryOp: public RegOpImpl<RegOp<2>, UnaryOp<OpCode, ObjF> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -775,7 +779,9 @@ struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
         throw RException();
       }
     }
-    STORE_REG(op.reg[2], result_code ? Py_True : Py_False)
+    PyObject* result = result_code ? Py_True : Py_False;
+    Py_INCREF(result);
+    STORE_REG(op.reg[2], result);
   }
 };
 
@@ -1932,6 +1938,7 @@ DEFINE_OP(IMPORT_NAME, ImportName);
 DEFINE_OP(MAKE_FUNCTION, MakeFunction);
 DEFINE_OP(MAKE_CLOSURE, MakeClosure);
 DEFINE_OP(BUILD_CLASS, BuildClass);
+
 
 BAD_OP(SETUP_LOOP);
 BAD_OP(POP_BLOCK);

@@ -1412,7 +1412,7 @@ protected:
 
   void update_type(int r, StaticType t) {
     StaticType old_t = this->get_type(r);
-    printf("update type of %d to %d (old_type = %d)\n", r, t, old_t);
+
     if (old_t == UNKNOWN) {
       this->types[r] = t;
     } else if (old_t != t && old_t != OBJ) {
@@ -1422,6 +1422,19 @@ protected:
 
 public:
   void infer(CompilerState* fn) {
+
+    // initialize the constants to their types
+    for (size_t i = 0; i < fn->num_consts; ++i) {
+      PyObject* obj = PyTuple_GetItem(fn->consts_tuple, i);
+
+      if (PyInt_CheckExact(obj)) {
+        this->update_type(i, INT);
+      } else if (PyFloat_CheckExact(obj)) {
+        this->update_type(i, FLOAT);
+      } else {
+        this->update_type(i, OBJ);
+      }
+    }
     size_t n_bbs = fn->bbs.size();
     for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
 
@@ -1430,7 +1443,7 @@ public:
       for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
 
         CompilerOp* op = bb->code[op_idx];
-        printf("%s\n", op->str().c_str());
+
         size_t n_inputs = op->num_inputs();
         if (op->has_dest) {
           int dest = op->regs[n_inputs];
@@ -1445,19 +1458,21 @@ public:
           case BUILD_MAP:
             t = DICT;
             break;
-          case STORE_FAST:
           case LOAD_FAST: {
             int src_reg = op->regs[0];
-            /* todo: access the constants to figure out their type
             if (src_reg < fn->num_consts) {
+              PyObject* const_obj = PyTuple_GetItem(fn->consts_tuple, src_reg);
 
+              if (PyInt_CheckExact(const_obj)) {
+                t = INT;
+              } else if (PyFloat_CheckExact(const_obj)) {
+                t = FLOAT;
+              } else {
+                t = OBJ;
+              }
+            } else {
+              t = OBJ;
             }
-            */
-            /* another todo: if the RHS is created in this basic block then we can safely */
-            //t = this->get_type(src_reg);
-
-            /* else: */
-            t = OBJ;
           }
           break;
           }
@@ -1469,87 +1484,81 @@ public:
 };
 
 enum KnownMethod {
+  METHOD_UNKNOWN,
   METHOD_LIST_APPEND
 };
 
-class LocalTypeSpecialization: public CompilerPass, public TypeInference {
+class LocalTypeSpecialization: public CompilerPass, protected TypeInference {
 private:
   std::map<int, KnownMethod> known_methods;
   std::map<int, int> known_bound_objects;
 
+  KnownMethod find_method(int reg) {
+    auto iter = this->known_methods.find(reg);
+    if (iter == this->known_methods.end()) {
+      return METHOD_UNKNOWN;
+    } else {
+      return iter->second;
+    }
+  }
+
   PyObject* names;
+  PyObject* consts_tuple;
+
+
 public:
   void visit_op(CompilerOp* op) {
 
     switch (op->code) {
     case LOAD_ATTR: {
-
       PyObject* attr_name_obj = PyTuple_GetItem(this->names, op->arg);
+      Py_INCREF(attr_name_obj);
       char* attr_name = PyString_AsString(attr_name_obj);
+
       if (strcmp(attr_name, "append") == 0) {
         this->known_methods[op->regs[1]] = METHOD_LIST_APPEND;
         this->known_bound_objects[op->regs[1]] = op->regs[0];
       }
     }
-      break;
+    break;
 
     case CALL_FUNCTION: {
       int fn_reg = op->regs[op->num_inputs() - 1];
-      auto iter = this->known_methods.find(fn_reg);
-      if (iter != this->known_methods.end()) {
-        switch (iter->second) {
-        case METHOD_LIST_APPEND: {
-          op->code = LIST_APPEND;
+      if (this->find_method(fn_reg) == METHOD_LIST_APPEND) {
+        op->code = LIST_APPEND;
 
-          int item = op->regs[0];
-          int fn = op->regs[1];
-          op->arg = 0;
-          op->regs.clear();
+        int item = op->regs[0];
+        int fn = op->regs[1];
+        op->arg = 0;
+        op->regs.clear();
 
-          op->regs.push_back(this->known_bound_objects[fn]);
-          op->regs.push_back(item);
-          break;
-        }
-        }
+        op->regs.push_back(this->known_bound_objects[fn]);
+        op->regs.push_back(item);
       }
     }
     break;
     case BINARY_SUBSCR: {
-      int container = op->regs[0];
-      auto iter = this->types.find(container);
-      if (iter != this->types.end()) {
-        StaticType t = iter->second;
-        if (t == LIST) {
-          op->code = BINARY_SUBSCR_LIST;
-
-        } else if (t == DICT) {
-          op->code = BINARY_SUBSCR_DICT;
-        }
+      StaticType t = this->get_type(op->regs[0]);
+      if (t == LIST) {
+        op->code = BINARY_SUBSCR_LIST;
+      } else if (t == DICT) {
+        op->code = BINARY_SUBSCR_DICT;
       }
     }
     break;
     case STORE_SUBSCR: {
-      int container = op->regs[1];
-      auto iter = this->types.find(container);
-      if (iter != this->types.end()) {
-        StaticType t = iter->second;
-        if (t == LIST) {
-          op->code = STORE_SUBSCR_LIST;
-        } else if (t == DICT) {
-          op->code = STORE_SUBSCR_DICT;
-        }
+      StaticType t  = this->get_type(op->regs[1]);
+      if (t == LIST) {
+        op->code = STORE_SUBSCR_LIST;
+      } else if (t == DICT) {
+        op->code = STORE_SUBSCR_DICT;
       }
     }
     break;
     case COMPARE_OP: {
       // specialize '__contains__'
-      if (op->arg == 6) {
-        auto iter = this->types.find(op->regs[0]);
-        if (iter != this->types.end()) {
-          if (iter->second == DICT) {
-            op->code = DICT_CONTAINS;
-          }
-        }
+      if (op->arg == 6 && this->get_type(op->regs[0]) == DICT) {
+        op->code = DICT_CONTAINS;
       }
     }
     break;
@@ -1560,6 +1569,7 @@ public:
   void visit_fn(CompilerState* fn) {
     this->infer(fn);
     this->names = fn->names;
+    this->consts_tuple = fn->consts_tuple;
     CompilerPass::visit_fn(fn);
 
   }
