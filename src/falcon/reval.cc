@@ -548,6 +548,7 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
   }
 };
 
+
 struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
@@ -565,13 +566,67 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
         return;
       }
     }
-    if (!res) {
-      res = PyObject_GetItem(list, key.as_obj());
-    }
+
+    res = PyObject_GetItem(list, key.as_obj());
+
     if (!res) {
       throw RException();
     }
 
+    CHECK_VALID(res);
+    STORE_REG(op.reg[2], res);
+  }
+};
+
+
+struct BinarySubscrList : public RegOpImpl<RegOp<3>, BinarySubscrList> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* list = LOAD_OBJ(op.reg[0]);
+    Register& key = registers[op.reg[1]];
+    CHECK_VALID(list);
+    PyObject* res = NULL;
+    if (key.get_type() == IntType) {
+      Py_ssize_t i = key.as_int();
+      Py_ssize_t n = PyList_GET_SIZE(list);
+      if (i < 0) i += n;
+      if (i >= 0 && i < n) {
+        res = PyList_GET_ITEM(list, i);
+        Py_INCREF(res);
+        CHECK_VALID(res);
+        STORE_REG(op.reg[2], res);
+        return;
+      }
+    }
+    res = PyObject_GetItem(list, key.as_obj());
+    if (!res) {
+      throw RException();
+    }
+    CHECK_VALID(res);
+        STORE_REG(op.reg[2], res);
+  }
+};
+
+
+struct BinarySubscrDict: public RegOpImpl<RegOp<3>, BinarySubscrDict> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* dict = LOAD_OBJ(op.reg[0]);
+    PyObject* key = LOAD_OBJ(op.reg[1]);
+
+    CHECK_VALID(dict);
+    CHECK_VALID(key);
+
+    PyObject* res = PyDict_GetItem(dict, key);
+
+    if (res != 0) {
+      Py_INCREF(res);
+      CHECK_VALID(res);
+      STORE_REG(op.reg[2], res);
+      return;
+    }
+    res = PyObject_GetItem(dict, key);
+    if (!res) {
+     throw RException();
+    }
     CHECK_VALID(res);
     STORE_REG(op.reg[2], res);
   }
@@ -591,6 +646,95 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
   }
 };
 
+
+#define Py3kExceptionClass_Check(x)     \
+    (PyType_Check((x)) &&               \
+     PyType_FastSubclass((PyTypeObject*)(x), Py_TPFLAGS_BASE_EXC_SUBCLASS))
+
+#define CANNOT_CATCH_MSG "catching classes that don't inherit from " \
+                         "BaseException is not allowed in 3.x"
+
+/* slow path for comparisons, copied from ceval */
+static f_inline PyObject* cmp_outcome(int op, PyObject *v, PyObject *w) {
+    int res = 0;
+    switch (op) {
+    case PyCmp_IS:
+        res = (v == w);
+        break;
+    case PyCmp_IS_NOT:
+        res = (v != w);
+        break;
+    case PyCmp_IN:
+        res = PySequence_Contains(w, v);
+        if (res < 0)
+            return NULL;
+        break;
+    case PyCmp_NOT_IN:
+        res = PySequence_Contains(w, v);
+        if (res < 0)
+            return NULL;
+        res = !res;
+        break;
+    case PyCmp_EXC_MATCH:
+        if (PyTuple_Check(w)) {
+            Py_ssize_t i, length;
+            length = PyTuple_Size(w);
+            for (i = 0; i < length; i += 1) {
+                PyObject *exc = PyTuple_GET_ITEM(w, i);
+                if (PyString_Check(exc)) {
+                    int ret_val;
+                    ret_val = PyErr_WarnEx(
+                        PyExc_DeprecationWarning,
+                        "catching of string "
+                        "exceptions is deprecated", 1);
+                    if (ret_val < 0)
+                        return NULL;
+                }
+                else if (Py_Py3kWarningFlag  &&
+                         !PyTuple_Check(exc) &&
+                         !Py3kExceptionClass_Check(exc))
+                {
+                    int ret_val;
+                    ret_val = PyErr_WarnEx(
+                        PyExc_DeprecationWarning,
+                        CANNOT_CATCH_MSG, 1);
+                    if (ret_val < 0)
+                        return NULL;
+                }
+            }
+        }
+        else {
+            if (PyString_Check(w)) {
+                int ret_val;
+                ret_val = PyErr_WarnEx(
+                                PyExc_DeprecationWarning,
+                                "catching of string "
+                                "exceptions is deprecated", 1);
+                if (ret_val < 0)
+                    return NULL;
+            }
+            else if (Py_Py3kWarningFlag  &&
+                     !PyTuple_Check(w) &&
+                     !Py3kExceptionClass_Check(w))
+            {
+                int ret_val;
+                ret_val = PyErr_WarnEx(
+                    PyExc_DeprecationWarning,
+                    CANNOT_CATCH_MSG, 1);
+                if (ret_val < 0)
+                    return NULL;
+            }
+        }
+        res = PyErr_GivenExceptionMatches(v, w);
+        break;
+    default:
+        return PyObject_RichCompare(v, w, op);
+    }
+    v = res ? Py_True : Py_False;
+    Py_INCREF(v);
+    return v;
+}
+
 struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     Register& r1 = registers[op.reg[0]];
@@ -598,20 +742,40 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
     PyObject* r3 = NULL;
     if (r1.get_type() == IntType && r2.get_type() == IntType) {
       r3 = IntegerOps::compare(r1.as_int(), r2.as_int(), op.arg);
-    } else {
+    } /* else {
       r3 = FloatOps::compare(r1.as_obj(), r2.as_obj(), op.arg);
     }
-
+    */
     if (r3 != NULL) {
       Py_INCREF(r3);
     } else {
-      r3 = PyObject_RichCompare(r1.as_obj(), r2.as_obj(), op.arg);
+      // r3 = PyObject_RichCompare(r1.as_obj(), r2.as_obj(), op.arg);
+      r3 = cmp_outcome(op.arg, r1.as_obj(), r2.as_obj());
     }
     if (!r3) {
       throw RException();
     }
 
     STORE_REG(op.reg[2], r3);
+  }
+};
+
+struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* dict = LOAD_OBJ(op.reg[0]);
+    CHECK_VALID(dict);
+
+    PyObject* elt = LOAD_OBJ(op.reg[1]);
+    CHECK_VALID(elt);
+
+    int result_code = PyDict_Contains(dict, elt);
+    if (result_code == -1) {
+      result_code = PySequence_Contains(dict, elt);
+      if (result_code == -1) {
+        throw RException();
+      }
+    }
+    STORE_REG(op.reg[2], result_code ? Py_True : Py_False)
   }
 };
 
@@ -725,6 +889,8 @@ struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   }
 };
 
+
+
 struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* key = LOAD_OBJ(op.reg[0]);
@@ -734,6 +900,43 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
     CHECK_VALID(list);
     CHECK_VALID(value);
     if (PyObject_SetItem(list, key, value) != 0) {
+      throw RException();
+    }
+  }
+};
+
+
+struct StoreSubscrList: public RegOpImpl<RegOp<3>, StoreSubscrList> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* list = LOAD_OBJ(op.reg[1]);
+    PyObject* value = LOAD_OBJ(op.reg[2]);
+    CHECK_VALID(list);
+    CHECK_VALID(value);
+    Register& idx_reg = registers[op.reg[0]];
+    if (idx_reg.get_type() != IntType) {
+      PyObject* idx_obj = LOAD_OBJ(op.reg[0]);
+      CHECK_VALID(idx_obj);
+      if (PyObject_SetItem(list, idx_obj, value) != 0) {
+        throw RException();
+      }
+    } else {
+      Py_ssize_t idx = idx_reg.as_int();
+      if (PyList_SetItem(list, idx, value) != 0) {
+          throw RException();
+      }
+    }
+  }
+};
+
+struct StoreSubscrDict: public RegOpImpl<RegOp<3>, StoreSubscrDict> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* key = LOAD_OBJ(op.reg[0]);
+    PyObject* list = LOAD_OBJ(op.reg[1]);
+    PyObject* value = LOAD_OBJ(op.reg[2]);
+    CHECK_VALID(key);
+    CHECK_VALID(list);
+    CHECK_VALID(value);
+    if (PyDict_SetItem(list, key, value) != 0) {
       throw RException();
     }
   }
@@ -1597,6 +1800,11 @@ static const void* labels[] = {
   OFFSET(INCREF),
   OFFSET(DECREF),
   OFFSET(CONST_INDEX),
+  OFFSET(BINARY_SUBSCR_LIST),
+  OFFSET(BINARY_SUBSCR_DICT),
+  OFFSET(DICT_CONTAINS),
+  OFFSET(STORE_SUBSCR_LIST),
+  OFFSET(STORE_SUBSCR_DICT),
 }
 ;
 
@@ -1628,8 +1836,15 @@ BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
 BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
 
 DEFINE_OP(BINARY_POWER, BinaryPower);
-DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
 DEFINE_OP(BINARY_MODULO, BinaryModulo);
+
+DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
+DEFINE_OP(BINARY_SUBSCR_LIST, BinarySubscrList);
+DEFINE_OP(BINARY_SUBSCR_DICT, BinarySubscrDict);
+DEFINE_OP(CONST_INDEX, ConstIndex);
+
+
+DEFINE_OP(DICT_CONTAINS, DictContains);
 
 BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul, true);
 BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div, true);
@@ -1660,7 +1875,11 @@ DEFINE_OP(LOAD_ATTR, LoadAttr);
 
 DEFINE_OP(STORE_NAME, StoreName);
 DEFINE_OP(STORE_ATTR, StoreAttr);
+
 DEFINE_OP(STORE_SUBSCR, StoreSubscr);
+DEFINE_OP(STORE_SUBSCR_LIST, StoreSubscrList);
+DEFINE_OP(STORE_SUBSCR_DICT, StoreSubscrDict);
+
 DEFINE_OP(STORE_FAST, StoreFast);
 DEFINE_OP(STORE_SLICE, StoreSlice);
 
@@ -1672,7 +1891,6 @@ DEFINE_OP(LOAD_CLOSURE, LoadClosure);
 DEFINE_OP(LOAD_DEREF, LoadDeref);
 DEFINE_OP(STORE_DEREF, StoreDeref);
 
-DEFINE_OP(CONST_INDEX, ConstIndex);
 
 DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);

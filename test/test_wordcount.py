@@ -5,6 +5,10 @@ def wc(s):
   get = counts.get
   for line in s.splitlines():
     for word in line.split(" "):
+      #if word in counts:
+      #  counts[word] += 1
+      #else:
+      #  counts[word] = 1
       counts[word] = get(word, 0) + 1 
   return counts 
 

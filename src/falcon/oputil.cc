@@ -121,9 +121,30 @@ const char* OpUtil::name(int opcode) {
     case EXTENDED_ARG: return "EXTENDED_ARG";
     case SET_ADD: return "SET_ADD";
     case MAP_ADD: return "MAP_ADD";
+
     case DECREF: return "DECREF";
     case INCREF: return "INCREF";
     case CONST_INDEX: return "CONST_INDEX";
+    case BINARY_SUBSCR_LIST : return "BINARY_SUBSCR_LIST";
+    case BINARY_SUBSCR_DICT : return "BINARY_SUBSCR_DICT";
+    case DICT_CONTAINS : return "DICT_CONTAINS";
+    case STORE_SUBSCR_LIST : return "STORE_SUBSCR_LIST";
+    case STORE_SUBSCR_DICT : return "STORE_SUBSCR_DICT";
+
+    case BINARY_ADD_INT_LEFT : return "BINARY_ADD_INT_LEFT";
+    case BINARY_ADD_INT_RIGHT : return "BINARY_ADD_INT_RIGHT";
+    case BINARY_MULTIPLY_INT_LEFT : return "BINARY_MULTIPLY_INT_LEFT";
+    case BINARY_MULTIPLY_INT_RIGHT : return "BINARY_MULTIPLY_INT_RIGHT";
+    case BINARY_LSHIFT_INT_LEFT  : return "BINARY_LSHIFT_INT_LEFT";
+    case BINARY_LSHIFT_INT_RIGHT : return "BINARY_LSHIFT_INT_RIGHT";
+    case BINARY_RSHIFT_INT_LEFT : return "BINARY_RSHIFT_INT_LEFT";
+    case BINARY_RSHIFT_INT_RIGHT : return "BINARY_RSHIFT_INT_RIGHT";
+    case BINARY_OR_INT_LEFT : return "BINARY_OR_INT_LEFT";
+    case BINARY_OR_INT_RIGHT : return "BINARY_OR_INT_RIGHT";
+    case BINARY_AND_INT_LEFT : return "BINARY_AND_INT_LEFT";
+    case BINARY_AND_INT_RIGHT : return "BINARY_AND_INT_RIGHT";
+    case BINARY_XOR_INT_LEFT : return "BINARY_XOR_INT_RIGHT";
+    case BINARY_XOR_INT_RIGHT: return "BINARY_XOR_INT_RIGHT";
   }
 
   return "BAD_OP";

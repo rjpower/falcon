@@ -9,6 +9,28 @@
 #define INCREF 148
 #define DECREF 149
 #define CONST_INDEX 150
+#define BINARY_SUBSCR_LIST 151
+#define BINARY_SUBSCR_DICT 152
+#define DICT_CONTAINS 153
+#define STORE_SUBSCR_LIST 154
+#define STORE_SUBSCR_DICT 155
+
+
+/* not yet implemented, not clear if they will ever be */
+#define BINARY_ADD_INT_LEFT 156
+#define BINARY_ADD_INT_RIGHT 157
+#define BINARY_MULTIPLY_INT_LEFT 158
+#define BINARY_MULTIPLY_INT_RIGHT 159
+#define BINARY_LSHIFT_INT_LEFT 160
+#define BINARY_LSHIFT_INT_RIGHT 161
+#define BINARY_RSHIFT_INT_LEFT 162
+#define BINARY_RSHIFT_INT_RIGHT 163
+#define BINARY_OR_INT_LEFT 164
+#define BINARY_OR_INT_RIGHT 165
+#define BINARY_AND_INT_LEFT 166
+#define BINARY_AND_INT_RIGHT 167
+#define BINARY_XOR_INT_LEFT 168
+#define BINARY_XOR_INT_RIGHT 169
 
 struct OpUtil {
   static const char* name(int opcode);

@@ -1412,6 +1412,7 @@ protected:
 
   void update_type(int r, StaticType t) {
     StaticType old_t = this->get_type(r);
+    printf("update type of %d to %d (old_type = %d)\n", r, t, old_t);
     if (old_t == UNKNOWN) {
       this->types[r] = t;
     } else if (old_t != t && old_t != OBJ) {
@@ -1427,7 +1428,9 @@ public:
       BasicBlock* bb = fn->bbs[bb_idx];
       size_t n_ops = bb->code.size();
       for (size_t op_idx = 0; op_idx < n_ops; ++op_idx) {
+
         CompilerOp* op = bb->code[op_idx];
+        printf("%s\n", op->str().c_str());
         size_t n_inputs = op->num_inputs();
         if (op->has_dest) {
           int dest = op->regs[n_inputs];
@@ -1442,9 +1445,21 @@ public:
           case BUILD_MAP:
             t = DICT;
             break;
-          case LOAD_FAST:
-            // todo: constant integers and floats
-            break;
+          case STORE_FAST:
+          case LOAD_FAST: {
+            int src_reg = op->regs[0];
+            /* todo: access the constants to figure out their type
+            if (src_reg < fn->num_consts) {
+
+            }
+            */
+            /* another todo: if the RHS is created in this basic block then we can safely */
+            //t = this->get_type(src_reg);
+
+            /* else: */
+            t = OBJ;
+          }
+          break;
           }
           this->update_type(dest, t);
         }
@@ -1465,6 +1480,7 @@ private:
   PyObject* names;
 public:
   void visit_op(CompilerOp* op) {
+
     switch (op->code) {
     case LOAD_ATTR: {
 
@@ -1497,7 +1513,47 @@ public:
         }
       }
     }
-      break;
+    break;
+    case BINARY_SUBSCR: {
+      int container = op->regs[0];
+      auto iter = this->types.find(container);
+      if (iter != this->types.end()) {
+        StaticType t = iter->second;
+        if (t == LIST) {
+          op->code = BINARY_SUBSCR_LIST;
+
+        } else if (t == DICT) {
+          op->code = BINARY_SUBSCR_DICT;
+        }
+      }
+    }
+    break;
+    case STORE_SUBSCR: {
+      int container = op->regs[1];
+      auto iter = this->types.find(container);
+      if (iter != this->types.end()) {
+        StaticType t = iter->second;
+        if (t == LIST) {
+          op->code = STORE_SUBSCR_LIST;
+        } else if (t == DICT) {
+          op->code = STORE_SUBSCR_DICT;
+        }
+      }
+    }
+    break;
+    case COMPARE_OP: {
+      // specialize '__contains__'
+      if (op->arg == 6) {
+        auto iter = this->types.find(op->regs[0]);
+        if (iter != this->types.end()) {
+          if (iter->second == DICT) {
+            op->code = DICT_CONTAINS;
+          }
+        }
+      }
+    }
+    break;
+
     }
   }
 
@@ -1513,16 +1569,18 @@ void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
 
+
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);
-    if (!getenv("DISABLE_TYPE_INFERENCE")) LocalTypeSpecialization()(fn);
   }
 
   DeadCodeElim()(fn);
 
-  if (!getenv("DISABLE_OPT") && !getenv("DISABLE_COMPACT")) {
-    CompactRegisters()(fn);
+
+  if (!getenv("DISABLE_OPT")) {
+    if (!getenv("DISABLE_SPECIALIZATION")) LocalTypeSpecialization()(fn);
+    if (!getenv("DISABLE_COMPACT")) CompactRegisters()(fn);
   }
 
   RenameRegisters()(fn);

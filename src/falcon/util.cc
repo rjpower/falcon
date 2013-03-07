@@ -68,10 +68,11 @@ double get_processor_frequency() {
 }
 
 void logAtLevel(LogLevel level, const char* path, int line, const char* fmt, ...) {
-  char buffer[4096];
+  static const int buffer_size = 100000;
+  static char buffer[buffer_size];
   va_list args;
   va_start(args, fmt);
-  vsnprintf(buffer, 4095, fmt, args);
+  vsnprintf(buffer, buffer_size - 1, fmt, args);
   va_end(args);
 
   char file[256];
