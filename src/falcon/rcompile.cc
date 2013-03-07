@@ -1513,7 +1513,7 @@ public:
     switch (op->code) {
     case LOAD_ATTR: {
       PyObject* attr_name_obj = PyTuple_GetItem(this->names, op->arg);
-      Py_INCREF(attr_name_obj);
+
       char* attr_name = PyString_AsString(attr_name_obj);
 
       if (strcmp(attr_name, "append") == 0) {
