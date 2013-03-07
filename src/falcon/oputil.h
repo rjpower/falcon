@@ -20,6 +20,13 @@
 struct OpUtil {
   static const char* name(int opcode);
 
+  static bool has_hint(int opcode) {
+    if (opcode == LOAD_ATTR) {
+      return true;
+    }
+    return false;
+  }
+
   static bool is_varargs(int opcode) {
     static std::set<int> r;
     if (r.empty()) {
