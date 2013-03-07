@@ -124,6 +124,7 @@ struct RCompilerUtil {
       }
       op->hint_pos = kInvalidHint;
     }
+
   }
 };
 

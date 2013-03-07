@@ -56,7 +56,7 @@ class TimedTest(unittest.TestCase):
       else:
         f_time = 0
       
-      logging.info('%s : Python: %.3f, Falcon: %.3f' % (function_name(function), py_time, f_time))
+      logging.info('PERFORMANCE %s : Python %.3f, Falcon: %.3f' % (function_name(function), py_time, f_time))
       if falcon:
           if isinstance(py_result, list):
               # long lists seem to take a bizarrely long time for assertEqual

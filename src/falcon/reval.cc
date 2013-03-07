@@ -1373,7 +1373,7 @@ struct BuildSlice: public RegOpImpl<RegOp<4>, BuildSlice> {
 };
 
 struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
+  static void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
     PyObject* methods = LOAD_OBJ(op.reg[0]);
     PyObject* bases = LOAD_OBJ(op.reg[1]);
     PyObject* name = LOAD_OBJ(op.reg[2]);
@@ -1438,7 +1438,7 @@ struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
     };
 
 struct PrintItem: public RegOpImpl<RegOp<2>, PrintItem> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
+  static void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
     PyObject* v = LOAD_OBJ(op.reg[0]);
     PyObject* w = op.reg[1] != kInvalidRegister ? LOAD_OBJ(op.reg[1]) : PySys_GetObject((char*) "stdout");
 
@@ -1527,7 +1527,7 @@ struct BadOp {
 // Imports
 
 struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+  static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* name = PyTuple_GET_ITEM(frame->names(), op.arg) ;
     PyObject* import = PyDict_GetItemString(frame->builtins(), "__import__");
     if (import == NULL) {
@@ -1550,7 +1550,7 @@ struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
 };
 
 struct ImportStar: public RegOpImpl<RegOp<1>, ImportStar> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
+  static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
     PyObject* module = LOAD_OBJ(op.reg[0]);
     PyObject *all = PyObject_GetAttrString(module, "__all__");
     bool skip_leading_underscores = (all == NULL);
@@ -1584,7 +1584,7 @@ struct ImportStar: public RegOpImpl<RegOp<1>, ImportStar> {
 };
 
 struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
+  static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
     PyObject* name = PyTuple_GetItem(frame->names(), op.arg);
     PyObject* module = LOAD_OBJ(op.reg[0]);
     Py_XDECREF(LOAD_OBJ(op.reg[1]));

@@ -30,12 +30,11 @@
 #define GETATTR_HINTS 1
 #endif
 
-
 // This file defines the format used by the register evalulator.
 //
 // Operation types:
 //
-// There are 3 basic operatoin types: branch, register and varargs.
+// There are 3 basic operation types: branch, register and varargs.
 //
 // The register form is used by most operations and is templatized
 // on the number of registers used by the operation.
@@ -55,6 +54,7 @@
 #define f_inline __attribute__((noinline))
 #define n_inline __attribute__((noinline))
 #else
+//#define f_inline inline
 //#define f_inline __attribute__((noinline))
 #define f_inline __attribute__((always_inline))
 #define n_inline __attribute__((noinline))
@@ -203,8 +203,8 @@ typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
 typedef uint8_t HintOffset;
-static const uint16_t kMaxHints = 31;
-static const uint16_t kInvalidHint = kMaxHints;
+static const uint8_t kMaxHints = 31;
+static const uint8_t kInvalidHint = kMaxHints;
 
 static inline size_t hint_offset(void* obj, void* name) {
   return ((size_t(obj) ^ size_t(name)) >> 4) % kMaxHints;
@@ -268,7 +268,7 @@ struct BranchOp {
   }
 };
 
-template<int num_registers>
+template<int kNumRegisters>
 struct RegOp {
   uint8_t code;
   uint8_t arg;
@@ -277,7 +277,7 @@ struct RegOp {
   // at runtime.  It is default initialized to kInvalidHint;
   HintOffset hint_pos;
 
-  RegisterOffset reg[num_registers];
+  RegisterOffset reg[kNumRegisters];
 
   std::string str(Register* registers = NULL) const;
 
