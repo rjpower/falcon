@@ -25,12 +25,12 @@ VPATH := $(SRCDIR)/falcon
 CPPFLAGS := -I$(SRCDIR) -I$(TOPDIR)/include/python2.7 -I$(SRCDIR)/sparsehash-2.0.2/src
 # -fno-gcse -fno-crossjumping 
 
-CFLAGS := $(CPPFLAGS) -pthread -fno-strict-aliasing -fwrapv -Wall -fno-omit-frame-pointer -fPIC -ggdb2 -std=c++0x -funroll-loops
+CFLAGS := $(CPPFLAGS) -Wall -pthread -fno-strict-aliasing -fwrapv -Wall -fPIC -ggdb2 -std=c++0x -funroll-loops
 CXXFLAGS := $(CFLAGS) 
 INCLUDES := $(shell find $(SRCDIR) -name '*.h') ../../Makefile
 
 opt : COPT := -O3 -funroll-loops
-dbg : COPT := -DFALCON_DEBUG=1 -O0
+dbg : COPT := -DFALCON_DEBUG=1 -O0 -fno-omit-frame-pointer
 
 opt: _falcon_core.so
 dbg: _falcon_core.so

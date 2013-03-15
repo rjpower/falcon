@@ -305,7 +305,7 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 
   ObjVector v_args;
   v_args.resize(PyTuple_GET_SIZE(args) );
-  for (int i = 0; i < v_args.size(); ++i) {
+  for (size_t i = 0; i < v_args.size(); ++i) {
     v_args[i].store(PyTuple_GET_ITEM(args, i) );
   }
 
@@ -1205,7 +1205,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       try {
         code = eval->compile(fn);
       } catch (RException& e) {
-//        Log_Info("Failed to compile function, executing using ceval: %s", obj_to_str(e.value));
+        Log_Info("Failed to compile function, executing using ceval: %s", obj_to_str(e.value));
         code = NULL;
       }
     }

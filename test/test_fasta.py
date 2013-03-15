@@ -48,9 +48,10 @@ def repeatFasta(src, n):
     s = src + src + src[:n % r]
     for j in xrange(n // width):
         i = j * width % r
-        print s[i:i + width]
+        #print s[i:i + width]
     if n % width:
-        print s[-(n % width):]
+        pass
+        #print s[-(n % width):]
 
 def randomFasta(table, n):
     width = 60
@@ -60,19 +61,15 @@ def randomFasta(table, n):
     jn = ''.join
     probs, chars = makeCumulative(table)
     for j in xrange(n // width):
-        print jn([chars[bb(probs, gR())] for i in r])
+      pass
+        #print jn([chars[bb(probs, gR())] for i in r])
     if n % width:
-        print jn([chars[bb(probs, gR())] for i in xrange(n % width)])
+      pass
+        #print jn([chars[bb(probs, gR())] for i in xrange(n % width)])
 
 class TestFasta(TimedTest):
   def test_three_homosapiens(self):
-    self.time_compare(randomFasta, homosapiens, 1500, repeat = 5)
-  
-  def test_two_iub(self):
-    self.time_compare(randomFasta, iub, 900, repeat = 5)
-  
-  def test_one_homosapiens(self):
-    self.time_compare(repeatFasta, alu, 600, repeat = 5)
+    self.time_compare(randomFasta, homosapiens, 150000000, repeat = 5)
     
 if __name__ == '__main__':
   unittest.main() 

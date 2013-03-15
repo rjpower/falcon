@@ -26,7 +26,7 @@ class TestQuicksort(TimedTest):
         n = 100000
         #x = [random.random() for _ in xrange(100000)] 
         x = [random.randint(0,10000000) for _ in xrange(n)]
-        self.time_compare(qs, x, repeat=20)
+        self.time_compare(qs, x, repeat=5)
 #        self.run_falcon(qs, x)
 
 if __name__ == '__main__':

@@ -173,6 +173,14 @@ public:
     }
   }
 
+  int num_ops() {
+    int total = 0;
+    for (auto bb : bbs) {
+      total += bb->code.size();
+    }
+    return total;
+  }
+
   BasicBlock* alloc_bb(int offset, RegisterStack* entry_stack);
   void remove_bb(BasicBlock* bb);
   std::string str();

@@ -116,7 +116,7 @@ struct RCompilerUtil {
       // of each instruction.
       op->label = 0;
     } else {
-      Reg_AssertLe(src->regs.size(), 4);
+      Reg_AssertLe(src->regs.size(), 4ul);
       RegOp<0>* op = (RegOp<0>*) dst;
       for (size_t i = 0; i < src->regs.size(); ++i) {
 //        op->reg.set(i, src->regs[i]);
@@ -1425,7 +1425,7 @@ public:
   void infer(CompilerState* fn) {
 
     // initialize the constants to their types
-    for (size_t i = 0; i < fn->num_consts; ++i) {
+    for (int i = 0; i < fn->num_consts; ++i) {
       PyObject* obj = PyTuple_GetItem(fn->consts_tuple, i);
 
       if (PyInt_CheckExact(obj)) {
@@ -1475,7 +1475,7 @@ public:
               t = OBJ;
             }
           }
-          break;
+            break;
           }
           this->update_type(dest, t);
         }
@@ -1537,7 +1537,7 @@ public:
         op->regs.push_back(item);
       }
     }
-    break;
+      break;
     case BINARY_SUBSCR: {
       StaticType t = this->get_type(op->regs[0]);
       if (t == LIST) {
@@ -1546,7 +1546,7 @@ public:
         op->code = BINARY_SUBSCR_DICT;
       }
     }
-    break;
+      break;
     case STORE_SUBSCR: {
       StaticType t  = this->get_type(op->regs[1]);
       if (t == LIST) {
@@ -1555,14 +1555,14 @@ public:
         op->code = STORE_SUBSCR_DICT;
       }
     }
-    break;
+      break;
     case COMPARE_OP: {
       // specialize '__contains__'
       if (op->arg == 6 && this->get_type(op->regs[0]) == DICT) {
         op->code = DICT_CONTAINS;
       }
     }
-    break;
+      break;
 
     }
   }
@@ -1580,14 +1580,12 @@ void optimize(CompilerState* fn) {
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
 
-
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);
   }
 
   DeadCodeElim()(fn);
-
 
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_SPECIALIZATION")) LocalTypeSpecialization()(fn);
@@ -1692,7 +1690,6 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   }
 
   optimize(&state);
-
   RegisterCode *regcode = new RegisterCode;
 
   lower_register_code(&state, &regcode->instructions);
@@ -1711,6 +1708,9 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   regcode->num_freevars = PyTuple_GET_SIZE(code->co_freevars);
   regcode->num_cellvars = PyTuple_GET_SIZE(code->co_cellvars);
   regcode->num_cells = regcode->num_freevars + regcode->num_cellvars;
+
+  Log_Info("COMPILED %s, %d registers, %d operations.",
+           PyEval_GetFuncName(func), regcode->num_registers, state.num_ops());
 
   return regcode;
 }
