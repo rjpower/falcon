@@ -133,7 +133,6 @@ public:
   int num_consts;
   int num_locals;
 
-
   PyCodeObject* py_code;
   PyObject* consts_tuple;
   unsigned char* py_codestr;

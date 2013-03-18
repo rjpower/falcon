@@ -29,6 +29,16 @@
 #define CODESIZE(op)  (HAS_ARG(op) ? 3 : 1)
 #define COMPILE_LOG(...) do { if (getenv("COMPILE_LOG")) { Log_Info(__VA_ARGS__); } } while (0)
 
+static int num_python_ops(const char* code, int len) {
+  int pos = 0;
+  int count = 0;
+  while (pos < len) {
+    pos += CODESIZE(code[pos]);
+    ++count;
+  }
+  return count;
+}
+
 using namespace std;
 
 void RegisterStack::push_frame(int target) {
@@ -1709,8 +1719,9 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   regcode->num_cellvars = PyTuple_GET_SIZE(code->co_cellvars);
   regcode->num_cells = regcode->num_freevars + regcode->num_cellvars;
 
-  Log_Info("COMPILED %s, %d registers, %d operations.",
-           PyEval_GetFuncName(func), regcode->num_registers, state.num_ops());
+  Log_Info("COMPILED %s, %d registers, %d operations, %d stack ops.",
+           PyEval_GetFuncName(func), regcode->num_registers, state.num_ops(), 
+           num_python_ops(PyString_AsString(code->co_code), PyString_GET_SIZE(code->co_code)));
 
   return regcode;
 }

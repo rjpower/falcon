@@ -15,7 +15,7 @@ tests = [
   'wordcount',
   ]
 
-print 'test,opt,op_count,reg_count,python_time,falcon_time'
+print 'test,opt,op_count,stack_count,reg_count,python_time,falcon_time'
 for t in tests:
   for opt in range(2):
     if opt == 0: prefix = 'DISABLE_OPT=1'
@@ -28,7 +28,7 @@ for t in tests:
     
     lines = err.split('\n')
     results = []
-    opcount = 0
+    py_opcount, opcount = 0, 0
     registers = 0
     for l in lines:
       match = re.search('.*PERFORMANCE (\w+) : Python ([0-9.]+), Falcon: ([0-9.]+)', l)
@@ -37,12 +37,13 @@ for t in tests:
         pytime = float(pytime)
         ftime = float(ftime)
         results.append((pytime, ftime))
-      match = re.search('.*COMPILED (\w+), (\d+) registers, (\d+) operations', l)
+      match = re.search('.*COMPILED (\w+), (\d+) registers, (\d+) operations, (\d+)', l)
       if match:
-        f, reg, ops = match.groups()
+        f, reg, ops, py_ops = match.groups()
+        py_opcount += int(py_ops)
         opcount += int(ops)
         registers += int(reg)
     
     for pytime, ftime in results:
-      vals = [t, opt, opcount, registers, pytime, ftime]
+      vals = [t, opt, opcount, py_opcount, registers, pytime, ftime]
       print ','.join([str(x) for x in vals])  
