@@ -369,10 +369,10 @@ struct VarArgsOpImpl {
   }
 };
 
-template<class SubType>
+template<class OpType, class SubType>
 struct BranchOpImpl {
   static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
-    BranchOp& op = *((BranchOp*) pc);
+    OpType& op = *((OpType*) pc);
     EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
     SubType::_eval(eval, frame, op, &pc, registers);
     return pc;
@@ -1262,13 +1262,13 @@ struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
   }
 };
 
-struct ForIter: public BranchOpImpl<ForIter> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc, Register* registers) {
+struct ForIter: public BranchOpImpl<BranchOp<2>, ForIter> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<2>& op, const char **pc, Register* registers) {
     CHECK_VALID(LOAD_OBJ(op.reg[0]));
     PyObject* iter = PyIter_Next(LOAD_OBJ(op.reg[0]));
     if (iter) {
       STORE_REG(op.reg[1], iter);
-      *pc += sizeof(BranchOp);
+      *pc += sizeof(BranchOp<2>);
     } else {
       *pc = frame->instructions() + op.label;
     }
@@ -1276,40 +1276,40 @@ struct ForIter: public BranchOpImpl<ForIter> {
   }
 };
 
-struct JumpIfFalseOrPop: public BranchOpImpl<JumpIfFalseOrPop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc, Register* registers) {
+struct JumpIfFalseOrPop: public BranchOpImpl<BranchOp<1>, JumpIfFalseOrPop> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc, Register* registers) {
     PyObject *r1 = LOAD_OBJ(op.reg[0]);
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
 //      EVAL_LOG("Jumping: %s -> %d", obj_to_str(r1), op.label);
         *pc = frame->instructions() + op.label;
       } else {
-        *pc += sizeof(BranchOp);
+        *pc += sizeof(BranchOp<1>);
       }
 
     }
   };
 
-struct JumpIfTrueOrPop: public BranchOpImpl<JumpIfTrueOrPop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc, Register* registers) {
+struct JumpIfTrueOrPop: public BranchOpImpl<BranchOp<1>, JumpIfTrueOrPop> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc, Register* registers) {
     PyObject* r1 = LOAD_OBJ(op.reg[0]);
     if (r1 == Py_True || (PyObject_IsTrue(r1) == 1)) {
       *pc = frame->instructions() + op.label;
     } else {
-      *pc += sizeof(BranchOp);
+      *pc += sizeof(BranchOp<1>);
     }
 
   }
 };
 
-struct JumpAbsolute: public BranchOpImpl<JumpAbsolute> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc, Register* registers) {
+struct JumpAbsolute: public BranchOpImpl<BranchOp<0>, JumpAbsolute> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0> op, const char **pc, Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
 };
 
-struct BreakLoop: public BranchOpImpl<BreakLoop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp op, const char **pc, Register* registers) {
+struct BreakLoop: public BranchOpImpl<BranchOp<0>, BreakLoop> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0> op, const char **pc, Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }

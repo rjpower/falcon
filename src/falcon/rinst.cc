@@ -33,7 +33,8 @@ std::string VarRegOp::str(Register* registers) const {
   return w.str();
 }
 
-std::string BranchOp::str(Register* registers) const {
+template<int num_registers>
+std::string BranchOp<num_registers>::str(Register* registers) const {
   StringWriter w;
   w.printf("%s (", OpUtil::name(code));
   print_register(w, registers, reg[0]);
@@ -63,3 +64,8 @@ template class RegOp<1> ;
 template class RegOp<2> ;
 template class RegOp<3> ;
 template class RegOp<4> ;
+
+
+template class BranchOp<0> ;
+template class BranchOp<1> ;
+template class BranchOp<2> ;

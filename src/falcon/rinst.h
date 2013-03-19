@@ -23,7 +23,7 @@
 #endif
 
 #ifndef PACK_INSTRUCTIONS
-#define PACK_INSTRUCTIONS 0
+#define PACK_INSTRUCTIONS 1
 #endif
 
 #ifndef GETATTR_HINTS
@@ -255,11 +255,12 @@ struct OpHeader {
   uint8_t arg;
 };
 
+template <int kNumRegisters>
 struct BranchOp {
   uint8_t code;
   uint8_t arg;
   JumpLoc label;
-  RegisterOffset reg[2];
+  RegisterOffset reg[kNumRegisters];
 
   std::string str(Register* registers = NULL) const;
 
@@ -273,9 +274,12 @@ struct RegOp {
   uint8_t code;
   uint8_t arg;
 
+
+#if GETATTR_HINTS
   // The hint field is used by certain operations to cache information
   // at runtime.  It is default initialized to kInvalidHint;
   HintOffset hint_pos;
+#endif
 
   RegisterOffset reg[kNumRegisters];
 

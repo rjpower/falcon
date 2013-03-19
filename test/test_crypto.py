@@ -381,7 +381,7 @@ from timed_test import TimedTest
 import unittest
 class TestCrypto(TimedTest):
     def test_crypto(self):
-        self.time_compare(multiple_calls, repeat=5)
+        self.time_compare(multiple_calls, repeat=1)
 
 if __name__ == '__main__':
     unittest.main()

@@ -15,7 +15,7 @@ def wc(s):
 class TestWordCount(TimedTest):
     def test_wordcount(self):
         reptext = text * 200
-        self.time_compare(wc, reptext, repeat=3)
+        self.time_compare(wc, reptext, repeat=1)
 
 text = """
  Fellow Workers,

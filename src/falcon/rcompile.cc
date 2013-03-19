@@ -33,8 +33,9 @@ static int num_python_ops(const char* code, int len) {
   int pos = 0;
   int count = 0;
   while (pos < len) {
-    pos += CODESIZE(code[pos]);
+    pos +=  CODESIZE((uint8_t) code[pos]);
     ++count;
+
   }
   return count;
 }
@@ -84,7 +85,14 @@ struct RCompilerUtil {
     if (OpUtil::is_varargs(op->code)) {
       return sizeof(VarRegOp) + sizeof(RegisterOffset) * op->regs.size();
     } else if (OpUtil::is_branch(op->code)) {
-      return sizeof(BranchOp);
+      int n_regs = op->regs.size();
+      if (n_regs == 0) {
+        return sizeof(BranchOp<0>);
+      } else if (n_regs == 1) {
+        return sizeof(BranchOp<1>);
+      } else {
+        return sizeof(BranchOp<2>);
+      }
     } else if (op->regs.size() == 0) {
       return sizeof(RegOp<0> );
     } else if (op->regs.size() == 1) {
@@ -117,14 +125,21 @@ struct RCompilerUtil {
       }
       Reg_AssertEq(op->num_registers, src->regs.size());
     } else if (OpUtil::is_branch(src->code)) {
-      BranchOp* op = (BranchOp*) dst;
-      assert(src->regs.size() < 3);
-      op->reg[0] = src->regs.size() > 0 ? src->regs[0] : kInvalidRegister;
-      op->reg[1] = src->regs.size() > 1 ? src->regs[1] : kInvalidRegister;
-
-      // Label be set after the first pass has determined the offset
-      // of each instruction.
-      op->label = 0;
+      int n_regs = src->regs.size();
+      Reg_AssertLe(n_regs, 2);
+      if (n_regs == 2) {
+        BranchOp<2>* op = (BranchOp<2>*) dst;
+        op->reg[0] = src->regs[0];
+        op->reg[1] = src->regs[1];
+        op->label = 0;
+      } else if (n_regs == 1) {
+        BranchOp<1>* op = (BranchOp<1>*) dst;
+        op->reg[0] = src->regs[0];
+        op->label = 0;
+      } else {
+        BranchOp<0>* op = (BranchOp<0>*) dst;
+        op->label = 0;
+      }
     } else {
       Reg_AssertLe(src->regs.size(), 4ul);
       RegOp<0>* op = (RegOp<0>*) dst;
@@ -132,7 +147,9 @@ struct RCompilerUtil {
 //        op->reg.set(i, src->regs[i]);
         op->reg[i] = src->regs[i];
       }
+#if GETATTR_HINTS
       op->hint_pos = kInvalidHint;
+#endif
     }
 
   }
@@ -1655,11 +1672,12 @@ void lower_register_code(CompilerState* state, std::string *out) {
                "Non-local jump from non-branch op %s", OpUtil::name(op->code));
 
     if (OpUtil::is_branch(op->code) && op->code != RETURN_VALUE) {
+
       if (bb->exits.size() == 1) {
         BasicBlock& jmp = *bb->exits[0];
-        ((BranchOp*) op)->label = jmp.reg_offset;
+        ((BranchOp<0>*) op)->label = jmp.reg_offset;
         Reg_AssertGt(jmp.reg_offset, 0);
-        Reg_AssertEq(((BranchOp*)op)->label, jmp.reg_offset);
+        Reg_AssertEq(((BranchOp<0>*)op)->label, jmp.reg_offset);
       } else {
         // One exit is the fall-through to the next block.
         BasicBlock& a = *bb->exits[0];
@@ -1670,8 +1688,8 @@ void lower_register_code(CompilerState* state, std::string *out) {
         BasicBlock& jmp = (a.idx == fallthrough.idx) ? b : a;
 //        Log_Info("%d, %d", a.idx, b.idx);
         Reg_AssertGt(jmp.reg_offset, 0);
-        ((BranchOp*) op)->label = jmp.reg_offset;
-        Reg_AssertEq(((BranchOp*)op)->label, jmp.reg_offset);
+        ((BranchOp<0>*) op)->label = jmp.reg_offset;
+        Reg_AssertEq(((BranchOp<0>*)op)->label, jmp.reg_offset);
       }
     }
   }

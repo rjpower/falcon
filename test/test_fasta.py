@@ -69,7 +69,7 @@ def randomFasta(table, n):
 
 class TestFasta(TimedTest):
   def test_three_homosapiens(self):
-    self.time_compare(randomFasta, homosapiens, 150000000, repeat = 5)
+    self.time_compare(randomFasta, homosapiens, 150000000, repeat = 1)
     
 if __name__ == '__main__':
   unittest.main() 
