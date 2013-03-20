@@ -502,15 +502,20 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
       // Load operations: push one register onto the stack.
     case LOAD_CONST: {
-      int r1 = oparg;
+      stack->push_register(oparg); 
+      /*int r1 = oparg;
       int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(LOAD_FAST, 0, r1, r2);
+      */ 
       break;
     }
     case LOAD_FAST: {
       int r1 = state->num_consts + oparg;
+      stack->push_register(r1);
+      /*
       int r2 = stack->push_register(state->num_reg++);
       bb->add_dest_op(LOAD_FAST, 0, r1, r2);
+      */ 
       break;
     }
     case LOAD_CLOSURE:

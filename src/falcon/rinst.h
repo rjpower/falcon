@@ -11,7 +11,7 @@
 // These defines enable/disable certain optimizations in the
 // evaluator:
 #ifndef USED_TYPED_REGISTERS
-#define USED_TYPED_REGISTERS 1
+#define USED_TYPED_REGISTERS 0
 #endif
 
 #ifndef STACK_ALLOC_REGISTERS
@@ -63,7 +63,7 @@
 const char* obj_to_str(PyObject* o);
 
 static const int kMaxRegisters = 2048;
-typedef uint16_t RegisterOffset;
+typedef uint8_t RegisterOffset;
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 
 static const int ObjType = 0;

@@ -16,7 +16,7 @@ tests = [
   ]
 
 print 'test,opt,op_count,stack_count,reg_count,python_time,falcon_time'
-n_repeats = 3
+n_repeats = 5
 for t in tests:
   for opt in range(2):
     py_opcount, opcount = 0, 0
