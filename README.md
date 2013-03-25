@@ -11,24 +11,25 @@ Performance improvments vary from not at all (sorry) to up to 3 times faster (ya
 
 Getting the code:
 
-> git clone github.com/rjpower/falcon
-> # optional, setup virtualenv
-> virtualenv .
-> source bin/activate
->
-> python setup.py develop
-> python test/test_count_threshold.py
+    git clone github.com/rjpower/falcon
+    
+    # optional, setup virtualenv
+    virtualenv .
+    source bin/activate
+
+    python setup.py develop
+    python test/test_count_threshold.py
 
 Using Falcon:
-
-> import falcon
-> 
-> @falcon.wrap
-> def my_slow_function()
->  ...
+    
+    import falcon
+    
+    @falcon.wrap
+    def my_slow_function()
+        ...
 
 _or_
 
-> python -m falcon my_module.py
+    python -m falcon my_module.py
 
 Try it out, and let us know what you think!
