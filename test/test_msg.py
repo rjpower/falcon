@@ -79,9 +79,8 @@ _MSG_SPECS = [
 _SPEC_LOOKUP = {}  # Filled in by _init()
 
 def assert_databyte(value):
-
-  if not (isinstance(value, int) and (0 <= value < 256)):
-    raise ValueError('data byte must be and int in range(0, 256)')
+  if not (isinstance(value, int) and (0 <= value < 128)):
+    raise ValueError('data byte must be and int in range(0, 128)')
 
 
 class Message(object):
@@ -374,7 +373,7 @@ def serialized_messages():
   
   # Import like above, or just paste this at the end of msg.py                
   a = Message(0x80, channel=0, note=60, velocity=64)
-  b = Message(0x90, channel=0, note=60, velocity=128)
+  b = Message(0x90, channel=0, note=60, velocity=126)
   c = a.copy(note=62)
   d = Message(0x92)  # Create Message by status_byte                          
   abytes = a.bytes()
