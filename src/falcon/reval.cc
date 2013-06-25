@@ -1202,7 +1202,17 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
 
     RegisterCode* code = NULL;
 
-    if (!PyCFunction_Check(fn)) {
+    /* TODO:
+     *   Actually accelerate object construction in Falcon by
+     *   first creating the raw/unitialized object and then
+     *   compiling the __init__ method of the called class.
+     *
+     *   To actually get a performance gain from this we would need
+     *   special instance dictionaries which store Falcon registers
+     *   and only lazily construct PyObject representations when asked
+     *   by other Python C API code.
+     */
+    if (!PyCFunction_Check(fn) && !PyClass_Check(fn)) {
       try {
         code = eval->compile(fn);
       } catch (RException& e) {

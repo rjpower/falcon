@@ -380,10 +380,10 @@ import timed_test
 import unittest 
 class TestMsg(timed_test.TimedTest):
   def test_init(self):
-    self.timed(_init, repeat=20)
+    self.timed(_init, repeat=2000)
 
   def test_serialized_message(self):
-    self.timed(serialized_message, repeat=20)
+    self.timed(serialized_message, repeat=2000)
 
 _init()
 if __name__ == '__main__':

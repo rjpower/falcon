@@ -71,12 +71,12 @@ class TimedTest(unittest.TestCase):
               assert py_elt == falcon_elt, "%s != %s" % (py_elt, falcon_elt)
         else:
             self.assertEqual(py_result, falcon_result)
-    f_time_mean = np.mean(f_times)
-    f_time_std = np.std(f_times)
-    py_time_mean = np.mean(py_times)
-    py_time_std = np.std(py_times)
-    logging.info('PERFORMANCE %s (n = %d): Python %.3f +/- %.3f, Falcon: %.3f +/- %.3f' % \
-            (function_name(function), repeat, py_time_mean, py_time_std, f_time_mean, f_time_std))
+    f_time_sum = np.sum(f_times)
+    #f_time_std = np.std(f_times)
+    py_time_sum = np.sum(py_times)
+    #py_time_std = np.std(py_times)
+    logging.info('PERFORMANCE %s (n = %d): Python %.3f, Falcon: %.3f' % \
+            (function_name(function), repeat, py_time_sum, f_time_sum))
 
 # decorator for quickly creating simple test functions
 def simple_test(f):
