@@ -4,7 +4,7 @@ Falcon
 CPython, made faster.
 
 Falcon is an extension module for Python which implements a optimized, register machine based interpreter,
-inside of your interpreter.  You specify which functions you want Falcon to wrap (or you entire module), and
+inside of your interpreter.  You specify which functions you want Falcon to wrap (or your entire module), and
 Falcon takes over execution from there.  
 
 Performance improvements vary from not at all (sorry) to up to 3 times faster (yay!).
