@@ -4,7 +4,7 @@ import random
 import sys
 import time
 import unittest
-
+import numpy as np 
 logging.basicConfig(
     format='%(asctime)s %(filename)s:%(funcName)s %(message)s',
     level=logging.INFO, 
@@ -41,37 +41,42 @@ class TimedTest(unittest.TestCase):
       frame = evaluator.frame_from_pyfunc(function, args, None)
       if not frame:
         raise Exception('Failed to compile frame.')
-    
+   
+    py_times = []
+    f_times= []
     for i in range(repeat):
       random.seed(10)
       st = time.time()
       py_result = function(*args)
-      py_time = time.time() - st
+      py_times.append(time.time() - st)
      
       if falcon:
         random.seed(10)
         st = time.time()
         falcon_result = evaluator.eval(frame).as_obj()
-        f_time = time.time() - st
+        f_times.append(time.time() - st)
       else:
         f_time = 0
       
-      logging.info('PERFORMANCE %s : Python %.3f, Falcon: %.3f' % (function_name(function), py_time, f_time))
       if falcon:
-          if isinstance(py_result, list):
-              # long lists seem to take a bizarrely long time for assertEqual
-              # so I added a special case here 
-              assert isinstance(falcon_result, list), \
-                "Expected list but got %s" % type(falcon_result)
-              assert len(py_result) == len(falcon_result), \
-                "Expected list of length %d but got list of %d" % \
-                (len(py_result), len(falcon_result))
-              for py_elt, falcon_elt in zip(py_result, falcon_result):
-                assert py_elt == falcon_elt, "%s != %s" % (py_elt, falcon_elt)
-          else:
-              self.assertEqual(py_result, falcon_result)
-
-
+        if isinstance(py_result, list):
+            # long lists seem to take a bizarrely long time for assertEqual
+            # so I added a special case here 
+            assert isinstance(falcon_result, list), \
+              "Expected list but got %s" % type(falcon_result)
+            assert len(py_result) == len(falcon_result), \
+              "Expected list of length %d but got list of %d" % \
+              (len(py_result), len(falcon_result))
+            for py_elt, falcon_elt in zip(py_result, falcon_result):
+              assert py_elt == falcon_elt, "%s != %s" % (py_elt, falcon_elt)
+        else:
+            self.assertEqual(py_result, falcon_result)
+    f_time_mean = np.mean(f_times)
+    f_time_std = np.std(f_times)
+    py_time_mean = np.mean(py_times)
+    py_time_std = np.std(py_times)
+    logging.info('PERFORMANCE %s (n = %d): Python %.3f +/- %.3f, Falcon: %.3f +/- %.3f' % \
+            (function_name(function), repeat, py_time_mean, py_time_std, f_time_mean, f_time_std))
 
 # decorator for quickly creating simple test functions
 def simple_test(f):

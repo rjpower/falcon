@@ -62,7 +62,7 @@
 
 const char* obj_to_str(PyObject* o);
 
-static const int kMaxRegisters = 2048;
+static const int kMaxRegisters = 256;
 typedef uint8_t RegisterOffset;
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 
@@ -98,6 +98,10 @@ struct Register {
 //      Log_Info("Coerced: %p %d", thiss, objval->ob_refcnt);
       return objval;
     }
+  }
+
+  f_inline void reset() {
+   objval = (PyObject*) NULL;
   }
 
   f_inline int get_type() const {
@@ -138,7 +142,6 @@ struct Register {
   }
 
   f_inline void store(PyObject* obj) {
-//    Log_Info("store: %p : %p", this, obj);
     if (obj == NULL || !PyInt_CheckExact(obj)) {
       // Type flag is implicitly set to zero as a result of pointer alignment.
       objval = obj;
@@ -181,6 +184,9 @@ struct Register {
     Py_INCREF(v);
   }
 
+  f_inline void reset() {
+    v = (PyObject*) NULL;
+  }
   f_inline void store(PyObject* obj) {
     v = obj;
   }
@@ -203,7 +209,7 @@ typedef uint16_t JumpLoc;
 typedef void* JumpAddr;
 
 typedef uint8_t HintOffset;
-static const uint8_t kMaxHints = 31;
+static const uint8_t kMaxHints = 223;
 static const uint8_t kInvalidHint = kMaxHints;
 
 static inline size_t hint_offset(void* obj, void* name) {

@@ -795,8 +795,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       }
       break;
     }
-//        case SETUP_EXCEPT:
-//        case SETUP_FINALLY:
     case SETUP_LOOP: {
       stack->push_frame(offset + CODESIZE(state->py_codestr[offset]) + oparg);
       break;
@@ -903,6 +901,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_op(opcode, 0, r1);
       return entry_point;
     }
+    case SETUP_EXCEPT:		       
+    case SETUP_FINALLY:
     case END_FINALLY:
     case YIELD_VALUE:
     default:

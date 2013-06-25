@@ -12,11 +12,11 @@ from setuptools import setup, Extension
 system, node, release, version, machine, processor = platform.uname()
 
 setup(
-  name='peregrine-falcon',
-  version='0.01',
+  name='falcon',
+  version='0.02',
   maintainer='Russell Power',
   maintainer_email='russell.power@gmail.com',
-  url='http://github.com/rjpower/peregrine-falcon',
+  url='http://github.com/rjpower/falcon',
 
   classifiers=[
     'Development Status :: 4 - Beta',

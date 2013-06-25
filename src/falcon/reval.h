@@ -113,7 +113,6 @@ public:
 
   const char* instructions_;
 
-  size_t current_hint;
 
   f_inline const char* instructions() {
     return instructions_;

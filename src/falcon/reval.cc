@@ -99,7 +99,7 @@ struct PyObjHelper {
 RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector& args, const ObjVector& kw) :
     code(rcode) {
   instructions_ = code->instructions.data();
-  current_hint = -1;
+
 
   if (rcode->function) {
     globals_ = PyFunction_GetGlobals(rcode->function);
@@ -209,8 +209,9 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
   Reg_AssertLt(num_registers, kMaxRegisters);
   for (register int i = offset; i < num_registers; ++i) {
-    registers[i].store((PyObject*) NULL);
+    registers[i].reset();
   }
+
 }
 
 RegisterFrame::~RegisterFrame() {
@@ -1302,14 +1303,14 @@ struct JumpIfTrueOrPop: public BranchOpImpl<BranchOp<1>, JumpIfTrueOrPop> {
 };
 
 struct JumpAbsolute: public BranchOpImpl<BranchOp<0>, JumpAbsolute> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0> op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
 };
 
 struct BreakLoop: public BranchOpImpl<BranchOp<0>, BreakLoop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0> op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
