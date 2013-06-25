@@ -79,11 +79,9 @@ _MSG_SPECS = [
 _SPEC_LOOKUP = {}  # Filled in by _init()
 
 def assert_databyte(value):
-    """
-    Raise
-    """
-    if not (isinstance(value, int) and (0 <= value < 128)):
-        raise ValueError('data byte must be and int in range(0, 128)')
+
+  if not (isinstance(value, int) and (0 <= value < 256)):
+    raise ValueError('data byte must be and int in range(0, 256)')
 
 
 class Message(object):
@@ -372,9 +370,18 @@ def _init():
         _SPEC_LOOKUP[spec.type] = spec
 
 
-def serialized_message(byte = 0xa0):
-  m = Message(byte)
-  return m.bytes()
+def serialized_messages():
+  
+  # Import like above, or just paste this at the end of msg.py                
+  a = Message(0x80, channel=0, note=60, velocity=64)
+  b = Message(0x90, channel=0, note=60, velocity=128)
+  c = a.copy(note=62)
+  d = Message(0x92)  # Create Message by status_byte                          
+  abytes = a.bytes()
+  bbytes = b.bytes()
+  cbytes = c.bytes()
+  return abytes + bbytes + cbytes + d.bytes()
+
 
 import timed_test 
 import unittest 
@@ -383,9 +390,9 @@ class TestMsg(timed_test.TimedTest):
     self.timed(_init, repeat=2000)
 
   def test_serialized_message(self):
-    self.timed(serialized_message, repeat=2000)
+    self.timed(serialized_messages, repeat=2000)
 
-_init()
+
 if __name__ == '__main__':
   unittest.main()
 

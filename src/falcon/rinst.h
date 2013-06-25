@@ -258,13 +258,13 @@ struct RegisterCode {
 
 struct OpHeader {
   uint8_t code;
-  uint8_t arg;
+  uint16_t arg;
 };
 
 template <int kNumRegisters>
 struct BranchOp {
   uint8_t code;
-  uint8_t arg;
+  uint16_t arg;
   JumpLoc label;
   RegisterOffset reg[kNumRegisters];
 
@@ -278,7 +278,7 @@ struct BranchOp {
 template<int kNumRegisters>
 struct RegOp {
   uint8_t code;
-  uint8_t arg;
+  uint16_t arg;
 
 
 #if GETATTR_HINTS
@@ -300,7 +300,10 @@ struct RegOp {
 // of the structure.
 struct VarRegOp {
   uint8_t code;
-  uint8_t arg;
+  // arg has to be larger than uint8_t because
+  // Python uses a weird encoding for keyword arg
+  // function calls
+  uint16_t arg;
   uint8_t num_registers;
   RegisterOffset reg[0];
 

@@ -1665,9 +1665,13 @@ void lower_register_code(CompilerState* state, std::string *out) {
 
       Reg_AssertEq(op->code, bb->code[j]->code);
       if (OpUtil::has_arg(op->code)) {
-        Reg_AssertEq(op->arg, bb->code[j]->arg);
+        Reg_Assert(op->arg == bb->code[j]->arg,
+                   "Malformed bytecode arg %d for %s",
+                   bb->code[j]->arg,
+                   OpUtil::name(op->code));
       } else {
-        Reg_Assert(op->arg == 0 || OpUtil::is_branch(op->code), "Argument to non-argument op: %s, %d",
+        Reg_Assert(op->arg == 0 || OpUtil::is_branch(op->code),
+                   "Argument to non-argument op: %s, %d",
                    OpUtil::name(op->code), op->arg);
       }
       pos += RCompilerUtil::op_size(bb->code[j]);
