@@ -9,7 +9,7 @@ Falcon takes over execution from there.
 
 Performance improvements vary from not at all (sorry) to up to 3 times faster (yay!).
 
-Getting the code:
+### Getting the code:
 
     git clone github.com/rjpower/falcon
     
@@ -20,7 +20,7 @@ Getting the code:
     python setup.py develop
     python test/test_count_threshold.py
 
-Using Falcon:
+### Using Falcon:
     
     import falcon
     
@@ -35,7 +35,7 @@ _or_
 Try it out, and let us know what you think!
 
 
-## Questions
+### Questions
 
 **What is Falcon and how is it different from CPython?**
 
@@ -48,10 +48,10 @@ can yield significant speed improvements on arithmetic-heavy code.
 
 **How is Falcon different from PyPy?**
 
-PyPy is a tracing compiler, whereas Falcon is just an efficient interpreter implementation. PyPy might make 
-The main motivation for Falcon is that an approach like PyPy breaks extension modules written using the C API, 
-whereas Falcon is an attempt to see how fast you can get Python while maintaining a PyObject representation 
-(which extension modules depend on). 
+PyPy is a tracing compiler, whereas Falcon is just an efficient interpreter implementation. 
+PyPy might speed up your code by several orders of magnitude but it will also choke on any extension code
+which depends on the Python C API. Falcon, on the other hand, aims only for modest performance gains but preserves
+the PyObject data representation necessary to avoid breaking extension modules. 
 
 **Does Falcon support all of Python?** 
 
