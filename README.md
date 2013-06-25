@@ -53,4 +53,9 @@ The main motivation for Falcon is that an approach like PyPy breaks extension mo
 whereas Falcon is an attempt to see how fast you can get Python while maintaining a PyObject representation 
 (which extension modules depend on). 
 
+**Does Falcon support all of Python?** 
 
+Not yet! Lots of constructs (like catching exceptions, constructing objects, etc...) aren't implemented in the Falcon virtual machine.
+However, this doesn't mean that programs which use these constructs won't run. Any missing functionality is routed through the Python C API, 
+foregoing any potential performance benefit you might have gotten from Falcon. So, though Falcon isn't a complete Python implementation, 
+it should still run all of your code. If you try Falcon and it crashes on some program then you've encountered a bug and should let us know. 
