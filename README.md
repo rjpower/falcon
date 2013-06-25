@@ -38,6 +38,7 @@ Try it out, and let us know what you think!
 ## Questions
 
 **What is Falcon and how is it different from CPython?**
+
 The usual Python implementation (called CPython) compiles Python syntax to a stack bytecode. 
 Falcon translates CPython's stack-based representation to a 
 [register-based virtual machine](http://stackoverflow.com/questions/11120343/advantages-of-stack-based-bytecodes-or-infinite-register-machines). 
@@ -46,6 +47,7 @@ Falcon also stores integers directly in registers (without construct PyInt objec
 can yield significant speed improvements on arithmetic-heavy code. 
 
 **How is Falcon different from PyPy?**
+
 PyPy is a tracing compiler, whereas Falcon is just an efficient interpreter implementation. PyPy might make 
 The main motivation for Falcon is that an approach like PyPy breaks extension modules written using the C API, 
 whereas Falcon is an attempt to see how fast you can get Python while maintaining a PyObject representation 
