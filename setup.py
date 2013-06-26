@@ -34,7 +34,7 @@ setup(
     'Programming Language :: Python :: 3.3',
   ],
 
-  description='Faster then a speeding bullet...',
+  description='Faster than a speeding bullet...',
 
   package_dir={'': 'src'},
   packages=['falcon'],
