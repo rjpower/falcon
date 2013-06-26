@@ -53,7 +53,7 @@ setup(
               ],
       swig_opts = ['-Isrc', '-modern', '-O', '-c++', '-w312,509'],
       extra_compile_args=['-fno-gcse', '-fno-crossjumping', '-ggdb2', '-std=c++0x', '-Isrc/sparsehash-2.0.2/src'],
-      extra_link_args=['-lrt'],
+      extra_link_args=([] if system == 'Darwin' else ['-lrt']),
     )
   ]
 )
