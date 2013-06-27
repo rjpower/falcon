@@ -60,6 +60,23 @@
 #define n_inline __attribute__((noinline))
 #endif
 
+struct RefHelper {
+  PyObject* obj;
+
+  f_inline RefHelper(PyObject* o) :
+      obj(o) {
+    Py_INCREF(obj);
+  }
+
+  f_inline ~RefHelper() {
+    Py_DECREF(obj);
+  }
+
+  operator PyObject*() {
+    return (PyObject*) obj;
+  }
+};
+
 const char* obj_to_str(PyObject* o);
 
 static const int kMaxRegisters = 256;
@@ -74,7 +91,8 @@ static const int IntType = 1;
 
 struct Register {
   union {
-    int64_t value;
+    int64_t i_value;
+    double f_value;
     PyObject* objval;
   };
 
@@ -90,7 +108,33 @@ struct Register {
     objval = r.objval;
   }
 
-  f_inline PyObject* as_obj() {
+  operator long() {
+    return as_int();
+  }
+
+  operator PyObject*() {
+    return as_obj();
+  }
+
+  int compare(PyObject* v, int *result) {
+    if (PyInt_Check(v) && get_type() == IntType) {
+      long lv = PyInt_AsLong(v);
+      long rv = long(*this);
+      if (rv > lv) { *result = 1; }
+      else if (rv == lv) { *result = 0; }
+      else { *result = -1; }
+      return 0;
+    }
+
+    return PyObject_Cmp((PyObject*)this, v, result);
+  }
+
+  f_inline long as_int() const {
+//    Log_Info("load: %p : %d", this, value);
+    return i_value >> 1;
+  }
+
+  f_inline PyObject*& as_obj() {
     if (get_type() == ObjType) {
       return objval;
     } else {
@@ -101,16 +145,11 @@ struct Register {
   }
 
   f_inline void reset() {
-   objval = (PyObject*) NULL;
+    objval = (PyObject*) NULL;
   }
 
   f_inline int get_type() const {
-    return (value & TYPE_MASK);
-  }
-
-  f_inline long as_int() const {
-//    Log_Info("load: %p : %d", this, value);
-    return value >> 1;
+    return (i_value & TYPE_MASK);
   }
 
   f_inline void decref() {
@@ -137,8 +176,8 @@ struct Register {
 
   f_inline void store(long v) {
 //    Log_Info("store: %p : %d", this, v);
-    value = v << 1;
-    value |= IntType;
+    i_value = v << 1;
+    i_value |= IntType;
   }
 
   f_inline void store(PyObject* obj) {
@@ -261,7 +300,7 @@ struct OpHeader {
   uint16_t arg;
 };
 
-template <int kNumRegisters>
+template<int kNumRegisters>
 struct BranchOp {
   uint8_t code;
   uint16_t arg;
@@ -279,7 +318,6 @@ template<int kNumRegisters>
 struct RegOp {
   uint8_t code;
   uint16_t arg;
-
 
 #if GETATTR_HINTS
   // The hint field is used by certain operations to cache information

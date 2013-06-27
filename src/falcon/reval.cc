@@ -49,18 +49,6 @@ struct GilHelper {
   }
 };
 
-struct RefHelper {
-  PyObject* obj;
-
-  f_inline RefHelper(PyObject* o) :
-      obj(o) {
-    Py_INCREF(obj);
-  }
-  f_inline ~RefHelper() {
-    Py_DECREF(obj);
-  }
-};
-
 // Catch bad case of RefHelper(x) (goes immediately out of scope
 #define GilHelper(v) static int MustInitWithVar[-1];
 #define RefHelper(v) static int MustInitWithVar[-1];
@@ -1014,8 +1002,8 @@ static PyDictObject* obj_getdictptr(PyObject* obj, PyTypeObject* type) {
       size = _PyObject_VAR_SIZE(type, tsize);
 
       dictoffset += (long) size;
-      assert(dictoffset > 0);
-      assert(dictoffset % SIZEOF_VOID_P == 0);
+      Reg_AssertGt(dictoffset, 0);
+      Reg_AssertEq(dictoffset % SIZEOF_VOID_P, 0);
     }
     dictptr = (PyObject **) ((char *) obj + dictoffset);
     return (PyDictObject*) *dictptr;
@@ -1198,7 +1186,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     int dst = op->reg[n + 1];
 
     PyObject* fn = LOAD_OBJ(op->reg[n]);
-    assert(n + 2 == op->num_registers);
+    Reg_AssertEq(n + 2, op->num_registers);
 
     RegisterCode* code = NULL;
 
