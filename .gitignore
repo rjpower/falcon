@@ -10,3 +10,6 @@ perf.data
 perf.data.old
 python-src
 src/falcon/falcon_core.py
+.project
+.cproject
+.pydevproject
