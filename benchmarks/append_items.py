@@ -4,7 +4,7 @@ import unittest
 from timed_test import simple_test
 
 @simple_test
-def add():
+def append_items():
   x = []
   for i in range(1000):
     x.append(i)

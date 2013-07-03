@@ -7,8 +7,9 @@ import time
 import unittest
 import math
 
-from timed_test import TimedTest
+import falcon
 
+@falcon.wrap
 def loop_with_break():
   for i in xrange(100000):
     if i > 50000:
