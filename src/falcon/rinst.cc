@@ -21,8 +21,6 @@ std::string RegOp<num_registers>::str(Register* registers) const {
   return w.str();
 }
 
-
-
 std::string VarRegOp::str(Register* registers) const {
   StringWriter w;
   w.printf("%s.%d (", OpUtil::name(code), arg);

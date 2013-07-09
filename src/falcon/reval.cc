@@ -300,6 +300,7 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 
   ObjVector kw_args;
   if (kw != NULL && kw != Py_None) {
+    printf("kw: %p\n", kw);
     Log_Fatal("Keywords not supported.");
 //    kw_args.push_back()
   }

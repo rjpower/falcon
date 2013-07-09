@@ -15,8 +15,6 @@
 #define STORE_SUBSCR_LIST 154
 #define STORE_SUBSCR_DICT 155
 
-
-
 struct OpUtil {
   static const char* name(int opcode);
 

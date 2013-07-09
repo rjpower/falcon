@@ -1,18 +1,21 @@
 #ifndef REVAL_H_
 #define REVAL_H_
 
-#include "frameobject.h"
-#include "util.h"
-
-#include "rinst.h"
-#include "rexcept.h"
-#include "rcompile.h"
 
 #include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
+
+
+#include "frameobject.h"
+#include "util.h"
+
+#include "inline.h"
+#include "rinst.h"
+#include "rexcept.h"
+#include "rcompile.h"
 
 
 // A vector which we can normally stack allocate, and which
