@@ -72,6 +72,8 @@ struct RegisterStack {
   int pop_register();
   int peek_register(int reg);
 
+  void fill_register_array(std::vector<int>&, size_t);
+
   std::string str();
 };
 

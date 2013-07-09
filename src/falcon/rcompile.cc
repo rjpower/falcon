@@ -69,6 +69,13 @@ int RegisterStack::pop_register() {
   return reg;
 }
 
+void RegisterStack::fill_register_array(std::vector<int>& other_regs, size_t n) {
+  /* pop registers in reverse order */
+  for (int r = n - 1; r >= 0; --r) {
+    other_regs[r] = this->pop_register();
+  }
+}
+
 // Implement ceval's slightly odd PEEK semantics.  To wit: offset
 // zero is invalid, the offset of the top register on the stack is
 // 1.
@@ -673,22 +680,67 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_dest_op(opcode, oparg, r2, r1, r3);
       break;
     }
-    case CALL_FUNCTION:
-    case CALL_FUNCTION_VAR:
-    case CALL_FUNCTION_KW:
-    case CALL_FUNCTION_VAR_KW: {
+    case CALL_FUNCTION: {
       int na = oparg & 0xff;
       int nk = (oparg >> 8) & 0xff;
+      // positional + (key=value) keywords
       int n = na + 2 * nk;
-      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 2);
-      for (r = n - 1; r >= 0; --r) {
-        f->regs[r] = stack->pop_register();
-      }
-      f->regs[n] = stack->pop_register();
+
+      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n+2);
+
+      // pop off the args and then function
+      stack->fill_register_array(f->regs, n+1);
       f->regs[n + 1] = stack->push_register(state->num_reg++);
       Reg_AssertEq(f->arg, oparg);
       break;
     }
+
+    case CALL_FUNCTION_VAR: {
+      int na = oparg & 0xff;
+      int nk = (oparg >> 8) & 0xff;
+      // positional + (key=value) keywords
+      int n = na + 2 * nk;
+
+      // nargs + function + result + varargs
+      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 3);
+      // pop off the varargs tuple, the actual args, and the function
+      stack->fill_register_array(f->regs, n+2);
+      f->regs[n + 1] = stack->push_register(state->num_reg++);
+      Reg_AssertEq(f->arg, oparg);
+      break;
+    }
+
+    case CALL_FUNCTION_KW: {
+      int na = oparg & 0xff;
+      int nk = (oparg >> 8) & 0xff;
+      // args = positional + (key=value) keywords + kwargs dict
+      int n = na + 2 * nk;
+
+      // nargs + function + result + kwdict
+      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 3);
+
+      // pop off the kwdict, the args, and the function
+      stack->fill_register_array(f->regs, n+2);
+      f->regs[n + 2] = stack->push_register(state->num_reg++);
+      Reg_AssertEq(f->arg, oparg);
+      break;
+    }
+    case CALL_FUNCTION_VAR_KW: {
+
+      int na = oparg & 0xff;
+      int nk = (oparg >> 8) & 0xff;
+      //  positional + (key=value) keywords
+      int n = na + 2 * nk;
+
+      // leave room for function + args + result + varargs + kwdict
+      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 4);
+      // pop off the kwdict, varargs, arguments, and function
+      stack->fill_register_array(f->regs, n+3);
+      f->regs[n + 3] = stack->push_register(state->num_reg++);
+      Reg_AssertEq(f->arg, oparg);
+      break;
+    }
+
     case PRINT_ITEM: {
       int r1 = stack->pop_register();
       bb->add_op(opcode, oparg, r1, -1);
@@ -1556,12 +1608,11 @@ public:
     break;
 
     case CALL_FUNCTION: {
-      int fn_reg = op->regs[op->num_inputs() - 1];
+      int fn_reg = op->regs[0];
       if (this->find_method(fn_reg) == METHOD_LIST_APPEND) {
         op->code = LIST_APPEND;
-
-        int item = op->regs[0];
-        int fn = op->regs[1];
+        int item = op->regs[1];
+        int fn = op->regs[2];
         op->arg = 0;
         op->regs.clear();
 
@@ -1569,7 +1620,7 @@ public:
         op->regs.push_back(item);
       }
     }
-      break;
+    break;
     case BINARY_SUBSCR: {
       StaticType t = this->get_type(op->regs[0]);
       if (t == LIST) {

@@ -1193,14 +1193,20 @@ struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
   }
 };
 
-struct CallFunction: public VarArgsOpImpl<CallFunction> {
+template <bool HasVarArgs, bool HasKwDict>
+struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > {
   static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, Register* registers) {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
+
+    if (HasVarArgs) n++;
+    if (HasKwDict) n++;
+
     int dst = op->reg[n + 1];
 
-    PyObject* fn = LOAD_OBJ(op->reg[n]);
+    PyObject* fn = LOAD_OBJ(op->reg[0]);
+
     Reg_AssertEq(n + 2, op->num_registers);
 
     RegisterCode* code = NULL;
@@ -1227,7 +1233,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     if (code == NULL || nk > 0) {
       PyObject* args = PyTuple_New(na);
 
-      for (register int i = 0; i < na; ++i) {
+      for (register int i = 1; i < na+1; ++i) {
         PyObject* v = LOAD_OBJ(op->reg[i]);
         Py_INCREF(v);
         PyTuple_SET_ITEM(args, i, v);
@@ -1236,7 +1242,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
       PyObject* kwdict = NULL;
       if (nk > 0) {
         kwdict = PyDict_New();
-        for (register int i = na; i < nk * 2; i += 2) {
+        for (register int i = na+1; i < nk * 2 + 1; i += 2) {
           PyObject* k = LOAD_OBJ(op->reg[i]);
           PyObject* v = LOAD_OBJ(op->reg[i+1]);
           PyDict_SetItem(kwdict, k, v);
@@ -1259,7 +1265,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     } else {
       ObjVector args, kw;
       args.resize(na);
-      for (register int i = 0; i < na; ++i) {
+      for (register int i = 1; i < na+1; ++i) {
         args[i].store(registers[op->reg[i]]);
       }
       RegisterFrame f(code, fn, args, kw);
@@ -1267,6 +1273,11 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
     }
   }
 };
+
+typedef CallFunction<false,false> CallFunctionSimple;
+typedef CallFunction<true,false> CallFunctionVar;
+typedef CallFunction<false,true> CallFunctionKw;
+typedef CallFunction<true,true> CallFunctionVarKw;
 
 struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -1925,10 +1936,10 @@ DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
 DEFINE_OP(PRINT_ITEM, PrintItem);
 DEFINE_OP(PRINT_ITEM_TO, PrintItem);
 
-FALLTHROUGH(CALL_FUNCTION);
-FALLTHROUGH(CALL_FUNCTION_VAR);
-FALLTHROUGH(CALL_FUNCTION_KW);
-DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunction);
+DEFINE_OP(CALL_FUNCTION, CallFunctionSimple);
+DEFINE_OP(CALL_FUNCTION_VAR, CallFunctionVar);
+DEFINE_OP(CALL_FUNCTION_KW, CallFunctionKw);
+DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunctionVarKw);
 
 FALLTHROUGH(POP_JUMP_IF_FALSE);
 DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
