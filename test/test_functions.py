@@ -1,7 +1,5 @@
 from testing_helpers import wrap 
 
-
-
 @wrap 
 def nested(x):
   def f(y):
@@ -35,4 +33,6 @@ def test_nested_closure_repeat():
   nested_closure_repeat()
   
 
-  
+if __name__ == '__main__':
+  import nose 
+  nose.main()

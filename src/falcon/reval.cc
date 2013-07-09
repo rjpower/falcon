@@ -521,11 +521,18 @@ struct BinaryModulo: public RegOpImpl<RegOp<3>, BinaryModulo> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     Register& r1 = registers[op.reg[0]];
     Register& r2 = registers[op.reg[1]];
+
     if (r1.get_type() == IntType && r2.get_type() == IntType) {
-      Register& dst = registers[op.reg[2]];
-      dst.decref();
-      dst.store(r1.as_int() % r2.as_int());
-      return;
+      long x = r1.as_int();
+      long y = r2.as_int();
+      // C's modulo differs from Python's remainder when
+      // args can be negative
+      if (x >= 0 && y >= 0) {
+        Register& dst = registers[op.reg[2]];
+        dst.decref();
+        dst.store(x % y);
+        return;
+      }
     }
 
     PyObject* o1 = r1.as_obj();
@@ -1233,8 +1240,8 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
     if (code == NULL || nk > 0) {
       PyObject* args = PyTuple_New(na);
 
-      for (register int i = 1; i < na+1; ++i) {
-        PyObject* v = LOAD_OBJ(op->reg[i]);
+      for (register int i = 0; i < na; ++i) {
+        PyObject* v = LOAD_OBJ(op->reg[i+1]);
         Py_INCREF(v);
         PyTuple_SET_ITEM(args, i, v);
       }
@@ -1242,9 +1249,11 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
       PyObject* kwdict = NULL;
       if (nk > 0) {
         kwdict = PyDict_New();
-        for (register int i = na+1; i < nk * 2 + 1; i += 2) {
-          PyObject* k = LOAD_OBJ(op->reg[i]);
-          PyObject* v = LOAD_OBJ(op->reg[i+1]);
+        for (register int i = na; i < nk * 2 ; i += 2) {
+          // starting at +1 since the first register was the fn
+          // so keyword args actually start at na+1
+          PyObject* k = LOAD_OBJ(op->reg[i+1]);
+          PyObject* v = LOAD_OBJ(op->reg[i+2]);
           PyDict_SetItem(kwdict, k, v);
         }
       }
@@ -1265,8 +1274,8 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
     } else {
       ObjVector args, kw;
       args.resize(na);
-      for (register int i = 1; i < na+1; ++i) {
-        args[i].store(registers[op->reg[i]]);
+      for (register int i = 0; i < na; ++i) {
+        args[i].store(registers[op->reg[i+1]]);
       }
       RegisterFrame f(code, fn, args, kw);
       STORE_REG(dst, eval->eval(&f));
