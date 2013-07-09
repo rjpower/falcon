@@ -33,6 +33,7 @@
 %include <std_map.i>
 %include <std_vector.i>
 
+%include "inline.h" 
 %include "rinst.h"
 %include "rcompile.h"
 %include "reval.h"

@@ -1,15 +1,10 @@
 #!/usr/bin/env python 
 
-from timed_test import simple_test
-import unittest
+from testing_helpers import test 
 
-@simple_test
-def test_modulo():
-  return  '%d %d %s' % (100, 100, "Hello")
-  
-@simple_test
-def test_modulo2():
-  return 100 % 10
+@test
+def modulo_const(a):
+  return a
+def modulo(a,b):
+  return 
 
-if __name__ == '__main__':
-  unittest.main()

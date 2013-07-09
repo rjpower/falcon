@@ -1,25 +1,31 @@
-#!/usr/bin/env python
-
-from timed_test import simple_test
-import unittest
+from testing_helpers import wrap
 
 class Foo(object):
   def __init__(self):
     self.a = None
     self.b = None
+  
+  def __eq__(self, other):
+    return self.a == other.a and self.b == other.b 
 
-@simple_test
+@wrap
 def store_attr():
   x = Foo()
   x.a = 0
   x.b = 10
-  
-@simple_test
-def store_load_attr():
+  return Foo 
+
+
+def test_store_attr():
+  store_attr()
+
+@wrap
+def store_load_attr(a,b):
   x = Foo()
-  x.a = 0
-  x.b = 10
+  x.a = a
+  x.b = b
   return x.a + x.b
 
-if __name__ == '__main__':
-  unittest.main()
+def test_store_load_attr():
+  store_load_attr(0, 10)
+

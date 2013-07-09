@@ -299,9 +299,14 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
   }
 
   ObjVector kw_args;
-  if (kw != NULL && kw != Py_None) {
+  if (kw == Py_None) {
+    kw = NULL;
+  } else if (PyDict_Check(kw) && PyDict_Size(kw) == 0) {
+    kw = NULL;
+  }
+  if (kw != NULL) {
     printf("kw: %p\n", kw);
-    Log_Fatal("Keywords not supported.");
+    Log_Fatal("Keywords not yet supported.");
 //    kw_args.push_back()
   }
 
@@ -1249,8 +1254,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction> {
         args[i].store(registers[op->reg[i]]);
       }
       RegisterFrame f(code, fn, args, kw);
-      Register f_res = eval->eval(&f);
-      STORE_REG(dst, f_res);
+      STORE_REG(dst, eval->eval(&f));
     }
   }
 };
