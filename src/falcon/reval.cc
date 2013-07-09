@@ -267,11 +267,14 @@ PyObject* RegisterFrame::locals() {
   return locals_;
 }
 
-Register Evaluator::eval_python(PyObject* func, PyObject* args) {
-  RegisterFrame* frame = frame_from_pyfunc(func, args, NULL);
+
+//Register
+
+PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
+  RegisterFrame* frame = frame_from_pyfunc(func, args, kw);
   Register result = eval(frame);
   delete frame;
-  return result;
+  return result.as_obj();
 }
 
 RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {

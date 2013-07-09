@@ -1,6 +1,6 @@
-from  testing_helpers import test 
+from  testing_helpers import wrap 
 
-@test
+@wrap
 def add_list_elts(l):
     su = 0
     for li in l:

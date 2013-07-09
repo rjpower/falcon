@@ -36,12 +36,18 @@
 %include "inline.h" 
 %include "rinst.h"
 %include "rcompile.h"
-%include "reval.h"
+
+class Evaluator {
+public:
+  Evaluator();
+  ~Evaluator();
+  PyObject* eval_python(PyObject* func, PyObject* args, PyObject* kw);
+};
 
 %template(CodeVector) std::vector<CompilerOp*>;
 %template(BlockVector) std::vector<BasicBlock*>;
 %template(RegVector) std::vector<RegisterOffset>;
-%template(SmallIntVector) SmallVector<int>;
+// %template(SmallIntVector) SmallVector<int>;
 
 %pythoncode %{
 def disown_class(c):

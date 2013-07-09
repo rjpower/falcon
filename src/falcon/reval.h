@@ -190,13 +190,11 @@ public:
   inline RegisterCode* compile(PyObject* f);
 
   Register eval(RegisterFrame* rf);
-  Register eval_python(PyObject* func, PyObject* args);
+  PyObject* eval_python(PyObject* func, PyObject* args, PyObject* kw);
 
   RegisterFrame* frame_from_pyframe(PyFrameObject*);
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
   RegisterFrame* frame_from_codeobj(PyObject* code);
-
-
 };
 
 RegisterCode* Evaluator::compile(PyObject* obj) {
