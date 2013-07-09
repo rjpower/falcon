@@ -274,7 +274,13 @@ PyObject* RegisterFrame::locals() {
 //Register
 
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
-  RegisterFrame* frame = frame_from_pyfunc(func, args, kw);
+  RegisterFrame* frame;
+  try {
+    frame = frame_from_pyfunc(func, args, kw);
+  } catch (RException& r) {
+    EVAL_LOG("Couldn't compile function, calling CPython...");
+    return PyObject_Call(func, args, kw);
+  }
   Register result = eval(frame);
   delete frame;
   return result.as_obj();

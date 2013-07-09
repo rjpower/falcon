@@ -953,12 +953,14 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_op(opcode, 0, r1);
       return entry_point;
     }
+
     case SETUP_EXCEPT:		       
     case SETUP_FINALLY:
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-      throw RException(PyExc_SyntaxError, "Unknown opcode %s, arg = %d", OpUtil::name(opcode), oparg);
+      throw RException(PyExc_SyntaxError,
+                       "Unsupported opcode %s, arg = %d", OpUtil::name(opcode), oparg);
       break;
     }
   }
