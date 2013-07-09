@@ -1,10 +1,10 @@
-from testing_helpers import test 
+from testing_helpers import wrap 
 
-@test
+@wrap
 def format_consts():
   return '%d %d %s' % (100, 100, "Hello")
 
-@test
+@wrap
 def format_args(a,b):
   return "%s %d" % (a,b)
 

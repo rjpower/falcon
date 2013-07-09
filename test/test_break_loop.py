@@ -1,23 +1,12 @@
-#!/usr/bin/env python
+from testing_helpers import wrap 
 
-import dis
-import opcode
-import sys
-import time
-import unittest
-import math
-
-import falcon
-
-@falcon.wrap
-def loop_with_break():
-  for i in xrange(100000):
-    if i > 50000:
+@wrap
+def loop_with_break(break_idx, total):
+  for i in xrange(total):
+    if i > break_idx:
       break
+  return i 
 
-class TestBreakLoop(TimedTest):
-  def test_simple(self):
-    self.time_compare(loop_with_break)
-    
-if __name__ == '__main__':
-  unittest.main()
+def test_loop_with_break():
+  loop_with_break(50000,100000)
+  

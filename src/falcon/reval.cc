@@ -1,4 +1,7 @@
 #include <Python.h>
+
+
+
 #include <opcode.h>
 #include <marshal.h>
 #include <string.h>
@@ -289,6 +292,7 @@ RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
 }
 
 RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObject* kw) {
+
   if (args == NULL || !PyTuple_Check(args)) {
     throw RException(PyExc_TypeError, "Expected function argument tuple, got: %s", obj_to_str(PyObject_Type(args)));
   }
@@ -302,17 +306,19 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
   }
 
   ObjVector kw_args;
-  if (kw == Py_None) {
-    kw = NULL;
-  } else if (PyDict_Check(kw) && PyDict_Size(kw) == 0) {
-    kw = NULL;
-  }
-  if (kw != NULL) {
-    printf("kw: %p\n", kw);
-    Log_Fatal("Keywords not yet supported.");
-//    kw_args.push_back()
+
+  size_t n_kwds = 0;
+  if (kw != NULL && PyDict_Check(kw)) {
+    n_kwds =  PyDict_Size(kw);
   }
 
+
+  for (size_t i = 0; i < n_kwds; ++i) {
+    Log_Fatal("Keywords not yet supported, n_given = %d", n_kwds);
+    // should check whether kw is present in the args
+    // and use default otherwise
+    // kw_args.push_back()
+  }
   return new RegisterFrame(regcode, obj, v_args, kw_args);
 }
 

@@ -1,23 +1,20 @@
-#!/usr/bin/env python
-import unittest
-
-from timed_test import TimedTest
-import falcon
+from testing_helpers import wrap 
 
 def a(x): return b(x)
 def b(x): return c(x)
 def c(x): return throws(x)
 
+ 
 def throws(x):
   x[100] = 0
 
-class TestExceptionHandling(TimedTest):
-  def test_simple(self):
-    f_eval = falcon.Evaluator()
-    frame = f_eval.frame_from_pyfunc(a, (0,), None)
-    f_eval.eval(frame)
+@wrap
+def capture(x):
+  try:
+    a(x)
+    return 0
+  except:
+    return 1
 
-        
-    
-if __name__ == '__main__':
-  unittest.main()
+def test_exceptions():
+  capture( (0,) )

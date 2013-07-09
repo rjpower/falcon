@@ -9,6 +9,5 @@ def add_list_elts(l):
 
 
 def test_add_list_elts():
-  l = range(35)
   add_list_elts(range(35))
   

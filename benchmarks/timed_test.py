@@ -26,9 +26,7 @@ class TimedTest(unittest.TestCase):
   
   def run_falcon(self, function, *args, **kw):
     evaluator = falcon.Evaluator()
-    frame = evaluator.frame_from_pyfunc(function, args, None)
-    falcon_result = evaluator.eval(frame).as_obj()
-    return falcon_result
+    return evaluator.eval_python(function, args, None)
 
 
   def time_compare(self, function, *args, **kw):
@@ -38,9 +36,6 @@ class TimedTest(unittest.TestCase):
     repeat = kw.get('repeat', 1)
     if falcon:
       evaluator = falcon.Evaluator()
-      frame = evaluator.frame_from_pyfunc(function, args, None)
-      if not frame:
-        raise Exception('Failed to compile frame.')
    
     py_times = []
     f_times= []
@@ -53,7 +48,7 @@ class TimedTest(unittest.TestCase):
       if falcon:
         random.seed(10)
         st = time.time()
-        falcon_result = evaluator.eval(frame).as_obj()
+        falcon_result = evaluator.eval_python(function, args, kw)
         f_times.append(time.time() - st)
       else:
         f_time = 0
