@@ -32,8 +32,11 @@ class TimedTest(unittest.TestCase):
   def time_compare(self, function, *args, **kw):
     print 'Original bytecode, %s:\n' % function.func_name
     dis.dis(function)
-    
-    repeat = kw.get('repeat', 1)
+   
+    if 'repeat' in kw:
+      repeat = kw['repeat']
+      del kw['repeat']
+
     if falcon:
       evaluator = falcon.Evaluator()
    
