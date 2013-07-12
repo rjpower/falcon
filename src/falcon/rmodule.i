@@ -37,12 +37,14 @@
 %include "rinst.h"
 %include "rcompile.h"
 
+
 class Evaluator {
 public:
   Evaluator();
   ~Evaluator();
   PyObject* eval_python(PyObject* func, PyObject* args, PyObject* kw);
 };
+
 
 %template(CodeVector) std::vector<CompilerOp*>;
 %template(BlockVector) std::vector<BasicBlock*>;
@@ -57,6 +59,6 @@ def disown_class(c):
     self.thisown = 0
   c.__init__ = new_init
 
-disown_class(CompilerOp)
+# disown_class(CompilerOp)
  
 %}

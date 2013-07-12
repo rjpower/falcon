@@ -27,7 +27,7 @@ import random
 import unittest
 class TestQuicksort(TimedTest):
     def test_qs(self):
-        n = 100000
+        n = 10000
         #x = [random.random() for _ in xrange(100000)] 
         x = [random.randint(0,10000000) for _ in xrange(n)]
         self.time_compare(mergesort, x, repeat=20)

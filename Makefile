@@ -42,7 +42,8 @@ dbg: _falcon_core.so
 	$(CXX) $(COPT) $(CXXFLAGS) -c $< -o $@
 
 # excluded: rlist.o 
-_falcon_core.so: reval.o rcompile.o rinst.o rmodule_wrap.o util.o oputil.o rexcept.o
+_falcon_core.so: reval.o rcompile.o rinst.o rmodule_wrap.o util.o oputil.o rexcept.o register_stack.o \
+	 basic_block.o compiler_state.o compiler_op.o 
 	 g++ -shared -o $@ $^ -lrt
 
 $(SRCDIR)/falcon/rmodule_wrap.cpp: $(SRCDIR)/falcon/rmodule.i $(INCLUDES) 
