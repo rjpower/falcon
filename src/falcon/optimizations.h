@@ -192,61 +192,6 @@ public:
   }
 };
 
-class DeadCodeElim: public BackwardPass, UseCounts {
-private:
-public:
-  void remove_dead_ops(BasicBlock* bb) {
-    size_t live_pos = 0;
-    size_t n_ops = bb->code.size();
-    for (size_t i = 0; i < n_ops; ++i) {
-      CompilerOp* op = bb->code[i];
-      if (op->dead) {
-        continue;
-      }
-      bb->code[live_pos++] = op;
-    }
-
-    bb->code.resize(live_pos);
-  }
-
-  void remove_dead_code(CompilerState* fn) {
-    size_t i = 0;
-    size_t live_pos = 0;
-    size_t n_bbs = fn->bbs.size();
-    for (i = 0; i < n_bbs; ++i) {
-      BasicBlock* bb = fn->bbs[i];
-      if (bb->dead) {
-        continue;
-      }
-
-      this->remove_dead_ops(bb);
-      fn->bbs[live_pos++] = bb;
-    }
-    fn->bbs.resize(live_pos);
-  }
-
-  void visit_op(CompilerOp* op) {
-
-    size_t n_inputs = op->num_inputs();
-    if ((n_inputs > 0) && (op->has_dest)) {
-      int dest = op->regs[n_inputs];
-      if (this->is_pure(op->code) && this->get_count(dest) == 0) {
-        op->dead = true;
-        // if an operation is marked dead, decrement the use counts
-        // on all of its arguments
-        for (size_t input_idx = 0; input_idx < n_inputs; ++input_idx) {
-          this->decr_count(op->regs[input_idx]);
-        }
-      }
-    }
-  }
-
-  void visit_fn(CompilerState* fn) {
-    this->count_uses(fn);
-    BackwardPass::visit_fn(fn);
-    remove_dead_code(fn);
-  }
-};
 
 class RenameRegisters: public CompilerPass {
   // simple renaming that ignore live ranges of registers
@@ -396,17 +341,15 @@ public:
 
 
 enum StaticType {
-  UNKNOWN,
   INT,
   FLOAT,
+  BOOL,
   LIST,
   TUPLE,
   DICT,
-  OBJ
+  OBJ,
+  UNKNOWN,
 };
-
-
-
 
 class TypeInference {
 protected:
@@ -419,6 +362,10 @@ protected:
     } else {
       return iter->second;
     }
+  }
+
+  bool is_builtin_type(int r) {
+    return this->get_type(r) < OBJ;
   }
 
   void update_type(int r, StaticType t) {
@@ -442,7 +389,10 @@ public:
         this->update_type(i, INT);
       } else if (PyFloat_CheckExact(obj)) {
         this->update_type(i, FLOAT);
-      } else {
+      } else if (PyBool_Check(obj)) {
+        this->update_type(i, BOOL);
+      }
+      else {
         this->update_type(i, OBJ);
       }
     }
@@ -494,6 +444,64 @@ public:
   }
 };
 
+class DeadCodeElim: public BackwardPass, UseCounts, TypeInference {
+private:
+public:
+  void remove_dead_ops(BasicBlock* bb) {
+    size_t live_pos = 0;
+    size_t n_ops = bb->code.size();
+    for (size_t i = 0; i < n_ops; ++i) {
+      CompilerOp* op = bb->code[i];
+      if (op->dead) {
+        continue;
+      }
+      bb->code[live_pos++] = op;
+    }
+
+    bb->code.resize(live_pos);
+  }
+
+  void remove_dead_code(CompilerState* fn) {
+    size_t i = 0;
+    size_t live_pos = 0;
+    size_t n_bbs = fn->bbs.size();
+    for (i = 0; i < n_bbs; ++i) {
+      BasicBlock* bb = fn->bbs[i];
+      if (bb->dead) {
+        continue;
+      }
+
+      this->remove_dead_ops(bb);
+      fn->bbs[live_pos++] = bb;
+    }
+    fn->bbs.resize(live_pos);
+  }
+
+  void visit_op(CompilerOp* op) {
+
+    size_t n_inputs = op->num_inputs();
+    if ((n_inputs > 0) && (op->has_dest)) {
+      int dest = op->regs[n_inputs];
+      if (this->get_count(dest) == 0 &&
+          (this->is_pure(op->code)  ||
+           (op->code == LOAD_ATTR && this->is_builtin_type(op->regs[0])))) {
+        op->dead = true;
+        // if an operation is marked dead, decrement the use counts
+        // on all of its arguments
+        for (size_t input_idx = 0; input_idx < n_inputs; ++input_idx) {
+          this->decr_count(op->regs[input_idx]);
+        }
+      }
+    }
+  }
+
+  void visit_fn(CompilerState* fn) {
+    this->infer(fn);
+    this->count_uses(fn);
+    BackwardPass::visit_fn(fn);
+    remove_dead_code(fn);
+  }
+};
 
 
 enum KnownMethod {
@@ -592,8 +600,8 @@ void optimize(CompilerState* fn) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);
   }
-  COMPILE_LOG(fn->str().c_str());
-  DeadCodeElim()(fn);
+
+   DeadCodeElim()(fn);
 
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_SPECIALIZATION")) LocalTypeSpecialization()(fn);
