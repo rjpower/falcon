@@ -33,7 +33,7 @@ static int num_python_ops(const char* code, int len) {
   int pos = 0;
   int count = 0;
   while (pos < len) {
-    pos +=  CODESIZE((uint8_t) code[pos]);
+    pos += CODESIZE((uint8_t) code[pos]);
     ++count;
 
   }
@@ -94,11 +94,11 @@ struct RCompilerUtil {
     } else if (OpUtil::is_branch(op->code)) {
       int n_regs = op->regs.size();
       if (n_regs == 0) {
-        return sizeof(BranchOp<0>);
+        return sizeof(BranchOp<0> );
       } else if (n_regs == 1) {
-        return sizeof(BranchOp<1>);
+        return sizeof(BranchOp<1> );
       } else {
-        return sizeof(BranchOp<2>);
+        return sizeof(BranchOp<2> );
       }
     } else if (op->regs.size() == 0) {
       return sizeof(RegOp<0> );
@@ -334,7 +334,7 @@ CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int
 
 CompilerOp* BasicBlock::add_dest_op(int opcode, int arg, int reg1, int reg2, int reg3, int reg4, int reg5) {
   /* operation with 5 inputs and a destination register */
-  CompilerOp* op = _add_dest_op(opcode, arg, 4);
+  CompilerOp* op = _add_dest_op(opcode, arg, 5);
   op->regs[0] = reg1;
   op->regs[1] = reg2;
   op->regs[2] = reg3;
@@ -509,20 +509,20 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
       // Load operations: push one register onto the stack.
     case LOAD_CONST: {
-      stack->push_register(oparg); 
+      stack->push_register(oparg);
       /*int r1 = oparg;
-      int r2 = stack->push_register(state->num_reg++);
-      bb->add_dest_op(LOAD_FAST, 0, r1, r2);
-      */ 
+       int r2 = stack->push_register(state->num_reg++);
+       bb->add_dest_op(LOAD_FAST, 0, r1, r2);
+       */
       break;
     }
     case LOAD_FAST: {
       int r1 = state->num_consts + oparg;
       stack->push_register(r1);
       /*
-      int r2 = stack->push_register(state->num_reg++);
-      bb->add_dest_op(LOAD_FAST, 0, r1, r2);
-      */ 
+       int r2 = stack->push_register(state->num_reg++);
+       bb->add_dest_op(LOAD_FAST, 0, r1, r2);
+       */
       break;
     }
     case LOAD_CLOSURE:
@@ -686,10 +686,10 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       // positional + (key=value) keywords
       int n = na + 2 * nk;
 
-      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n+2);
+      CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 2);
 
       // pop off the args and then function
-      stack->fill_register_array(f->regs, n+1);
+      stack->fill_register_array(f->regs, n + 1);
       f->regs[n + 1] = stack->push_register(state->num_reg++);
       Reg_AssertEq(f->arg, oparg);
       break;
@@ -704,7 +704,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       // nargs + function + result + varargs
       CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 3);
       // pop off the varargs tuple, the actual args, and the function
-      stack->fill_register_array(f->regs, n+2);
+      stack->fill_register_array(f->regs, n + 2);
       f->regs[n + 1] = stack->push_register(state->num_reg++);
       Reg_AssertEq(f->arg, oparg);
       break;
@@ -720,7 +720,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 3);
 
       // pop off the kwdict, the args, and the function
-      stack->fill_register_array(f->regs, n+2);
+      stack->fill_register_array(f->regs, n + 2);
       f->regs[n + 2] = stack->push_register(state->num_reg++);
       Reg_AssertEq(f->arg, oparg);
       break;
@@ -735,7 +735,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       // leave room for function + args + result + varargs + kwdict
       CompilerOp* f = bb->add_varargs_op(opcode, oparg, n + 4);
       // pop off the kwdict, varargs, arguments, and function
-      stack->fill_register_array(f->regs, n+3);
+      stack->fill_register_array(f->regs, n + 3);
       f->regs[n + 3] = stack->push_register(state->num_reg++);
       Reg_AssertEq(f->arg, oparg);
       break;
@@ -954,13 +954,12 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       return entry_point;
     }
 
-    case SETUP_EXCEPT:		       
+    case SETUP_EXCEPT:
     case SETUP_FINALLY:
     case END_FINALLY:
     case YIELD_VALUE:
     default:
-      throw RException(PyExc_SyntaxError,
-                       "Unsupported opcode %s, arg = %d", OpUtil::name(opcode), oparg);
+      throw RException(PyExc_SyntaxError, "Unsupported opcode %s, arg = %d", OpUtil::name(opcode), oparg);
       break;
     }
   }
@@ -1592,10 +1591,8 @@ private:
   PyObject* names;
   PyObject* consts_tuple;
 
-
 public:
   void visit_op(CompilerOp* op) {
-
     switch (op->code) {
     case LOAD_ATTR: {
       PyObject* attr_name_obj = PyTuple_GetItem(this->names, op->arg);
@@ -1606,23 +1603,23 @@ public:
         this->known_methods[op->regs[1]] = METHOD_LIST_APPEND;
         this->known_bound_objects[op->regs[1]] = op->regs[0];
       }
+      break;
     }
-    break;
 
     case CALL_FUNCTION: {
       int fn_reg = op->regs[0];
       if (this->find_method(fn_reg) == METHOD_LIST_APPEND) {
         op->code = LIST_APPEND;
         int item = op->regs[1];
-        int fn = op->regs[2];
+        op->has_dest = false;
         op->arg = 0;
         op->regs.clear();
 
-        op->regs.push_back(this->known_bound_objects[fn]);
+        op->regs.push_back(this->known_bound_objects[fn_reg]);
         op->regs.push_back(item);
       }
+      break;
     }
-    break;
     case BINARY_SUBSCR: {
       StaticType t = this->get_type(op->regs[0]);
       if (t == LIST) {
@@ -1630,25 +1627,24 @@ public:
       } else if (t == DICT) {
         op->code = BINARY_SUBSCR_DICT;
       }
-    }
       break;
+    }
     case STORE_SUBSCR: {
-      StaticType t  = this->get_type(op->regs[1]);
+      StaticType t = this->get_type(op->regs[1]);
       if (t == LIST) {
         op->code = STORE_SUBSCR_LIST;
       } else if (t == DICT) {
         op->code = STORE_SUBSCR_DICT;
       }
-    }
       break;
+    }
     case COMPARE_OP: {
       // specialize '__contains__'
       if (op->arg == 6 && this->get_type(op->regs[0]) == DICT) {
         op->code = DICT_CONTAINS;
       }
-    }
       break;
-
+    }
     }
   }
 
@@ -1674,6 +1670,10 @@ void optimize(CompilerState* fn) {
 
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_SPECIALIZATION")) LocalTypeSpecialization()(fn);
+  }
+
+  DeadCodeElim()(fn);
+  if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COMPACT")) CompactRegisters()(fn);
   }
 
@@ -1718,13 +1718,10 @@ void lower_register_code(CompilerState* state, std::string *out) {
 
       Reg_AssertEq(op->code, bb->code[j]->code);
       if (OpUtil::has_arg(op->code)) {
-        Reg_Assert(op->arg == bb->code[j]->arg,
-                   "Malformed bytecode arg %d for %s",
-                   bb->code[j]->arg,
-                   OpUtil::name(op->code));
+        Reg_Assert(op->arg == bb->code[j]->arg, "Malformed bytecode arg %d for %s",
+                   bb->code[j]->arg, OpUtil::name(op->code));
       } else {
-        Reg_Assert(op->arg == 0 || OpUtil::is_branch(op->code),
-                   "Argument to non-argument op: %s, %d",
+        Reg_Assert(op->arg == 0 || OpUtil::is_branch(op->code), "Argument to non-argument op: %s, %d",
                    OpUtil::name(op->code), op->arg);
       }
       pos += RCompilerUtil::op_size(bb->code[j]);
@@ -1799,9 +1796,9 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   regcode->num_cellvars = PyTuple_GET_SIZE(code->co_cellvars);
   regcode->num_cells = regcode->num_freevars + regcode->num_cellvars;
 
-  Log_Info("COMPILED %s, %d registers, %d operations, %d stack ops.",
-           PyEval_GetFuncName(func), regcode->num_registers, state.num_ops(), 
-           num_python_ops(PyString_AsString(code->co_code), PyString_GET_SIZE(code->co_code)));
+  Log_Info(
+      "COMPILED %s, %d registers, %d operations, %d stack ops.",
+      PyEval_GetFuncName(func), regcode->num_registers, state.num_ops(), num_python_ops(PyString_AsString(code->co_code), PyString_GET_SIZE(code->co_code)));
 
   return regcode;
 }

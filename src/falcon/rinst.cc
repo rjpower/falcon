@@ -35,8 +35,9 @@ template<int num_registers>
 std::string BranchOp<num_registers>::str(Register* registers) const {
   StringWriter w;
   w.printf("%s (", OpUtil::name(code));
-  print_register(w, registers, reg[0]);
-  print_register(w, registers, reg[1]);
+  for (int i = 0; i < num_registers; ++i) {
+    print_register(w, registers, reg[i]);
+  }
   w.printf(")");
   w.printf(" -> [%d]", label);
   return w.str();

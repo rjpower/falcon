@@ -281,9 +281,15 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
     EVAL_LOG("Couldn't compile function, calling CPython...");
     return PyObject_Call(func, args, kw);
   }
-  Register result = eval(frame);
-  delete frame;
-  return result.as_obj();
+
+  try {
+    Register result = eval(frame);
+    delete frame;
+    return result.as_obj();
+  } catch (RException& r) {
+    delete frame;
+    return NULL;
+  }
 }
 
 RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
@@ -2013,15 +2019,15 @@ BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 
 } catch (RException &error) {
-//    EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
-if (error.exception != NULL) {
-  PyErr_SetObject(error.exception, error.value);
-}
+  EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
+  if (error.exception != NULL) {
+    PyErr_SetObject(error.exception, error.value);
+  }
 
-// TODO(power) - create a frame object here and attach it to the traceback.
-PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
-PyTraceBack_Here(py_frame);
-return Register(NULL);
+  // TODO(power) - create a frame object here and attach it to the traceback.
+  PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
+  PyTraceBack_Here(py_frame);
+  throw RException();
 }
 done: {
 //    EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());
