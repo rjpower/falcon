@@ -11,6 +11,9 @@ ez_setup.use_setuptools()
 from setuptools import setup, Extension
 system, node, release, version, machine, processor = platform.uname()
 
+sources = glob.glob('src/falcon/*.cc') + ['src/falcon/rmodule.i']
+sources.remove('src/falcon/rlist.cc')
+
 setup(
   name='falcon',
   version='0.02',
@@ -42,7 +45,7 @@ setup(
   ext_modules=[
     Extension('_falcon_core',
       include_dirs=['./src'],
-      sources=glob.glob('src/falcon/*.cc') + ['src/falcon/rmodule.i'],
+      sources=sources,
       swig_opts = ['-Isrc', '-modern', '-O', '-c++', '-w312,509'],
       extra_compile_args=['-fno-gcse', '-fno-crossjumping', '-ggdb2', '-std=c++0x', '-Isrc/sparsehash-2.0.2/src'],
       extra_link_args=([] if system == 'Darwin' else ['-lrt']),

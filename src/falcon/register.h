@@ -131,8 +131,12 @@ struct Register {
       return ObjType;
     }
   }
+  
+  int compare(PyObject* v, int *result) {
+    return PyObject_Cmp((PyObject*)this, v, result);
+  }
 
-  f_inline PyObject* as_obj() {
+  f_inline PyObject*& as_obj() {
     return v;
   }
 
