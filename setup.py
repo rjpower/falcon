@@ -16,7 +16,7 @@ sources.remove('src/falcon/rlist.cc')
 
 setup(
   name='falcon',
-  version='0.02',
+  version='0.04',
   maintainer='Russell Power',
   maintainer_email='russell.power@gmail.com',
   url='http://github.com/rjpower/falcon',

@@ -1,7 +1,7 @@
 #ifndef OPUTIL_H_
 #define OPUTIL_H_
 
-#include "Python.h"
+#include "py_include.h"
 #include "opcode.h"
 
 #include <set>

@@ -1,7 +1,7 @@
 #ifndef FALCON_RLIST_H
 #define FALCON_RLIST_H
 
-#include <Python.h>
+#include "py_include.h"
 #include "rinst.h"
 
 // A specialized list object which holds Registers.

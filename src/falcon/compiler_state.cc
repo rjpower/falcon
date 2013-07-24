@@ -1,4 +1,5 @@
 #include "compiler_state.h"
+#include <algorithm>
 
 void CompilerState::dump(Writer* w) {
   for (BasicBlock* bb : bbs) {

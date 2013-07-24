@@ -1,7 +1,7 @@
 #ifndef RINST_H_
 #define RINST_H_
 
-#include "Python.h"
+#include "py_include.h"
 
 #include <string>
 

@@ -5,7 +5,7 @@
 #include <string>
 #include <map>
 
-#include "Python.h"
+#include "py_include.h"
 
 #include "register_stack.h"
 #include "basic_block.h"

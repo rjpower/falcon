@@ -6,8 +6,6 @@
 #include <stdarg.h>
 #include <signal.h>
 
-#include <boost/function.hpp>
-
 #include <map>
 #include <string>
 #include <vector>

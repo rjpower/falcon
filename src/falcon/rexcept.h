@@ -1,7 +1,8 @@
 #ifndef REXCEPT_H_
 #define REXCEPT_H_
 
-#include "Python.h"
+#include "py_include.h"
+
 #include <string>
 #include "util.h"
 

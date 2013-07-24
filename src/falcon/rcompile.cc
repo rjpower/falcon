@@ -1,12 +1,4 @@
-#include "Python.h"
-
-#include "Python-ast.h"
-#include "node.h"
-#include "pyarena.h"
-#include "ast.h"
-#include "code.h"
-#include "compile.h"
-#include "symtable.h"
+#include "py_include.h"
 #include "marshal.h"
 #include "opcode.h"
 

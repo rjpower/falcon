@@ -1,13 +1,10 @@
 #ifndef REVAL_H_
 #define REVAL_H_
 
-
 #include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
-#include <boost/noncopyable.hpp>
-
 
 #include "frameobject.h"
 #include "util.h"
@@ -97,7 +94,16 @@ struct Hint {
   unsigned int version;
 };
 
-struct RegisterFrame: private boost::noncopyable {
+class Noncopyable {
+public:
+  Noncopyable() {}
+  ~Noncopyable() {}
+private:
+  Noncopyable(const Noncopyable&);
+  Noncopyable& operator=(const Noncopyable&);
+};
+
+struct RegisterFrame: private Noncopyable {
 public:
 #if STACK_ALLOC_REGISTERS
   Register registers[kMaxRegisters];

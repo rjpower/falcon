@@ -1,4 +1,4 @@
-#include <Python.h>
+#include "py_include.h"
 
 #include "util.h"
 #include <signal.h>

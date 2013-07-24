@@ -2,7 +2,7 @@
 #ifndef FALCON_REGISTER_H
 #define FALCON_REGISTER_H
 
-#include "Python.h"
+#include "py_include.h"
 
 #include "config.h"
 #include "inline.h"
