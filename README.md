@@ -18,7 +18,7 @@ Performance improvements vary from not at all (sorry) to up to 3 times faster (y
     source bin/activate
 
     python setup.py develop
-    python test/test_count_threshold.py
+    python test/test_math.py
 
 ### Using Falcon:
     
