@@ -186,11 +186,17 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
                        PyEval_GetFuncName(code->function), needed_args - num_def_args, num_args);
     }
 
+    int default_start = needed_args - num_def_args;
+
+//    EVAL_LOG("Calling function with defaults: %s",
+//             PyString_AsString(PyObject_Repr(def_args)));
     for (int i = 0; i < needed_args; ++i) {
       if (i < num_args) {
+        EVAL_LOG("Assigning arguments: %d <- args[%d]", offset, i);
         registers[offset].store(args[i]);
       } else {
-        registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args + 1) );
+        EVAL_LOG("Assigning arguments: %d <- defaults[%d]", offset, i);
+        registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start));
       }
       registers[offset].incref();
       ++offset;

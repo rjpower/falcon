@@ -24,6 +24,5 @@ if __name__ == '__main__':
   parser.add_argument('--length', type=int, default = 100000)
   args = parser.parse_args()
   n = args.length
-  x = x = [randint(0, 10000000) for _ in xrange(n)]
-  print x[0:100]
+  x = x = [randint(0, n) for _ in xrange(n)]
   qs(x)  
