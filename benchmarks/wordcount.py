@@ -1,15 +1,11 @@
 import unittest
 from timed_test import TimedTest
-#import falcon 
 
-#@falcon.wrap 
-def wc(s, n_repeat = 200):
+def wc(s):
   counts = {}
-  get = counts.get
-  for _ in xrange(n_repeat):
-    for line in s.splitlines():
-      for word in line.split(" "):
-        counts[word] = get(word, 0) + 1 
+  for line in s.splitlines():
+    for word in line.split(" "):
+      counts[word] = counts.get(word, 0) + 1 
   return counts 
 
 text = """
@@ -137,6 +133,6 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser(description="Word counting benchmark")
   parser.add_argument('--repeat', type=int, default = 200)
   args = parser.parse_args()
-  wc(text, args.repeat)  
+  wc(text * args.repeat)  
 
  

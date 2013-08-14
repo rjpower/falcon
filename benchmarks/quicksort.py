@@ -1,7 +1,6 @@
 def qs(x):
   if len(x) <= 1:
       return x
-
   midpoint = len(x) / 2
   pivot = x[midpoint]
   eq = []
@@ -17,17 +16,14 @@ def qs(x):
   return qs(less) + eq + qs(greater)
 
 
-
-from timed_test import TimedTest
-import random
-import unittest
-class TestQuicksort(TimedTest):
-    def test_qs(self):
-        n = 100000
-        # x = [random.random() for _ in xrange(100000)]
-        x = [random.randint(0, 10000000) for _ in xrange(n)]
-        self.time_compare(qs, x, repeat=1)
-#        self.run_falcon(qs, x)
-
 if __name__ == '__main__':
-    unittest.main()
+  import argparse 
+  import random 
+  randint = random.randint 
+  parser = argparse.ArgumentParser(description="Quicksort benchamrk")
+  parser.add_argument('--length', type=int, default = 100000)
+  args = parser.parse_args()
+  n = args.length
+  x = x = [randint(0, 10000000) for _ in xrange(n)]
+  print x[0:100]
+  qs(x)  

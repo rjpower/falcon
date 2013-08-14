@@ -87,8 +87,9 @@ struct PyObjHelper {
   }
 };
 
-RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector& args, const ObjVector& kw) :
-    code(rcode) {
+RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
+                             const ObjVector& args,
+                             const ObjVector& kw) : code(rcode) {
   instructions_ = code->instructions.data();
 
 
@@ -173,7 +174,6 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
     Py_INCREF(self);
     registers[offset].store(self);
     ++offset;
-
     needed_args--;
   }
 
@@ -190,9 +190,8 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
       if (i < num_args) {
         registers[offset].store(args[i]);
       } else {
-        registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args) );
+        registers[offset].store(PyTuple_GET_ITEM(def_args, i - num_args + 1) );
       }
-
       registers[offset].incref();
       ++offset;
     }
