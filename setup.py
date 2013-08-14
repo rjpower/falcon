@@ -16,7 +16,7 @@ sources.remove('src/falcon/rlist.cc')
 
 setup(
   name='falcon',
-  version='0.04',
+  version='0.05',
   maintainer='Russell Power',
   maintainer_email='russell.power@gmail.com',
   url='http://github.com/rjpower/falcon',
@@ -31,10 +31,6 @@ setup(
     'Programming Language :: Python',
     'Programming Language :: Python :: 2.6',
     'Programming Language :: Python :: 2.7',
-    'Programming Language :: Python :: 3.0',
-    'Programming Language :: Python :: 3.1',
-    'Programming Language :: Python :: 3.2',
-    'Programming Language :: Python :: 3.3',
   ],
 
   description='Faster than a speeding bullet...',
