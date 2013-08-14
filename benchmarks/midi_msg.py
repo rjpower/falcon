@@ -346,6 +346,7 @@ def _print_signatures():
         sig = build_signature(spec)
         print('mido.new {}'.format(sig))
 
+
 def _init():
     """
     Initialize the module.
@@ -369,11 +370,13 @@ def _init():
         _SPEC_LOOKUP[spec.type] = spec
 
 
+_init() 
+
 def serialized_messages():
   
   # Import like above, or just paste this at the end of msg.py                
-  a = Message(0x80, channel=0, note=60, velocity=64)
-  b = Message(0x90, channel=0, note=60, velocity=126)
+  a = Message('note_off', channel=0, note=60, velocity=64)
+  b = Message('note_on', channel=0, note=60, velocity=126)
   c = a.copy(note=62)
   d = Message(0x92)  # Create Message by status_byte                          
   abytes = a.bytes()
@@ -382,17 +385,9 @@ def serialized_messages():
   return abytes + bbytes + cbytes + d.bytes()
 
 
-import timed_test 
-import unittest 
-class TestMsg(timed_test.TimedTest):
-  def test_init(self):
-    self.timed(_init, repeat=2000)
-
-  def test_serialized_message(self):
-    self.timed(serialized_messages, repeat=2000)
-
-
-if __name__ == '__main__':
-  unittest.main()
+if __name__ == '__main__':  
+  for _ in xrange(2000):
+    serialized_messages()
+  
 
 

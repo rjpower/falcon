@@ -20,7 +20,7 @@ if __name__ == '__main__':
   import argparse 
   import random 
   randint = random.randint 
-  parser = argparse.ArgumentParser(description="Quicksort benchamrk")
+  parser = argparse.ArgumentParser(description="Quicksort benchmark")
   parser.add_argument('--length', type=int, default = 100000)
   args = parser.parse_args()
   n = args.length

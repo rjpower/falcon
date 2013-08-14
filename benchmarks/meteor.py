@@ -4,7 +4,7 @@
 #
 # contributed by Daniel Nanz, 2008-08-21
 
-import optparse
+
 import sys
 import time
 from bisect import bisect
@@ -141,13 +141,5 @@ def run_solve(n):
   solutions = []
   return  solve(n, 0, free, curr_board, pieces_left, solutions)
 
-
-from timed_test import TimedTest
-import random
-import unittest
-class TestMeteor(TimedTest):
-  def test_meteor(self):
-    self.time_compare(run_solve, SOLVE_ARG, repeat=5)
-
 if __name__ == '__main__':
-    unittest.main()
+  run_solve(SOLVE_ARG)

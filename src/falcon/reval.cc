@@ -1527,6 +1527,19 @@ struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
       }
     };
 
+
+
+struct StoreMap: public RegOpImpl<RegOp<3>, StoreMap> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame,
+                             RegOp<3>& op,
+                             Register* registers) {
+    PyObject* dict = LOAD_OBJ(op.reg[0]);
+    PyObject* key = LOAD_OBJ(op.reg[1]);
+    PyObject* value = LOAD_OBJ(op.reg[2]);
+    PyDict_SetItem(dict, key, value);
+  }
+};
+
 struct PrintItem: public RegOpImpl<RegOp<2>, PrintItem> {
   static void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
     PyObject* v = LOAD_OBJ(op.reg[0]);
@@ -2000,6 +2013,8 @@ DEFINE_OP(BUILD_LIST, BuildList);
 DEFINE_OP(BUILD_MAP, BuildMap);
 DEFINE_OP(BUILD_SLICE, BuildSlice);
 
+DEFINE_OP(STORE_MAP, StoreMap);
+
 DEFINE_OP(PRINT_NEWLINE, PrintNewline);
 DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
 DEFINE_OP(PRINT_ITEM, PrintItem);
@@ -2063,7 +2078,6 @@ BAD_OP(EXEC_STMT);
 BAD_OP(WITH_CLEANUP);
 BAD_OP(PRINT_EXPR);
 BAD_OP(DELETE_SUBSCR);
-BAD_OP(STORE_MAP);
 BAD_OP(DELETE_SLICE);
 BAD_OP(NOP);
 BAD_OP(ROT_FOUR);
