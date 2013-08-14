@@ -4,6 +4,7 @@ import random
 import sys
 import time
 import unittest
+
 import numpy as np
 logging.basicConfig(
     format='%(asctime)s %(filename)s:%(funcName)s %(message)s',

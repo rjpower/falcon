@@ -808,6 +808,40 @@ struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
   }
 };
 
+struct DictGet : public RegOpImpl<RegOp<3>, DictGet> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* dict = LOAD_OBJ(op.reg[0]);
+    CHECK_VALID(dict);
+
+    PyObject* key = LOAD_OBJ(op.reg[1]);
+    CHECK_VALID(key);
+
+    PyObject* result = PyDict_GetItem(dict, key);
+    if (result == NULL) {
+      result = Py_None;
+    }
+    Py_INCREF(result);
+    STORE_REG(op.reg[2], result);
+  }
+};
+
+struct DictGetDefault : public RegOpImpl<RegOp<4>, DictGetDefault> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
+    PyObject* dict = LOAD_OBJ(op.reg[0]);
+    CHECK_VALID(dict);
+
+    PyObject* key = LOAD_OBJ(op.reg[1]);
+    CHECK_VALID(key);
+
+    PyObject* result = PyDict_GetItem(dict, key);
+    if (result == NULL) {
+      result = LOAD_OBJ(op.reg[2]);
+    }
+    Py_INCREF(result);
+    STORE_REG(op.reg[3], result);
+  }
+};
+
 struct IncRef: public RegOpImpl<RegOp<1>, IncRef> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
     CHECK_VALID(LOAD_OBJ(op.reg[0]));
@@ -1596,6 +1630,13 @@ struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
     }
 
     PyObject* res = PyEval_CallObject(import, args);
+    if (res == NULL) {
+      PyErr_Print();
+      throw RException(PyExc_ImportError, "Failed to import name %s",
+                       PyString_AsString(name));
+    }
+    // band-aid to prevent segfaults, not sure why this incref makes things work
+    Py_IncRef(res);
     STORE_REG(op.reg[2], res);
   }
 };
@@ -1853,9 +1894,11 @@ static const void* labels[] = {
   OFFSET(CONST_INDEX),
   OFFSET(BINARY_SUBSCR_LIST),
   OFFSET(BINARY_SUBSCR_DICT),
-  OFFSET(DICT_CONTAINS),
   OFFSET(STORE_SUBSCR_LIST),
   OFFSET(STORE_SUBSCR_DICT),
+  OFFSET(DICT_CONTAINS),
+  OFFSET(DICT_GET),
+  OFFSET(DICT_GET_DEFAULT),
 }
 ;
 
@@ -1895,7 +1938,7 @@ DEFINE_OP(BINARY_SUBSCR_DICT, BinarySubscrDict);
 DEFINE_OP(CONST_INDEX, ConstIndex);
 
 
-DEFINE_OP(DICT_CONTAINS, DictContains);
+
 
 BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul, true);
 BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div, true);
@@ -1974,6 +2017,12 @@ DEFINE_OP(INCREF, IncRef);
 DEFINE_OP(DECREF, DecRef);
 
 DEFINE_OP(LIST_APPEND, ListAppend);
+
+DEFINE_OP(DICT_CONTAINS, DictContains);
+DEFINE_OP(DICT_GET, DictGet);
+DEFINE_OP(DICT_GET_DEFAULT, DictGetDefault);
+
+
 DEFINE_OP(SLICE, Slice);
 
 DEFINE_OP(IMPORT_STAR, ImportStar);

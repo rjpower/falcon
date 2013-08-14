@@ -14,11 +14,9 @@ def main():
   sys.path.insert(0, os.path.dirname(script))
   with open(script, 'rb') as fp:
       code = compile(fp.read(), script, 'exec')
-      
-#  import dis
-#  dis.dis(code)
-  f_frame = falcon.evaluator.frame_from_codeobj(code)
-  falcon.evaluator.eval(f_frame)
+
+  e = falcon.Evaluator()
+  e.eval_python(code, (), {})
   
 if __name__ == '__main__':
   main()

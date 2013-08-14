@@ -22,15 +22,18 @@ TOPDIR := ../..
 SRCDIR := $(TOPDIR)/src
 
 VPATH := $(SRCDIR)/falcon
-CPPFLAGS := -I$(SRCDIR) -I$(TOPDIR)/include/python2.7 -I$(SRCDIR)/sparsehash-2.0.2/src
 # -fno-gcse -fno-crossjumping 
 
-CFLAGS := $(CPPFLAGS) -Wall -pthread -fno-strict-aliasing -fwrapv -Wall -fPIC -ggdb2 -std=c++0x -funroll-loops
-CXXFLAGS := $(CFLAGS) 
 INCLUDES := $(shell find $(SRCDIR) -name '*.h') ../../Makefile
 
 opt : COPT := -O3 -funroll-loops
+opt : CPPFLAGS := -I$(SRCDIR) -I$(SRCDIR)/sparsehash-2.0.2/src -I/usr/include/python2.7
+
 dbg : COPT := -DFALCON_DEBUG=1 -O0 -fno-omit-frame-pointer
+dbg : CPPFLAGS := -I$(SRCDIR) -I$(SRCDIR)/sparsehash-2.0.2/src -I/usr/include/python2.7
+
+CFLAGS = $(CPPFLAGS) -Wall -pthread -fno-strict-aliasing -fwrapv -Wall -fPIC -ggdb2 -std=c++0x -funroll-loops
+CXXFLAGS = $(CFLAGS)
 
 opt: _falcon_core.so
 dbg: _falcon_core.so

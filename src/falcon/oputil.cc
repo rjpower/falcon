@@ -127,10 +127,11 @@ const char* OpUtil::name(int opcode) {
     case CONST_INDEX: return "CONST_INDEX";
     case BINARY_SUBSCR_LIST : return "BINARY_SUBSCR_LIST";
     case BINARY_SUBSCR_DICT : return "BINARY_SUBSCR_DICT";
-    case DICT_CONTAINS : return "DICT_CONTAINS";
     case STORE_SUBSCR_LIST : return "STORE_SUBSCR_LIST";
     case STORE_SUBSCR_DICT : return "STORE_SUBSCR_DICT";
-
+    case DICT_CONTAINS : return "DICT_CONTAINS";
+    case DICT_GET : return "DICT_GET";
+    case DICT_GET_DEFAULT : return "DICT_GET_DEFAULT";
   }
 
   return "BAD_OP";

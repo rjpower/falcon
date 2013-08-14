@@ -506,7 +506,8 @@ public:
 
 enum KnownMethod {
   METHOD_UNKNOWN,
-  METHOD_LIST_APPEND
+  METHOD_LIST_APPEND,
+  METHOD_DICT_GET,
 };
 
 class LocalTypeSpecialization: public CompilerPass, protected TypeInference {
@@ -530,12 +531,16 @@ public:
   void visit_op(CompilerOp* op) {
     switch (op->code) {
     case LOAD_ATTR: {
+      StaticType t = this->get_type(op->regs[0]);
       PyObject* attr_name_obj = PyTuple_GetItem(this->names, op->arg);
 
       char* attr_name = PyString_AsString(attr_name_obj);
 
-      if (strcmp(attr_name, "append") == 0) {
+      if (t == LIST && strcmp(attr_name, "append") == 0) {
         this->known_methods[op->regs[1]] = METHOD_LIST_APPEND;
+        this->known_bound_objects[op->regs[1]] = op->regs[0];
+      } else if (t == DICT && strcmp(attr_name, "get") == 0) {
+        this->known_methods[op->regs[1]] = METHOD_DICT_GET;
         this->known_bound_objects[op->regs[1]] = op->regs[0];
       }
       break;
@@ -543,17 +548,44 @@ public:
 
     case CALL_FUNCTION: {
       int fn_reg = op->regs[0];
-      if (this->find_method(fn_reg) == METHOD_LIST_APPEND) {
-        op->code = LIST_APPEND;
-        int item = op->regs[1];
-        op->has_dest = false;
-        op->arg = 0;
-        op->regs.clear();
+      KnownMethod method = this->find_method(fn_reg);
+      if (method != METHOD_UNKNOWN) {
+        int n_args = op->regs.size();
+        if (method == METHOD_LIST_APPEND) {
+          op->code = LIST_APPEND;
+          int item = op->regs[1];
+          op->has_dest = false;
+          op->arg = 0;
+          op->regs.clear();
 
-        op->regs.push_back(this->known_bound_objects[fn_reg]);
-        op->regs.push_back(item);
+          op->regs.push_back(this->known_bound_objects[fn_reg]);
+          op->regs.push_back(item);
+        } else if (method == METHOD_DICT_GET && n_args == 3) {
+          op->code = DICT_GET;
+          int key = op->regs[1];
+          int dest = op->regs[2];
+          op->has_dest = true;
+          op->arg = 0;
+          op->regs.clear();
+          op->regs.push_back(this->known_bound_objects[fn_reg]);
+          op->regs.push_back(key);
+          op->regs.push_back(dest);
+        } else if (method == METHOD_DICT_GET && n_args == 4) {
+          op->code = DICT_GET_DEFAULT;
+          int key = op->regs[1];
+          int value = op->regs[2];
+          int dest = op->regs[3];
+          op->has_dest = true;
+          op->arg = 0;
+          op->regs.clear();
+          op->regs.push_back(this->known_bound_objects[fn_reg]);
+          op->regs.push_back(key);
+          op->regs.push_back(value);
+          op->regs.push_back(dest);
+        }
       }
       break;
+
     }
     case BINARY_SUBSCR: {
       StaticType t = this->get_type(op->regs[0]);

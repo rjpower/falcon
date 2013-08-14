@@ -1,21 +1,16 @@
 import unittest
 from timed_test import TimedTest
-def wc(s):
+#import falcon 
+
+#@falcon.wrap 
+def wc(s, n_repeat = 200):
   counts = {}
   get = counts.get
-  for line in s.splitlines():
-    for word in line.split(" "):
-      #if word in counts:
-      #  counts[word] += 1
-      #else:
-      #  counts[word] = 1
-      counts[word] = get(word, 0) + 1 
+  for _ in xrange(n_repeat):
+    for line in s.splitlines():
+      for word in line.split(" "):
+        counts[word] = get(word, 0) + 1 
   return counts 
-
-class TestWordCount(TimedTest):
-    def test_wordcount(self):
-        reptext = text * 200
-        self.time_compare(wc, reptext, repeat=1)
 
 text = """
  Fellow Workers,
@@ -136,7 +131,12 @@ Religion is mankind's greatest curse! It is absurd to expect that science, in th
       Study our principles, our movement, and if they convince you join us in our struggle against authority and exploitation, for freedom and happiness for all.
 """
 
+
 if __name__ == '__main__':
-  unittest.main()
+  import argparse 
+  parser = argparse.ArgumentParser(description="Word counting benchmark")
+  parser.add_argument('--repeat', type=int, default = 200)
+  args = parser.parse_args()
+  wc(text, args.repeat)  
 
  

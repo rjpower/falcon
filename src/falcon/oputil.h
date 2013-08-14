@@ -11,9 +11,11 @@
 #define CONST_INDEX 150
 #define BINARY_SUBSCR_LIST 151
 #define BINARY_SUBSCR_DICT 152
-#define DICT_CONTAINS 153
-#define STORE_SUBSCR_LIST 154
-#define STORE_SUBSCR_DICT 155
+#define STORE_SUBSCR_LIST 153
+#define STORE_SUBSCR_DICT 154
+#define DICT_CONTAINS 155
+#define DICT_GET 156
+#define DICT_GET_DEFAULT 157
 
 struct OpUtil {
   static const char* name(int opcode);
