@@ -10,7 +10,7 @@
 static const int ObjType = 0;
 static const int IntType = 1;
 
-#if USED_TYPED_REGISTERS
+#if USE_TYPED_REGISTERS
 
 #define TYPE_MASK 0x1
 

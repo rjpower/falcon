@@ -365,8 +365,8 @@ def t(kl, bl):
   r = rijndael('a' * kl, bl)
   assert r.decrypt(r.encrypt(b)) == b
 
-def multiple_calls():
-  for _ in xrange(50):
+def multiple_calls(N):
+  for _ in xrange(N):
     t(16, 16)
     t(16, 24)
     t(16, 32)
@@ -376,12 +376,8 @@ def multiple_calls():
     t(32, 16)
     t(32, 24)
     t(32, 32)
-
-from timed_test import TimedTest
-import unittest
-class TestCrypto(TimedTest):
-    def test_crypto(self):
-        self.time_compare(multiple_calls, repeat=1)
-
+    
 if __name__ == '__main__':
-    unittest.main()
+  n_repeats = 50 
+  multiple_calls(n_repeats)
+  

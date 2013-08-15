@@ -1,6 +1,4 @@
 import random
-import timed_test 
-import unittest 
 
 class Node(object):
     def __init__(self, idx, thresh, left, right):
@@ -53,18 +51,14 @@ def gen_random_tuples(n_items, n_features):
   return [tuple([random.random() for _ in range(n_features)]) 
           for _ in range(n_items)]
 
-class TestDecisionTree(timed_test.TimedTest):
-#  def test_gen_features(self):
-#    self.timed(gen_random_tuples, 1000,100)
-#  def test_gen_tree(self):
-#    self.timed(gen_random_tree, 1000, 12)
-  def test_eval_labels(self):
-    tree = gen_random_tree(n_features = 10, depth = 12)
-    features = gen_random_tuples(250000,10)
-    self.timed(predict_labels, features, tree, repeat=1)
-
+  
 if __name__ == '__main__':
-  unittest.main()
+  n_samples = 25000
+  n_features = 10
+  tree = gen_random_tree(n_features, depth = 12)
+  features = gen_random_tuples(n_samples, n_features)
+  predict_labels(features, tree)
+
 
 
     

@@ -1,8 +1,6 @@
 import bisect 
 import sys
-import unittest 
 
-from timed_test import TimedTest
 
 alu = (
    'GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG'
@@ -67,9 +65,7 @@ def randomFasta(table, n):
       pass
         #print jn([chars[bb(probs, gR())] for i in xrange(n % width)])
 
-class TestFasta(TimedTest):
-  def test_three_homosapiens(self):
-    self.time_compare(randomFasta, homosapiens, 150000000, repeat = 1)
     
 if __name__ == '__main__':
-  unittest.main() 
+  N = 150000000
+  randomFasta(homosapiens, N)

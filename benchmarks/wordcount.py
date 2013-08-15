@@ -1,5 +1,3 @@
-import unittest
-from timed_test import TimedTest
 
 def wc(s):
   counts = {}
@@ -134,5 +132,3 @@ if __name__ == '__main__':
   parser.add_argument('--repeat', type=int, default = 200)
   args = parser.parse_args()
   wc(text * args.repeat)  
-
- 

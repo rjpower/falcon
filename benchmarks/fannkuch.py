@@ -47,17 +47,9 @@ def fannkuch(n):
                     return checksum
             count[r] -= 1
 
-from timed_test import TimedTest
-import unittest 
 
-class TestF(TimedTest):
-    def test_f(self):
-      self.time_compare(fannkuch, 9, repeat=1)
-      
+    
 if __name__ == '__main__':
-  if len(sys.argv) > 2:
-    n = int(sys.argv[2])
-  else:
-    n = 
-  fannkuch(9 
-  unittest.main() 
+  n = 9
+  fannkuch(n) 
+   

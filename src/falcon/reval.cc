@@ -913,7 +913,7 @@ struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
       r2 = PyDict_GetItem(frame->builtins(), r1);
     }
     if (r2 == NULL) {
-      throw RException(PyExc_NameError, "Name %.200s not defined.", r1);
+      throw RException(PyExc_NameError, "Name %.200s not defined.", obj_to_str(r1));
     }
     Py_INCREF(r2);
 
