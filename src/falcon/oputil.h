@@ -57,6 +57,11 @@ struct OpUtil {
       r.insert(JUMP_FORWARD);
       r.insert(BREAK_LOOP);
       r.insert(CONTINUE_LOOP);
+
+      // Not technically, but we need to patch up offsets they use
+      // for catching exceptions.  Sort of a `delayed branch`.
+      r.insert(SETUP_EXCEPT);
+      r.insert(SETUP_FINALLY);
     }
 
     return r.find(opcode) != r.end();

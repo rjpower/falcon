@@ -18,13 +18,22 @@ struct RException {
   RException(PyObject* exc, const char* fmt, ...);
 };
 
+#if FALCON_DEBUG == 0
+#define _THROW_ERROR(op, a, b)\
+throw RException(PyExc_AssertionError,\
+                 "Assert failed (%s:%d): expected %s %s %s, got %s, %s",\
+                  __FILE__, __LINE__, #a, #op, #b, Coerce::str(a_).c_str(), Coerce::str(b_).c_str())
+#else
+#define _THROW_ERROR(op, a, b)\
+  Log_Fatal("Assert failed (%s:%d): expected %s %s %s, got %s, %s",\
+                     __FILE__, __LINE__, #a, #op, #b, Coerce::str(a_).c_str(), Coerce::str(b_).c_str())
+#endif
+
 #define _ASSERT_OP(op, a, b)\
   { decltype(a) a_ = (a);\
     decltype(b) b_ = (b);\
     if (!(a_ op b_)) {\
-      throw RException(PyExc_AssertionError,\
-                       "Assert failed (%s:%d): expected %s %s %s, got %s, %s",\
-                        __FILE__, __LINE__, #a, #op, #b, Coerce::str(a_).c_str(), Coerce::str(b_).c_str());\
+      _THROW_ERROR(op, a, b);\
     }\
   }
 

@@ -8,8 +8,6 @@
 #include "compiler_pass.h"
 #include "basic_block.h"
 
-#define COMPILE_LOG(...) do { if (getenv("COMPILE_LOG")) { Log_Info(__VA_ARGS__); } } while (0)
-
 class UseCounts {
 protected:
   std::map<int, int> counts;

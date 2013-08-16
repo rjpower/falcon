@@ -1,4 +1,6 @@
-import falcon 
+import dis
+import falcon
+import sys
 
 class wrap(object):
   def __init__(self, f):

@@ -20,7 +20,6 @@
 #define GETARG(arr, i) ((int)((arr[i+2]<<8) + arr[i+1]))
 #define CODESIZE(op)  (HAS_ARG(op) ? 3 : 1)
 
-
 static int num_python_ops(const char* code, int len) {
   int pos = 0;
   int count = 0;
@@ -109,9 +108,6 @@ struct RCompilerUtil {
   }
 };
 
-
-
-
 /*
  * The main event: convert from a stack machine to an infinite register machine.
  * We do this using a virtual stack.  Instead of opcodes pushing and popping
@@ -183,6 +179,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
+//    COMPILE_LOG("Processing op code: %d %d %s", opcode, oparg, OpUtil::name(opcode));
+
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
     iter = state->bb_offsets.find(offset);
@@ -204,8 +202,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     if (!entry_point) {
       entry_point = bb;
     }
-
-
 
     if (last) {
       last->exits.push_back(bb);
@@ -615,32 +611,47 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
     case RAISE_VARARGS: {
-      int r1, r2, r3;
-      r1 = r2 = r3 = -1;
-      CompilerOp* op = bb->add_varargs_op(opcode, 0, oparg);
+      int target = -1;
+      int exc, value, tb;
+      exc = value = tb = -1;
       if (oparg == 3) {
-        r1 = stack->pop_register();
-        r2 = stack->pop_register();
-        r3 = stack->pop_register();
-        op->regs.push_back(r1);
-        op->regs.push_back(r2);
-        op->regs.push_back(r3);
+        tb = stack->pop_register();
+        value = stack->pop_register();
+        exc = stack->pop_register();
       } else if (oparg == 2) {
-        r1 = stack->pop_register();
-        r2 = stack->pop_register();
-        op->regs.push_back(r1);
-        op->regs.push_back(r2);
+        value = stack->pop_register();
+        exc = stack->pop_register();
       } else if (oparg == 1) {
-        r1 = stack->pop_register();
-        op->regs.push_back(r1);
+        exc = stack->pop_register();
       }
 
+      bb->add_op(opcode, 0, exc, value, tb);
+
+      if (stack->num_exc_handlers() > 0) {
+        COMPILE_LOG("Found local handler.");
+        // The raw exception data is pushed onto the stack,
+        // by ceval, prior to the exception handler being invoked.
+        //
+        // yaarrgh.
+
+        Frame f = stack->pop_exc_handler();
+        target = f.target;
+
+        // TODO -- conjure op reference to Py_None here for
+        // missing value or tb.
+        RegisterStack to_handler(*stack);
+        to_handler.push_register(tb);
+        to_handler.push_register(value);
+        to_handler.push_register(exc);
+
+        bb->exits.push_back(registerize(state, &to_handler, target));
+        return entry_point;
+      }
       break;
     }
       // Control flow instructions - recurse down each branch with a copy of the current stack.
     case BREAK_LOOP: {
       Frame f = stack->pop_frame();
-
       bb->add_op(opcode, 0);
       bb->exits.push_back(registerize(state, stack, f.target));
       return entry_point;
@@ -712,9 +723,40 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       return entry_point;
     }
 
+#ifdef ENABLE_EXCEPTIONS
+      case SETUP_EXCEPT:
+      case SETUP_FINALLY: {
+        int target = offset + CODESIZE(opcode) + oparg;
+        stack->push_exc_handler(target);
+
+        bb->add_op(opcode, 0);
+        RegisterStack a(*stack);
+        RegisterStack b(*stack);
+
+        // Fall through
+        BasicBlock* next = registerize(state, &b, offset + CODESIZE(opcode));
+        bb->exits.push_back(next);
+
+        // And add a jump directly to the handler (this will never be taken,
+        // but instead is used to setup the handler stack at runtime.)
+        a.push_register(-1);
+        a.push_register(-1);
+        a.push_register(-1);
+        BasicBlock* handler = registerize(state, &a, target);
+        bb->exits.push_back(handler);
+
+        return entry_point;
+      }
+      case END_FINALLY: {
+        bb->add_op(opcode, 0);
+        break;
+      }
+#else
     case SETUP_EXCEPT:
     case SETUP_FINALLY:
     case END_FINALLY:
+#endif
+
     case YIELD_VALUE:
     default:
       throw RException(PyExc_SyntaxError, "Unsupported opcode %s, arg = %d", OpUtil::name(opcode), oparg);
@@ -774,7 +816,6 @@ void lower_register_code(CompilerState* state, std::string *out) {
                "Non-local jump from non-branch op %s", OpUtil::name(op->code));
 
     if (OpUtil::is_branch(op->code) && op->code != RETURN_VALUE) {
-
       if (bb->exits.size() == 1) {
         BasicBlock& jmp = *bb->exits[0];
         ((BranchOp<0>*) op)->label = jmp.reg_offset;

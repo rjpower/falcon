@@ -6,6 +6,8 @@
 
 #include "rexcept.h"
 
+#define COMPILE_LOG(...) do { if (getenv("COMPILE_LOG")) { Log_Info(__VA_ARGS__); } } while (0)
+
 // While compiling, we use an expanded form to represent opcodes.  This
 // is translated to a compact instruction stream as the last compilation
 // step.

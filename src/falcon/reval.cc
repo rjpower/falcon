@@ -192,10 +192,10 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
 //             PyString_AsString(PyObject_Repr(def_args)));
     for (int i = 0; i < needed_args; ++i) {
       if (i < num_args) {
-        EVAL_LOG("Assigning arguments: %d <- args[%d]", offset, i);
+//        EVAL_LOG("Assigning arguments: %d <- args[%d]", offset, i);
         registers[offset].store(args[i]);
       } else {
-        EVAL_LOG("Assigning arguments: %d <- defaults[%d]", offset, i);
+//        EVAL_LOG("Assigning arguments: %d <- defaults[%d]", offset, i);
         registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start));
       }
       registers[offset].incref();
@@ -283,7 +283,8 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
   try {
     frame = frame_from_pyfunc(func, args, kw);
   } catch (RException& r) {
-    EVAL_LOG("Couldn't compile function, calling CPython...");
+    EVAL_LOG("Couldn't compile function, calling CPython: %s",
+             PyString_AsString(r.value));
     return PyObject_Call(func, args, kw);
   }
 
@@ -1711,6 +1712,23 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
   }
 };
 
+struct SetupExcept : public BranchOpImpl<BranchOp<0>, SetupExcept > {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+    EVAL_LOG("Pushing handler: %d", op.label);
+    frame->exc_handlers_.push_back(op.label);
+    *pc += sizeof(BranchOp<0>);
+  }
+};
+
+typedef SetupExcept SetupFinally;
+
+struct RaiseVarArgs : public RegOpImpl<RegOp<3>, RaiseVarArgs > {
+  static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    // Jump to the nearest exception handler.
+    throw RException();
+  }
+};
+
 #define CONCAT(...) __VA_ARGS__
 
 #define REGISTER_OP(opname)\
@@ -1758,6 +1776,7 @@ Register Evaluator::eval(RegisterFrame* f) {
 // #define OFFSET(opname) ((int64_t)&&op_##opname) - ((int64_t)&&op_STOP_CODE)
 #define OFFSET(opname) &&op_##opname
 
+  // The index of each offset MUST correspond to the opcode number!
 static const void* labels[] = {
   OFFSET(STOP_CODE),
   OFFSET(POP_TOP),
@@ -2053,6 +2072,9 @@ DEFINE_OP(MAKE_FUNCTION, MakeFunction);
 DEFINE_OP(MAKE_CLOSURE, MakeClosure);
 DEFINE_OP(BUILD_CLASS, BuildClass);
 
+DEFINE_OP(SETUP_EXCEPT, SetupExcept);
+DEFINE_OP(SETUP_FINALLY, SetupFinally);
+DEFINE_OP(RAISE_VARARGS, RaiseVarArgs);
 
 BAD_OP(SETUP_LOOP);
 BAD_OP(POP_BLOCK);
@@ -2062,10 +2084,7 @@ BAD_OP(MAP_ADD);
 BAD_OP(SET_ADD);
 BAD_OP(EXTENDED_ARG);
 BAD_OP(SETUP_WITH);
-BAD_OP(RAISE_VARARGS);
 BAD_OP(DELETE_FAST);
-BAD_OP(SETUP_FINALLY);
-BAD_OP(SETUP_EXCEPT);
 BAD_OP(CONTINUE_LOOP);
 BAD_OP(BUILD_SET);
 BAD_OP(DUP_TOPX);
@@ -2087,6 +2106,12 @@ BAD_OP(ROT_TWO);
 BAD_OP(POP_TOP);
 
 } catch (RException &error) {
+  if (!frame->exc_handlers_.empty()) {
+    int handler_offset = frame->exc_handlers_.pop();
+    EVAL_LOG("Jumping to handler: %d", handler_offset);
+    pc = frame->instructions() + handler_offset;
+    JUMP_TO(frame->next_code(pc));
+  }
   EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
   if (error.exception != NULL) {
     PyErr_SetObject(error.exception, error.value);

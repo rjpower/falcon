@@ -9,6 +9,7 @@
 struct RegisterStack {
   std::vector<int> regs;
   std::vector<Frame> frames;
+  std::vector<Frame> exc_handlers;
 
   RegisterStack() {
   }
@@ -20,6 +21,10 @@ struct RegisterStack {
 
   void push_frame(int target);
   Frame pop_frame();
+
+  int num_exc_handlers();
+  Frame pop_exc_handler();
+  void push_exc_handler(int target);
 
   int push_register(int reg);
   int pop_register();

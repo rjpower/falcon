@@ -67,6 +67,10 @@ struct SmallVector {
     }
   }
 
+  T pop() {
+    return vals_[--count_];
+  }
+
   size_t size() const {
     return count_;
   }
@@ -120,6 +124,7 @@ public:
   PyObject* consts_;
   PyObject* names_;
 
+  SmallVector<int> exc_handlers_;
   const char* instructions_;
 
 

@@ -2,6 +2,23 @@
 
 #include "register_stack.h"
 
+int RegisterStack::num_exc_handlers() {
+  return exc_handlers.size();
+}
+
+void RegisterStack::push_exc_handler(int target) {
+  Frame f;
+  f.stack_pos = regs.size();
+  f.target = target;
+  exc_handlers.push_back(f);
+}
+
+Frame RegisterStack::pop_exc_handler() {
+  Frame f = exc_handlers.back();
+  exc_handlers.pop_back();
+  regs.resize(f.stack_pos);
+  return f;
+}
 
 void RegisterStack::push_frame(int target) {
   Frame f;
