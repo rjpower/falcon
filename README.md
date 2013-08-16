@@ -11,8 +11,9 @@ Performance improvements vary from not at all (sorry) to up to 3 times faster (y
 
 ### Getting the code:
 
-    git clone github.com/rjpower/falcon
-    
+    git clone https://github.com/rjpower/falcon
+    cd falcon
+
     # optional, setup virtualenv
     virtualenv .
     source bin/activate
