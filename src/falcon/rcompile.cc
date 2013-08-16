@@ -599,7 +599,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     }
     case UNPACK_SEQUENCE: {
       int seq = stack->pop_register();
-
       for (r = oparg; r >= 1; --r) {
         int elt = stack->push_register(state->num_reg++);
         bb->add_dest_op(CONST_INDEX, r - 1, seq, elt);

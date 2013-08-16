@@ -28,7 +28,7 @@ protected:
   }
 
   bool is_pure(int op_code) {
-    Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
+    //Log_Debug("Checking if %s is pure\n", OpUtil::name(op_code));
     switch (op_code) {
     case LOAD_GLOBAL:
     case LOAD_FAST:
@@ -46,6 +46,10 @@ protected:
     case BUILD_SET:
     case BUILD_MAP:
     case MAKE_CLOSURE:
+    case DICT_GET:
+    case DICT_GET_DEFAULT:
+    case BINARY_SUBSCR_LIST:
+    case BINARY_SUBSCR_DICT:
       return true;
     default:
       return false;
