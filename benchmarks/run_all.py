@@ -44,19 +44,23 @@ def run(n_repeats=3):
       print 
       print 
     
-  print "%-20s|%16s|%16s|%16s" % ("Benchmark", "min ", "max ", "median ") 
+  print "%-20s| %-20s" % ("Benchmark", "time") 
   for filename in names:
-    print " " * 19, "|", " " * 14, "|", " " * 14, "|"
-    print "%-20s|%16s|%16s" % (filename, "", "") 
+    print " " * 19, "|"
+    print "%-20s| %-20s" % (filename, "") 
     for interp_name, _ in interps:
       if filename in failed[interp_name]:
         print "  %-18s|   %-16s" % (interp_name, "FAILED") 
         continue 
       times = timings[interp_name][filename]
-      print "  %-18s|%16.4f|%16.4f|%16.4f" % (interp_name, 
-                                             np.min(times), 
-                                             np.max(times), 
-                                             np.median(times))
-    
+      print "  %-18s| %10.4f (min = %0.4f, max = %0.4f)" % \
+        (interp_name, np.median(times), np.min(times), np.max(times)) 
+
+import sys
+
 if __name__ == '__main__':
-  run() 
+  if len(sys.argv) > 1:
+    N = int(sys.argv[1])
+  else:
+    N = 3
+  run(N) 

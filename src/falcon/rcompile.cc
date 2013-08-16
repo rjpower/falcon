@@ -723,7 +723,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       return entry_point;
     }
 
-#ifdef ENABLE_EXCEPTIONS
+// TODO: Make sure this actually works!
+#if ENABLE_EXCEPTIONS
       case SETUP_EXCEPT:
       case SETUP_FINALLY: {
         int target = offset + CODESIZE(opcode) + oparg;

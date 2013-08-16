@@ -17,9 +17,9 @@
 #include "compiler_state.h"
 
 // Only enable exception support in debug mode for now.
-#if FALCON_DEBUG == 1
-#define ENABLE_EXCEPTIONS 1
-#endif
+
+
+
 
 struct Compiler {
 private:

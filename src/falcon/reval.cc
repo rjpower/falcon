@@ -1261,7 +1261,10 @@ struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
 
 template <bool HasVarArgs, bool HasKwDict>
 struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, Register* registers) {
+  static f_inline void _eval(Evaluator* eval,
+                             RegisterFrame* frame,
+                             VarRegOp *op,
+                             Register* registers) {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
@@ -1287,7 +1290,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
      *   and only lazily construct PyObject representations when asked
      *   by other Python C API code.
      */
-    if (!PyCFunction_Check(fn) && !PyClass_Check(fn)) {
+    if (!PyCFunction_Check(fn) && !PyClass_Check(fn) && !PyType_Check(fn)) {
       try {
         code = eval->compile(fn);
       } catch (RException& e) {
@@ -1313,7 +1316,11 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
           // so keyword args actually start at na+1
           PyObject* k = LOAD_OBJ(op->reg[i+1]);
           PyObject* v = LOAD_OBJ(op->reg[i+2]);
-          PyDict_SetItem(kwdict, k, v);
+
+          Reg_Assert(PyString_Check(k), "Expected key to be string");
+          char* kstr = PyString_AsString(k);
+          PyDict_SetItemString(kwdict, kstr, v);
+          //PyDict_SetItem(kwdict, k, v);
         }
       }
 

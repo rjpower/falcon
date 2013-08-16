@@ -25,5 +25,8 @@
 #define GETATTR_HINTS 1
 #endif
 
+#ifndef ENABLE_EXCEPTIONS
+#define ENABLE_EXCEPTIONS 1
+#endif
 
 #endif
