@@ -290,8 +290,15 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
 
   try {
     Register result = eval(frame);
+    //bool needs_incref = !result.is_obj();
+
+    PyObject* result_obj = result.as_obj();
+
+    //if (needs_incref) Py_INCREF(result_obj);
+
+    // only delete after incref since deleting the frame decreases reference counts
     delete frame;
-    return result.as_obj();
+    return result_obj;
   } catch (RException& r) {
     delete frame;
     return NULL;

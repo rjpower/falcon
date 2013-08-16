@@ -59,12 +59,16 @@ struct Register {
     return i_value >> 1;
   }
 
-  f_inline PyObject*& as_obj() {
+  f_inline bool is_obj() {
+    return get_type() == ObjType;
+  }
+
+  f_inline PyObject* as_obj() {
     if (get_type() == ObjType) {
       return objval;
     } else {
       objval = PyInt_FromLong(as_int());
-//      Log_Info("Coerced: %p %d", thiss, objval->ob_refcnt);
+      //Log_Info("Coerced: %p %d", this, objval->ob_refcnt);
       return objval;
     }
   }
@@ -112,7 +116,7 @@ struct Register {
     } else {
       store(PyInt_AS_LONG(obj) );
       Py_DECREF(obj);
-//      Log_Info("%d %d", as_int(), obj->ob_refcnt);
+      //Log_Info("Register store object %d %d", as_int(), obj->ob_refcnt);
     }
   }
 };
@@ -136,7 +140,11 @@ struct Register {
     return PyObject_Cmp((PyObject*)this, v, result);
   }
 
-  f_inline PyObject*& as_obj() {
+  f_inline bool is_obj() {
+    return true;
+  }
+
+  f_inline PyObject* as_obj() {
     return v;
   }
 

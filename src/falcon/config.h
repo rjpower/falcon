@@ -6,7 +6,7 @@
 
 // evaluator:
 #ifndef USE_TYPED_REGISTERS
-#define USE_TYPED_REGISTERS 1
+#define USE_TYPED_REGISTERS 0
 #endif
 
 #ifndef STACK_ALLOC_REGISTERS

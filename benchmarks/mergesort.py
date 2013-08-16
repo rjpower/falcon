@@ -22,11 +22,8 @@ def mergesort(x):
 
 
 
-import random 
 
 if __name__ == '__main__':
-  n = 10000000
-  randint = random.randint 
-  x = [randint(0,n/200) for _ in xrange(n)] * 200 
+  x = [10,9,8,7,6,5,4,3,2,1] * 20000 
   mergesort(x)
   
