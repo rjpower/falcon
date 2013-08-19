@@ -1767,8 +1767,24 @@ typedef SetupExcept SetupFinally;
 
 struct RaiseVarArgs : public RegOpImpl<RegOp<3>, RaiseVarArgs > {
   static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
-    // Jump to the nearest exception handler.
-    throw RException();
+    PyObject* type;
+    PyObject* value;
+    PyObject* tb;
+     // Jump to the nearest exception handler.
+    type = LOAD_OBJ(op.reg[0]);
+    if (op.reg[1] != kInvalidRegister) {
+      value = LOAD_OBJ(op.reg[1]);
+    } else {
+      value = Py_None;
+    }
+
+    if (op.reg[2] != kInvalidRegister) {
+      tb = LOAD_OBJ(op.reg[2]);
+    } else {
+      tb = Py_None;
+    }
+
+    throw RException(type, value, tb);
   }
 };
 
