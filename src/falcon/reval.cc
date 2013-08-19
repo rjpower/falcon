@@ -1,7 +1,5 @@
 #include "py_include.h"
 
-
-
 #include <opcode.h>
 #include <marshal.h>
 #include <string.h>
@@ -87,11 +85,9 @@ struct PyObjHelper {
   }
 };
 
-RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
-                             const ObjVector& args,
-                             const ObjVector& kw) : code(rcode) {
+RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector& args, const ObjVector& kw) :
+    code(rcode) {
   instructions_ = code->instructions.data();
-
 
   if (rcode->function) {
     globals_ = PyFunction_GetGlobals(rcode->function);
@@ -196,7 +192,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
         registers[offset].store(args[i]);
       } else {
 //        EVAL_LOG("Assigning arguments: %d <- defaults[%d]", offset, i);
-        registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start));
+        registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start) );
       }
       registers[offset].incref();
       ++offset;
@@ -275,7 +271,6 @@ PyObject* RegisterFrame::locals() {
   return locals_;
 }
 
-
 //Register
 
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
@@ -283,8 +278,7 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
   try {
     frame = frame_from_pyfunc(func, args, kw);
   } catch (RException& r) {
-    EVAL_LOG("Couldn't compile function, calling CPython: %s",
-             PyString_AsString(r.value));
+    EVAL_LOG("Couldn't compile function, calling CPython: %s", PyString_AsString(r.value));
     return PyObject_Call(func, args, kw);
   }
 
@@ -334,9 +328,8 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 
   size_t n_kwds = 0;
   if (kw != NULL && PyDict_Check(kw)) {
-    n_kwds =  PyDict_Size(kw);
+    n_kwds = PyDict_Size(kw);
   }
-
 
   for (size_t i = 0; i < n_kwds; ++i) {
     throw RException(PyExc_ValueError, "Keywords not yet supported, n_given = %d", n_kwds);
@@ -520,9 +513,6 @@ struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
   }
 };
 
-
-
-
 template<int OpCode, UnaryFunction ObjF>
 struct UnaryOp: public RegOpImpl<RegOp<2>, UnaryOp<OpCode, ObjF> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -588,7 +578,6 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
   }
 };
 
-
 struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
@@ -618,8 +607,7 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   }
 };
 
-
-struct BinarySubscrList : public RegOpImpl<RegOp<3>, BinarySubscrList> {
+struct BinarySubscrList: public RegOpImpl<RegOp<3>, BinarySubscrList> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
     Register& key = registers[op.reg[1]];
@@ -642,10 +630,9 @@ struct BinarySubscrList : public RegOpImpl<RegOp<3>, BinarySubscrList> {
       throw RException();
     }
     CHECK_VALID(res);
-        STORE_REG(op.reg[2], res);
+    STORE_REG(op.reg[2], res);
   }
 };
-
 
 struct BinarySubscrDict: public RegOpImpl<RegOp<3>, BinarySubscrDict> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
@@ -665,7 +652,7 @@ struct BinarySubscrDict: public RegOpImpl<RegOp<3>, BinarySubscrDict> {
     }
     res = PyObject_GetItem(dict, key);
     if (!res) {
-     throw RException();
+      throw RException();
     }
     CHECK_VALID(res);
     STORE_REG(op.reg[2], res);
@@ -686,7 +673,6 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
   }
 };
 
-
 #define Py3kExceptionClass_Check(x)     \
     (PyType_Check((x)) &&               \
      PyType_FastSubclass((PyTypeObject*)(x), Py_TPFLAGS_BASE_EXC_SUBCLASS))
@@ -694,85 +680,83 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
 #define CANNOT_CATCH_MSG "catching classes that don't inherit from " \
                          "BaseException is not allowed in 3.x"
 
-/* slow path for comparisons, copied from ceval */
+    /* slow path for comparisons, copied from ceval */
 static f_inline PyObject* cmp_outcome(int op, PyObject *v, PyObject *w) {
-    int res = 0;
-    switch (op) {
-    case PyCmp_IS:
-        res = (v == w);
-        break;
-    case PyCmp_IS_NOT:
-        res = (v != w);
-        break;
-    case PyCmp_IN:
-        res = PySequence_Contains(w, v);
-        if (res < 0)
-            return NULL;
-        break;
-    case PyCmp_NOT_IN:
-        res = PySequence_Contains(w, v);
-        if (res < 0)
-            return NULL;
-        res = !res;
-        break;
-    case PyCmp_EXC_MATCH:
-        if (PyTuple_Check(w)) {
-            Py_ssize_t i, length;
-            length = PyTuple_Size(w);
-            for (i = 0; i < length; i += 1) {
-                PyObject *exc = PyTuple_GET_ITEM(w, i);
-                if (PyString_Check(exc)) {
-                    int ret_val;
-                    ret_val = PyErr_WarnEx(
-                        PyExc_DeprecationWarning,
-                        "catching of string "
-                        "exceptions is deprecated", 1);
-                    if (ret_val < 0)
-                        return NULL;
-                }
-                else if (Py_Py3kWarningFlag  &&
-                         !PyTuple_Check(exc) &&
-                         !Py3kExceptionClass_Check(exc))
-                {
-                    int ret_val;
-                    ret_val = PyErr_WarnEx(
-                        PyExc_DeprecationWarning,
-                        CANNOT_CATCH_MSG, 1);
-                    if (ret_val < 0)
-                        return NULL;
-                }
-            }
+  int res = 0;
+  switch (op) {
+  case PyCmp_IS:
+    res = (v == w);
+    break;
+  case PyCmp_IS_NOT:
+    res = (v != w);
+    break;
+  case PyCmp_IN:
+    res = PySequence_Contains(w, v);
+    if (res < 0) return NULL;
+    break;
+  case PyCmp_NOT_IN:
+    res = PySequence_Contains(w, v);
+    if (res < 0) return NULL;
+    res = !res;
+    break;
+  case PyCmp_EXC_MATCH:
+    if (PyTuple_Check(w)) {
+      Py_ssize_t i, length;
+      length = PyTuple_Size(w);
+      for (i = 0; i < length; i += 1) {
+        PyObject *exc = PyTuple_GET_ITEM(w, i) ;
+        if (PyString_Check(exc)) {
+          int ret_val;
+          ret_val = PyErr_WarnEx(
+              PyExc_DeprecationWarning,
+              "catching of string "
+              "exceptions is deprecated", 1);
+          if (ret_val < 0)
+          return NULL;
         }
-        else {
-            if (PyString_Check(w)) {
-                int ret_val;
-                ret_val = PyErr_WarnEx(
-                                PyExc_DeprecationWarning,
-                                "catching of string "
-                                "exceptions is deprecated", 1);
-                if (ret_val < 0)
-                    return NULL;
-            }
-            else if (Py_Py3kWarningFlag  &&
-                     !PyTuple_Check(w) &&
-                     !Py3kExceptionClass_Check(w))
-            {
-                int ret_val;
-                ret_val = PyErr_WarnEx(
-                    PyExc_DeprecationWarning,
-                    CANNOT_CATCH_MSG, 1);
-                if (ret_val < 0)
-                    return NULL;
-            }
+        else if (Py_Py3kWarningFlag &&
+            !PyTuple_Check(exc) &&
+            !Py3kExceptionClass_Check(exc))
+        {
+          int ret_val;
+          ret_val = PyErr_WarnEx(
+              PyExc_DeprecationWarning,
+              CANNOT_CATCH_MSG, 1);
+          if (ret_val < 0)
+          return NULL;
         }
-        res = PyErr_GivenExceptionMatches(v, w);
-        break;
-    default:
-        return PyObject_RichCompare(v, w, op);
+      }
     }
-    v = res ? Py_True : Py_False;
-    Py_INCREF(v);
-    return v;
+    else {
+      if (PyString_Check(w)) {
+        int ret_val;
+        ret_val = PyErr_WarnEx(
+            PyExc_DeprecationWarning,
+            "catching of string "
+            "exceptions is deprecated", 1);
+        if (ret_val < 0)
+        return NULL;
+      }
+      else if (Py_Py3kWarningFlag &&
+          !PyTuple_Check(w) &&
+          !Py3kExceptionClass_Check(w))
+      {
+        int ret_val;
+        ret_val = PyErr_WarnEx(
+            PyExc_DeprecationWarning,
+            CANNOT_CATCH_MSG, 1);
+        if (ret_val < 0)
+        return NULL;
+      }
+    }
+    res = PyErr_GivenExceptionMatches(v, w);
+    break;
+    default:
+    return PyObject_RichCompare(v, w, op);
+  }
+  v = res ? Py_True : Py_False;
+  Py_INCREF(v);
+  return v;
 }
 
 struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
@@ -783,9 +767,9 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
     if (r1.get_type() == IntType && r2.get_type() == IntType) {
       r3 = IntegerOps::compare(r1.as_int(), r2.as_int(), op.arg);
     } /* else {
-      r3 = FloatOps::compare(r1.as_obj(), r2.as_obj(), op.arg);
-    }
-    */
+     r3 = FloatOps::compare(r1.as_obj(), r2.as_obj(), op.arg);
+     }
+     */
     if (r3 != NULL) {
       Py_INCREF(r3);
     } else {
@@ -800,7 +784,7 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
   }
 };
 
-struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
+struct DictContains: public RegOpImpl<RegOp<3>, DictContains> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     CHECK_VALID(dict);
@@ -821,7 +805,7 @@ struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
   }
 };
 
-struct DictGet : public RegOpImpl<RegOp<3>, DictGet> {
+struct DictGet: public RegOpImpl<RegOp<3>, DictGet> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     CHECK_VALID(dict);
@@ -838,7 +822,7 @@ struct DictGet : public RegOpImpl<RegOp<3>, DictGet> {
   }
 };
 
-struct DictGetDefault : public RegOpImpl<RegOp<4>, DictGetDefault> {
+struct DictGetDefault: public RegOpImpl<RegOp<4>, DictGetDefault> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     CHECK_VALID(dict);
@@ -965,8 +949,6 @@ struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   }
 };
 
-
-
 struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* key = LOAD_OBJ(op.reg[0]);
@@ -980,7 +962,6 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
     }
   }
 };
-
 
 struct StoreSubscrList: public RegOpImpl<RegOp<3>, StoreSubscrList> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
@@ -998,7 +979,7 @@ struct StoreSubscrList: public RegOpImpl<RegOp<3>, StoreSubscrList> {
     } else {
       Py_ssize_t idx = idx_reg.as_int();
       if (PyList_SetItem(list, idx, value) != 0) {
-          throw RException();
+        throw RException();
       }
     }
   }
@@ -1259,7 +1240,7 @@ struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
   }
 };
 
-template <bool HasVarArgs, bool HasKwDict>
+template<bool HasVarArgs, bool HasKwDict>
 struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > {
   static f_inline void _eval(Evaluator* eval,
                              RegisterFrame* frame,
@@ -1311,7 +1292,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
       PyObject* kwdict = NULL;
       if (nk > 0) {
         kwdict = PyDict_New();
-        for (register int i = na; i < nk * 2 ; i += 2) {
+        for (register int i = na; i < nk * 2; i += 2) {
           // starting at +1 since the first register was the fn
           // so keyword args actually start at na+1
           PyObject* k = LOAD_OBJ(op->reg[i+1]);
@@ -1341,7 +1322,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
       ObjVector args, kw;
       args.resize(na);
       for (register int i = 0; i < na; ++i) {
-        args[i].store(registers[op->reg[i+1]]);
+        args[i].store(registers[op->reg[i + 1]]);
       }
       RegisterFrame f(code, fn, args, kw);
       STORE_REG(dst, eval->eval(&f));
@@ -1349,10 +1330,10 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
   }
 };
 
-typedef CallFunction<false,false> CallFunctionSimple;
-typedef CallFunction<true,false> CallFunctionVar;
-typedef CallFunction<false,true> CallFunctionKw;
-typedef CallFunction<true,true> CallFunctionVarKw;
+typedef CallFunction<false, false> CallFunctionSimple;
+typedef CallFunction<true, false> CallFunctionVar;
+typedef CallFunction<false, true> CallFunctionKw;
+typedef CallFunction<true, true> CallFunctionVarKw;
 
 struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -1362,12 +1343,13 @@ struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
 };
 
 struct ForIter: public BranchOpImpl<BranchOp<2>, ForIter> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<2>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<2>& op, const char **pc,
+                             Register* registers) {
     CHECK_VALID(LOAD_OBJ(op.reg[0]));
     PyObject* iter = PyIter_Next(LOAD_OBJ(op.reg[0]));
     if (iter) {
       STORE_REG(op.reg[1], iter);
-      *pc += sizeof(BranchOp<2>);
+      *pc += sizeof(BranchOp<2> );
     } else {
       *pc = frame->instructions() + op.label;
     }
@@ -1376,7 +1358,8 @@ struct ForIter: public BranchOpImpl<BranchOp<2>, ForIter> {
 };
 
 struct JumpIfFalseOrPop: public BranchOpImpl<BranchOp<1>, JumpIfFalseOrPop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc,
+                             Register* registers) {
     PyObject *r1 = LOAD_OBJ(op.reg[0]);
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
 //      EVAL_LOG("Jumping: %s -> %d", obj_to_str(r1), op.label);
@@ -1389,7 +1372,8 @@ struct JumpIfFalseOrPop: public BranchOpImpl<BranchOp<1>, JumpIfFalseOrPop> {
   };
 
 struct JumpIfTrueOrPop: public BranchOpImpl<BranchOp<1>, JumpIfTrueOrPop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc,
+                             Register* registers) {
     PyObject* r1 = LOAD_OBJ(op.reg[0]);
     if (r1 == Py_True || (PyObject_IsTrue(r1) == 1)) {
       *pc = frame->instructions() + op.label;
@@ -1401,14 +1385,16 @@ struct JumpIfTrueOrPop: public BranchOpImpl<BranchOp<1>, JumpIfTrueOrPop> {
 };
 
 struct JumpAbsolute: public BranchOpImpl<BranchOp<0>, JumpAbsolute> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc,
+                             Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
 };
 
 struct BreakLoop: public BranchOpImpl<BranchOp<0>, BreakLoop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc,
+                             Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
@@ -1542,12 +1528,8 @@ struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
       }
     };
 
-
-
 struct StoreMap: public RegOpImpl<RegOp<3>, StoreMap> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame,
-                             RegOp<3>& op,
-                             Register* registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     PyObject* key = LOAD_OBJ(op.reg[1]);
     PyObject* value = LOAD_OBJ(op.reg[2]);
@@ -1666,13 +1648,13 @@ struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
     if (res == NULL) {
       PyErr_Print();
       throw RException(PyExc_ImportError, "Failed to import name %s",
-                       PyString_AsString(name));
+          PyString_AsString(name));
     }
     // band-aid to prevent segfaults, not sure why this incref makes things work
-    Py_IncRef(res);
-    STORE_REG(op.reg[2], res);
-  }
-};
+        Py_IncRef(res);
+        STORE_REG(op.reg[2], res);
+      }
+    };
 
 struct ImportStar: public RegOpImpl<RegOp<1>, ImportStar> {
   static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
@@ -1726,20 +1708,37 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
   }
 };
 
-struct SetupExcept : public BranchOpImpl<BranchOp<0>, SetupExcept > {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+struct SetupExcept: public BranchOpImpl<BranchOp<0>, SetupExcept> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc,
+                             Register* registers) {
     EVAL_LOG("Pushing handler: %d", op.label);
     frame->exc_handlers_.push_back(op.label);
-    *pc += sizeof(BranchOp<0>);
+    *pc += sizeof(BranchOp<0> );
   }
 };
 
 typedef SetupExcept SetupFinally;
 
-struct RaiseVarArgs : public RegOpImpl<RegOp<3>, RaiseVarArgs > {
+struct RaiseVarArgs: public RegOpImpl<RegOp<3>, RaiseVarArgs> {
   static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+    PyObject* type;
+    PyObject* value;
+    PyObject* tb;
     // Jump to the nearest exception handler.
-    throw RException();
+    type = LOAD_OBJ(op.reg[0]);
+    if (op.reg[1] != kInvalidRegister) {
+      value = LOAD_OBJ(op.reg[1]);
+    } else {
+      value = Py_None;
+    }
+
+    if (op.reg[2] != kInvalidRegister) {
+      tb = LOAD_OBJ(op.reg[2]);
+    } else {
+      tb = Py_None;
+    }
+
+    throw RException(type, value, tb);
   }
 };
 
@@ -1988,9 +1987,6 @@ DEFINE_OP(BINARY_SUBSCR_LIST, BinarySubscrList);
 DEFINE_OP(BINARY_SUBSCR_DICT, BinarySubscrDict);
 DEFINE_OP(CONST_INDEX, ConstIndex);
 
-
-
-
 BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul, true);
 BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div, true);
 BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add, true);
@@ -2036,7 +2032,6 @@ DEFINE_OP(LOAD_CLOSURE, LoadClosure);
 DEFINE_OP(LOAD_DEREF, LoadDeref);
 DEFINE_OP(STORE_DEREF, StoreDeref);
 
-
 DEFINE_OP(GET_ITER, GetIter);
 DEFINE_OP(FOR_ITER, ForIter);
 DEFINE_OP(BREAK_LOOP, BreakLoop);
@@ -2074,7 +2069,6 @@ DEFINE_OP(LIST_APPEND, ListAppend);
 DEFINE_OP(DICT_CONTAINS, DictContains);
 DEFINE_OP(DICT_GET, DictGet);
 DEFINE_OP(DICT_GET_DEFAULT, DictGetDefault);
-
 
 DEFINE_OP(SLICE, Slice);
 
@@ -2123,18 +2117,18 @@ BAD_OP(POP_TOP);
   if (!frame->exc_handlers_.empty()) {
     int handler_offset = frame->exc_handlers_.pop();
     EVAL_LOG("Jumping to handler: %d", handler_offset);
-    pc = frame->instructions() + handler_offset;
+pc = frame->instructions() + handler_offset;
     JUMP_TO(frame->next_code(pc));
-  }
+}
   EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
-  if (error.exception != NULL) {
-    PyErr_SetObject(error.exception, error.value);
-  }
+if (error.exception != NULL) {
+  PyErr_SetObject(error.exception, error.value);
+}
 
-  // TODO(power) - create a frame object here and attach it to the traceback.
-  PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
-  PyTraceBack_Here(py_frame);
-  throw RException();
+// TODO(power) - create a frame object here and attach it to the traceback.
+PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
+PyTraceBack_Here(py_frame);
+throw RException();
 }
 done: {
 //    EVAL_LOG("SUCCESS: Leaving frame: %s", frame->str().c_str());

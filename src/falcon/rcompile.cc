@@ -628,7 +628,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_op(opcode, 0, exc, value, tb);
 
       if (stack->num_exc_handlers() > 0) {
-        COMPILE_LOG("Found local handler.");
+        COMPILE_LOG("Found local exception handler.");
         // The raw exception data is pushed onto the stack,
         // by ceval, prior to the exception handler being invoked.
         //
@@ -637,12 +637,13 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
         Frame f = stack->pop_exc_handler();
         target = f.target;
 
-        // TODO -- conjure op reference to Py_None here for
-        // missing value or tb.
+        // There is no guarantee that the exception handler will be
+        // called from our current state; just use fresh registers
+        // to disable optimizations.
         RegisterStack to_handler(*stack);
-        to_handler.push_register(tb);
-        to_handler.push_register(value);
-        to_handler.push_register(exc);
+        to_handler.push_register(state->num_reg++);
+        to_handler.push_register(state->num_reg++);
+        to_handler.push_register(state->num_reg++);
 
         bb->exits.push_back(registerize(state, &to_handler, target));
         return entry_point;
@@ -740,9 +741,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
 
         // And add a jump directly to the handler (this will never be taken,
         // but instead is used to setup the handler stack at runtime.)
-        a.push_register(-1);
-        a.push_register(-1);
-        a.push_register(-1);
+        a.push_register(state->num_reg++);
+        a.push_register(state->num_reg++);
+        a.push_register(state->num_reg++);
         BasicBlock* handler = registerize(state, &a, target);
         bb->exits.push_back(handler);
 

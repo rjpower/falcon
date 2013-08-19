@@ -16,6 +16,7 @@ struct RException {
 
   RException();
   RException(PyObject* exc, const char* fmt, ...);
+  RException(PyObject* exc, PyObject* value, PyObject* tb);
 };
 
 #if FALCON_DEBUG == 0
