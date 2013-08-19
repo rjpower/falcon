@@ -43,6 +43,7 @@ public:
   Evaluator();
   ~Evaluator();
   PyObject* eval_python(PyObject* func, PyObject* args, PyObject* kw);
+  PyObject* eval_python_module(PyObject* code, PyObject* module_dict);
 };
 
 

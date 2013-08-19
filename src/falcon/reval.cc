@@ -276,18 +276,7 @@ PyObject* RegisterFrame::locals() {
 }
 
 
-//Register
-
-PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
-  RegisterFrame* frame;
-  try {
-    frame = frame_from_pyfunc(func, args, kw);
-  } catch (RException& r) {
-    EVAL_LOG("Couldn't compile function, calling CPython: %s",
-             PyString_AsString(r.value));
-    return PyObject_Call(func, args, kw);
-  }
-
+PyObject* Evaluator::eval_frame_to_pyobj(RegisterFrame* frame) {
   try {
     Register result = eval(frame);
     //bool needs_incref = !result.is_obj();
@@ -299,10 +288,38 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
     // only delete after incref since deleting the frame decreases reference counts
     delete frame;
     return result_obj;
+
   } catch (RException& r) {
     delete frame;
     return NULL;
   }
+}
+
+PyObject* Evaluator::eval_python_module(PyObject* code, PyObject* module_dict) {
+
+  RegisterFrame* frame;
+  try {
+    frame = frame_from_pyfunc(code, PyTuple_New(0), PyDict_New());
+  } catch (RException& r) {
+    Log_Error("Couldn't compile module, calling CPython: %s", PyString_AsString(r.value));
+    return PyEval_EvalCode((PyCodeObject*) code, module_dict, module_dict);
+  }
+  return eval_frame_to_pyobj(frame);
+
+}
+
+
+PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
+
+  RegisterFrame* frame;
+  try {
+    frame = frame_from_pyfunc(func, args, kw);
+  } catch (RException& r) {
+    EVAL_LOG("Couldn't compile function, calling CPython: %s",
+             PyString_AsString(r.value));
+    return PyObject_Call(func, args, kw);
+  }
+  return eval_frame_to_pyobj(frame);
 }
 
 RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
@@ -936,6 +953,13 @@ struct StoreName: public RegOpImpl<RegOp<1>, StoreName> {
     CHECK_VALID(r1);
     CHECK_VALID(r2);
     PyObject_SetItem(frame->locals(), r1, r2);
+  }
+};
+
+struct DeleteName: public RegOpImpl<RegOp<0>, DeleteName> {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<0>& op, Register* registers) {
+    PyObject* key = PyTuple_GET_ITEM(frame->names(), op.arg) ;
+    PyObject_DelItem(frame->locals(), key);
   }
 };
 
@@ -2036,6 +2060,7 @@ DEFINE_OP(STORE_SLICE, StoreSlice);
 DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
 DEFINE_OP(STORE_GLOBAL, StoreGlobal);
 DEFINE_OP(DELETE_GLOBAL, DeleteGlobal);
+DEFINE_OP(DELETE_NAME, DeleteName);
 
 DEFINE_OP(LOAD_CLOSURE, LoadClosure);
 DEFINE_OP(LOAD_DEREF, LoadDeref);
@@ -2109,7 +2134,6 @@ BAD_OP(BUILD_SET);
 BAD_OP(DUP_TOPX);
 BAD_OP(DELETE_ATTR);
 BAD_OP(UNPACK_SEQUENCE);
-BAD_OP(DELETE_NAME);
 BAD_OP(END_FINALLY);
 BAD_OP(YIELD_VALUE);
 BAD_OP(EXEC_STMT);

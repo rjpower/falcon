@@ -367,7 +367,6 @@ def t(kl, bl):
 
 def multiple_calls(N):
   for _ in xrange(N):
-    t(16, 16)
     t(16, 24)
     t(16, 32)
     t(24, 16)
@@ -378,6 +377,6 @@ def multiple_calls(N):
     t(32, 32)
     
 if __name__ == '__main__':
-  n_repeats = 50 
+  n_repeats = 50
   multiple_calls(n_repeats)
   

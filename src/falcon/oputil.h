@@ -77,6 +77,9 @@ struct OpUtil {
       r.insert(STORE_GLOBAL);
       r.insert(STORE_NAME);
       r.insert(STORE_ATTR);
+      r.insert(DELETE_GLOBAL);
+      r.insert(DELETE_NAME);
+      r.insert(DELETE_ATTR);
       r.insert(CONST_INDEX);
       r.insert(CALL_FUNCTION);
       r.insert(CALL_FUNCTION_KW);

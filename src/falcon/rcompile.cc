@@ -181,7 +181,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-    COMPILE_LOG("@%4d: #reg=%d %s[%d]", offset, stack->num_registers(), OpUtil::name(opcode), oparg);
+    // COMPILE_LOG("@%4d: #reg=%d %s[%d]", offset, stack->num_registers(), OpUtil::name(opcode), oparg);
 
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
@@ -303,7 +303,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_dest_op(opcode, 0, r1, state->num_consts + oparg);
       break;
     }
-      // Store operations remove one or more registers from the stack.
+    // Store operations remove one or more registers from the stack.
     case STORE_DEREF:
     case STORE_GLOBAL:
     case STORE_NAME: {
@@ -312,11 +312,11 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       break;
     }
 
+    case DELETE_NAME:
     case DELETE_GLOBAL: {
       bb->add_op(opcode, oparg);
       break;
     }
-
     case STORE_ATTR: {
       int r1 = stack->pop_register();
       int r2 = stack->pop_register();
@@ -820,7 +820,10 @@ void lower_register_code(CompilerState* state, std::string *out) {
       pos += RCompilerUtil::op_size(bb->code[j]);
     }
 
-    Reg_Assert(op->code == RETURN_VALUE || OpUtil::is_branch(op->code) || (bb->exits[0] == state->bbs[i + 1]),
+    Reg_Assert(op->code == RETURN_VALUE ||
+               op->code == RAISE_VARARGS ||
+               OpUtil::is_branch(op->code) ||
+               (bb->exits[0] == state->bbs[i + 1]),
                "Non-local jump from non-branch op %s", OpUtil::name(op->code));
 
     if (OpUtil::is_branch(op->code) && op->code != RETURN_VALUE) {
