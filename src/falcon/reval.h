@@ -167,10 +167,8 @@ public:
     StringWriter w;
     if (code->function) {
       PyFunctionObject* f = (PyFunctionObject*) code->function;
-      w.printf("func: %s ", obj_to_str(f->func_name));
+      w.printf("%s ", obj_to_str(f->func_name));
     }
-    PyCodeObject* c = (PyCodeObject*) code->code_;
-    w.printf("file: %s, line: %d", obj_to_str(c->co_filename), c->co_firstlineno);
     return w.str();
   }
 

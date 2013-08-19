@@ -1577,10 +1577,13 @@ struct StoreMap: public RegOpImpl<RegOp<3>, StoreMap> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame,
                              RegOp<3>& op,
                              Register* registers) {
-    PyObject* dict = LOAD_OBJ(op.reg[0]);
-    PyObject* key = LOAD_OBJ(op.reg[1]);
-    PyObject* value = LOAD_OBJ(op.reg[2]);
-    PyDict_SetItem(dict, key, value);
+    PyObject* key = LOAD_OBJ(op.reg[0]);
+    PyObject* value = LOAD_OBJ(op.reg[1]);
+    PyObject* dict = LOAD_OBJ(op.reg[2]);
+
+    if (PyDict_SetItem(dict, key, value) != 0) {
+      throw RException();
+    }
   }
 };
 
@@ -1767,6 +1770,7 @@ typedef SetupExcept SetupFinally;
 
 struct RaiseVarArgs : public RegOpImpl<RegOp<3>, RaiseVarArgs > {
   static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
+//    Log_Info("Raising exception: %d %d %d", op.reg[0], op.reg[1], op.reg[2]);
     PyObject* type;
     PyObject* value;
     PyObject* tb;
@@ -2171,13 +2175,19 @@ BAD_OP(POP_TOP);
     pc = frame->instructions() + handler_offset;
     JUMP_TO(frame->next_code(pc));
   }
-  EVAL_LOG("ERROR: Leaving frame: %s", frame->str().c_str());
-  if (error.exception != NULL) {
-    PyErr_SetObject(error.exception, error.value);
-  }
+  Log_Info("ERROR: Leaving frame: %s", frame->str().c_str());
+//  if (error.exception != NULL) {
+//    Log_Info("Setting py error... %s %s",
+//             obj_to_str(error.exception),
+//             obj_to_str(error.value));
+//    PyErr_SetObject(error.exception, error.value);
+//  }
 
-  // TODO(power) - create a frame object here and attach it to the traceback.
-  PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(), frame->code->code(), frame->globals(), frame->locals());
+  PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(),
+                                        frame->code->code(),
+                                        frame->globals(),
+                                        frame->locals());
+  py_frame->f_lineno = 0;
   PyTraceBack_Here(py_frame);
   throw RException();
 }
@@ -2187,29 +2197,3 @@ done: {
 return *result;
 }
 }
-
-//void StartTracing(Evaluator* eval) {
-//  PyEval_SetProfile(&TraceFunction, (PyObject*)eval);
-//}
-
-// TODO(power) -- handle tracing method calls?
-// Give up on this route?
-//int TraceFunction(PyObject *obj, PyFrameObject *frame, int what, PyObject *arg) {
-//  if (what != PyTrace_CALL) {
-//    return 0;
-//  }
-//
-//  Log_Info("Tracing... %s:%d %d (%p)", obj_to_str(frame->f_code->co_filename), frame->f_code->co_firstlineno, what, arg);
-//  Evaluator* eval = (Evaluator*) obj;
-//  try {
-//    RegisterFrame* rframe = eval->frame_from_pyframe(frame);
-//    PyCodeObject* code = PyCode_NewEmpty("*dummy*", "__dummy__", frame->f_lineno);
-//    code->co_consts = PyTuple_Pack(1, rframe);
-//  } catch (RException& e) {
-//    Log_Info("Failed to compile %s:%d %d (%p), using python.", obj_to_str(frame->f_code->co_filename), frame->f_code->co_firstlineno, what, arg);
-//  }
-//
-//  frame->f_code->co_code =
-//
-//  return 0;
-//}

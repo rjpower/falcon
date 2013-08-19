@@ -74,9 +74,12 @@ struct OpUtil {
       r.insert(LOAD_GLOBAL);
       r.insert(LOAD_NAME);
       r.insert(LOAD_ATTR);
+      r.insert(LOAD_CLOSURE);
+      r.insert(LOAD_DEREF);
       r.insert(STORE_GLOBAL);
       r.insert(STORE_NAME);
       r.insert(STORE_ATTR);
+      r.insert(STORE_DEREF);
       r.insert(DELETE_GLOBAL);
       r.insert(DELETE_NAME);
       r.insert(DELETE_ATTR);

@@ -11,7 +11,6 @@ RException::RException(PyObject* exc, PyObject* value, PyObject* tb) {
 
 RException::RException(PyObject* exc, const char* fmt, ...) :
     exception(exc) {
-//  breakpoint();
   va_list vargs;
   va_start(vargs, fmt);
   value = PyString_FromFormatV(fmt, vargs);
@@ -23,8 +22,10 @@ RException::RException(PyObject* exc, const char* fmt, ...) :
 }
 
 RException::RException() {
-  assert(PyErr_Occurred());
-  traceback = exception = value = Py_None;
+  Reg_Assert(PyErr_Occurred() != NULL, "No exception to propagate.");
+//  PyErr_Fetch(&exception, &value, &traceback);
+//  PyErr_Restore(exception, value, traceback);
+  exception = value = traceback = NULL;
   file = NULL;
   line = 0;
 }
