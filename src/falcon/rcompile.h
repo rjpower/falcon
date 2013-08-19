@@ -39,18 +39,24 @@ RegisterCode* Compiler::compile(PyObject* func) {
   if (PyMethod_Check(func)) {
     func = PyMethod_GET_FUNCTION(func);
   }
+  Py_IncRef(func);
 
+
+//  Log_Info("Checking cache for %p...", func);
   CodeCache::iterator i = cache_.find(func);
-
   if (i != cache_.end()) {
+//    Log_Info("Hit.");
     return i->second;
   }
+//  Log_Info("Miss.");
 
 
   try {
     RegisterCode* code = compile_(func);
     cache_[func] = code;
   } catch (RException& e) {
+    Py_DecRef(func);
+    COMPILE_LOG("Caught exception.");
     cache_[func] = NULL;
     throw e;
   }
