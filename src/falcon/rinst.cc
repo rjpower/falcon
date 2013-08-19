@@ -1,12 +1,21 @@
 #include "rinst.h"
 
+static bool objstr_enabled() {
+  static bool _enabled = getenv("WITH_OBJSTR") != NULL;
+  return _enabled;
+}
+
 static void print_register(Writer& w, Register* registers, int reg_num) {
   if (reg_num >= kInvalidRegister) {
     w.printf("NULL,");
   } else if (registers == NULL) {
     w.printf("[%d],", reg_num);
   } else {
-    w.printf("[%d] %.20s, ", reg_num, obj_to_str(registers[reg_num].as_obj()));
+    if (objstr_enabled()) {
+      w.printf("[%d] %.20s ", reg_num, obj_to_str(registers[reg_num].as_obj()));
+    } else {
+      w.printf("[%d] %p, ", reg_num, registers[reg_num]);
+    }
   }
 }
 
@@ -41,21 +50,6 @@ std::string BranchOp<num_registers>::str(Register* registers) const {
   w.printf(")");
   w.printf(" -> [%d]", label);
   return w.str();
-}
-
-const char* obj_to_str(PyObject* o) {
-  if (o == NULL) {
-    return "<NULL>";
-  }
-  if (PyString_Check(o)) {
-    return PyString_AsString(o);
-  }
-
-  PyObject* obj_repr = PyObject_Repr(o);
-  if (obj_repr == NULL) {
-    return "<INVALID __repr__>";
-  }
-  return PyString_AsString(obj_repr);
 }
 
 template class RegOp<0> ;

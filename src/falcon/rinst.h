@@ -11,6 +11,23 @@
 #include "config.h"
 #include "register.h"
 
+
+static const inline char* obj_to_str(PyObject* o) {
+  if (o == NULL) {
+    return "<NULL>";
+  }
+  if (PyString_Check(o)) {
+    return PyString_AsString(o);
+  }
+
+  PyObject* obj_repr = PyObject_Repr(o);
+  if (obj_repr == NULL) {
+    return "<INVALID __repr__>";
+  }
+  return PyString_AsString(obj_repr);
+}
+
+
 // This file defines the format used by the register evalulator.
 //
 // Operation types:
@@ -28,8 +45,6 @@
 // locals and consts.  This is followed by general registers.
 // [0..#consts][0..#locals][general registers]
 
-
-
 struct RefHelper {
   PyObject* obj;
 
@@ -46,8 +61,6 @@ struct RefHelper {
     return (PyObject*) obj;
   }
 };
-
-const char* obj_to_str(PyObject* o);
 
 static const int kMaxRegisters = 256;
 typedef uint8_t RegisterOffset;

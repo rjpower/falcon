@@ -128,10 +128,12 @@ struct RCompilerUtil {
  * int r3 = add r1, r2 ('pop' r1, r2)
  */
 
+// when revisiting a basic block, make sure we have the same registers
+// on the stack as whoever passed through here before.
+//
+// If necessary, create a jump prelude which copies the new registers
+// to the those created previously.
 BasicBlock* jump_prelude(CompilerState* state, RegisterStack *stack, int offset, BasicBlock* old) {
-  // when revisiting a basic block, make sure we have the same registers
-  // on the stack as whoever passed through here before
-
   BasicBlock* prelude = state->alloc_bb(-offset, stack);
   Reg_AssertEq(stack->regs.size(), old->entry_stack->regs.size());
 
@@ -179,7 +181,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       oparg = GETARG(codestr, offset);
     }
 
-//    COMPILE_LOG("Processing op code: %d %d %s", opcode, oparg, OpUtil::name(opcode));
+    COMPILE_LOG("@%4d: #reg=%d %s[%d]", offset, stack->num_registers(), OpUtil::name(opcode), oparg);
 
     // Check if the opcode we've advanced to has already been generated.
     // If so, patch ourselves into it and return our entry point.
@@ -628,7 +630,6 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       bb->add_op(opcode, 0, exc, value, tb);
 
       if (stack->num_exc_handlers() > 0) {
-        COMPILE_LOG("Found local exception handler.");
         // The raw exception data is pushed onto the stack,
         // by ceval, prior to the exception handler being invoked.
         //
@@ -636,6 +637,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
 
         Frame f = stack->pop_exc_handler();
         target = f.target;
+
+        COMPILE_LOG("Found local exception handler @%d", target);
 
         // There is no guarantee that the exception handler will be
         // called from our current state; just use fresh registers
@@ -646,9 +649,8 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
         to_handler.push_register(state->num_reg++);
 
         bb->exits.push_back(registerize(state, &to_handler, target));
-        return entry_point;
       }
-      break;
+      return entry_point;
     }
       // Control flow instructions - recurse down each branch with a copy of the current stack.
     case BREAK_LOOP: {
@@ -729,26 +731,30 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       case SETUP_EXCEPT:
       case SETUP_FINALLY: {
         int target = offset + CODESIZE(opcode) + oparg;
-        stack->push_exc_handler(target);
+        stack->push_frame(target, true);
 
         bb->add_op(opcode, 0);
         RegisterStack a(*stack);
         RegisterStack b(*stack);
 
-        // Fall through
-        BasicBlock* next = registerize(state, &b, offset + CODESIZE(opcode));
-        bb->exits.push_back(next);
-
         // And add a jump directly to the handler (this will never be taken,
         // but instead is used to setup the handler stack at runtime.)
+        COMPILE_LOG("Jumping to %d...", target);
         a.push_register(state->num_reg++);
         a.push_register(state->num_reg++);
         a.push_register(state->num_reg++);
         BasicBlock* handler = registerize(state, &a, target);
         bb->exits.push_back(handler);
 
+
+        // Fall through
+        COMPILE_LOG("Fall through...");
+        BasicBlock* next = registerize(state, &b, offset + CODESIZE(opcode));
+        bb->exits.push_back(next);
+
         return entry_point;
       }
+
       case END_FINALLY: {
         bb->add_op(opcode, 0);
         break;
@@ -855,6 +861,9 @@ RegisterCode* Compiler::compile_(PyObject* func) {
   if (!code) {
     throw RException(PyExc_SystemError, "No code in function object.");
   }
+
+
+  COMPILE_LOG("Compiling... %s", PyEval_GetFuncName(func));
 
   CompilerState state(code);
   RegisterStack stack;
