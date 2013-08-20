@@ -506,7 +506,7 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case PRINT_ITEM_TO: {
       int r1 = stack->pop_register();
       int r2 = stack->pop_register();
-      bb->add_op(opcode, oparg, r1, r2);
+      bb->add_op(opcode, oparg, r2, r1);
       break;
     }
     case PRINT_NEWLINE_TO: {

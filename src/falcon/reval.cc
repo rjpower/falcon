@@ -1223,15 +1223,15 @@ struct LoadAttr: public RegOpImpl<RegOp<2>, LoadAttr> {
     PyObject* name = PyTuple_GET_ITEM(frame->names(), op.arg);
     PyObject* res = obj_getattr(eval, op, obj, name);
     STORE_REG(op.reg[1], res);
-//    Py_INCREF(LOAD_OBJ(op.reg[1]));
-      }
-    };
+  }
+};
 
 struct LoadDeref: public RegOpImpl<RegOp<1>, LoadDeref> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
     PyObject* closure_cell = frame->freevars[op.arg];
     PyObject* closure_value = PyCell_Get(closure_cell);
     STORE_REG(op.reg[0], closure_value);
+    Py_INCREF(closure_value);
   }
 };
 

@@ -168,6 +168,8 @@ public:
     if (code->function) {
       PyFunctionObject* f = (PyFunctionObject*) code->function;
       w.printf("%s ", obj_to_str(f->func_name));
+    } else {
+      w.printf("<codeobj> ");
     }
     return w.str();
   }
