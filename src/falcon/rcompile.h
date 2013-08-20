@@ -56,7 +56,7 @@ RegisterCode* Compiler::compile(PyObject* func) {
     cache_[func] = code;
   } catch (RException& e) {
     Py_DecRef(func);
-    COMPILE_LOG("Caught exception.");
+    Log_Info("Failed to compile function %s", PyEval_GetFuncName(func));
     cache_[func] = NULL;
     throw e;
   }

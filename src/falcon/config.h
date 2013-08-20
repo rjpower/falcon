@@ -29,5 +29,8 @@
 #define USE_TYPED_REGISTERS 0
 #endif
 
+#ifndef USE_THREADED_DISPATCH
+#define USE_THREADED_DISPATCH 1
+#endif
 
 #endif

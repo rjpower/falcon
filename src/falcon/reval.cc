@@ -1,7 +1,5 @@
 #include "py_include.h"
 
-
-
 #include <opcode.h>
 #include <marshal.h>
 #include <string.h>
@@ -87,11 +85,9 @@ struct PyObjHelper {
   }
 };
 
-RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
-                             const ObjVector& args,
-                             const ObjVector& kw) : code(rcode) {
+RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector& args, const ObjVector& kw) :
+    code(rcode) {
   instructions_ = code->instructions.data();
-
 
   if (rcode->function) {
     globals_ = PyFunction_GetGlobals(rcode->function);
@@ -196,7 +192,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj,
         registers[offset].store(args[i]);
       } else {
 //        EVAL_LOG("Assigning arguments: %d <- defaults[%d]", offset, i);
-        registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start));
+        registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start) );
       }
       registers[offset].incref();
       ++offset;
@@ -275,7 +271,6 @@ PyObject* RegisterFrame::locals() {
   return locals_;
 }
 
-
 PyObject* Evaluator::eval_frame_to_pyobj(RegisterFrame* frame) {
   try {
     Register result = eval(frame);
@@ -308,7 +303,6 @@ PyObject* Evaluator::eval_python_module(PyObject* code, PyObject* module_dict) {
 
 }
 
-
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
 
   RegisterFrame* frame;
@@ -316,7 +310,7 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
     frame = frame_from_pyfunc(func, args, kw);
   } catch (RException& r) {
     EVAL_LOG("Couldn't compile function, calling CPython: %s",
-             PyString_AsString(r.value));
+        PyString_AsString(r.value));
     return PyObject_Call(func, args, kw);
   }
   return eval_frame_to_pyobj(frame);
@@ -351,9 +345,8 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 
   size_t n_kwds = 0;
   if (kw != NULL && PyDict_Check(kw)) {
-    n_kwds =  PyDict_Size(kw);
+    n_kwds = PyDict_Size(kw);
   }
-
 
   for (size_t i = 0; i < n_kwds; ++i) {
     throw RException(PyExc_ValueError, "Keywords not yet supported, n_given = %d", n_kwds);
@@ -537,9 +530,6 @@ struct BinaryOp: public RegOpImpl<RegOp<3>, BinaryOp<OpCode, ObjF> > {
   }
 };
 
-
-
-
 template<int OpCode, UnaryFunction ObjF>
 struct UnaryOp: public RegOpImpl<RegOp<2>, UnaryOp<OpCode, ObjF> > {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -605,7 +595,6 @@ struct BinaryPower: public RegOpImpl<RegOp<3>, BinaryPower> {
   }
 };
 
-
 struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
@@ -635,8 +624,7 @@ struct BinarySubscr: public RegOpImpl<RegOp<3>, BinarySubscr> {
   }
 };
 
-
-struct BinarySubscrList : public RegOpImpl<RegOp<3>, BinarySubscrList> {
+struct BinarySubscrList: public RegOpImpl<RegOp<3>, BinarySubscrList> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* list = LOAD_OBJ(op.reg[0]);
     Register& key = registers[op.reg[1]];
@@ -659,10 +647,9 @@ struct BinarySubscrList : public RegOpImpl<RegOp<3>, BinarySubscrList> {
       throw RException();
     }
     CHECK_VALID(res);
-        STORE_REG(op.reg[2], res);
+    STORE_REG(op.reg[2], res);
   }
 };
-
 
 struct BinarySubscrDict: public RegOpImpl<RegOp<3>, BinarySubscrDict> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
@@ -682,7 +669,7 @@ struct BinarySubscrDict: public RegOpImpl<RegOp<3>, BinarySubscrDict> {
     }
     res = PyObject_GetItem(dict, key);
     if (!res) {
-     throw RException();
+      throw RException();
     }
     CHECK_VALID(res);
     STORE_REG(op.reg[2], res);
@@ -703,7 +690,6 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
   }
 };
 
-
 #define Py3kExceptionClass_Check(x)     \
     (PyType_Check((x)) &&               \
      PyType_FastSubclass((PyTypeObject*)(x), Py_TPFLAGS_BASE_EXC_SUBCLASS))
@@ -711,85 +697,83 @@ struct InplacePower: public RegOpImpl<RegOp<3>, InplacePower> {
 #define CANNOT_CATCH_MSG "catching classes that don't inherit from " \
                          "BaseException is not allowed in 3.x"
 
-/* slow path for comparisons, copied from ceval */
+    /* slow path for comparisons, copied from ceval */
 static f_inline PyObject* cmp_outcome(int op, PyObject *v, PyObject *w) {
-    int res = 0;
-    switch (op) {
-    case PyCmp_IS:
-        res = (v == w);
-        break;
-    case PyCmp_IS_NOT:
-        res = (v != w);
-        break;
-    case PyCmp_IN:
-        res = PySequence_Contains(w, v);
-        if (res < 0)
-            return NULL;
-        break;
-    case PyCmp_NOT_IN:
-        res = PySequence_Contains(w, v);
-        if (res < 0)
-            return NULL;
-        res = !res;
-        break;
-    case PyCmp_EXC_MATCH:
-        if (PyTuple_Check(w)) {
-            Py_ssize_t i, length;
-            length = PyTuple_Size(w);
-            for (i = 0; i < length; i += 1) {
-                PyObject *exc = PyTuple_GET_ITEM(w, i);
-                if (PyString_Check(exc)) {
-                    int ret_val;
-                    ret_val = PyErr_WarnEx(
-                        PyExc_DeprecationWarning,
-                        "catching of string "
-                        "exceptions is deprecated", 1);
-                    if (ret_val < 0)
-                        return NULL;
-                }
-                else if (Py_Py3kWarningFlag  &&
-                         !PyTuple_Check(exc) &&
-                         !Py3kExceptionClass_Check(exc))
-                {
-                    int ret_val;
-                    ret_val = PyErr_WarnEx(
-                        PyExc_DeprecationWarning,
-                        CANNOT_CATCH_MSG, 1);
-                    if (ret_val < 0)
-                        return NULL;
-                }
-            }
+  int res = 0;
+  switch (op) {
+  case PyCmp_IS:
+    res = (v == w);
+    break;
+  case PyCmp_IS_NOT:
+    res = (v != w);
+    break;
+  case PyCmp_IN:
+    res = PySequence_Contains(w, v);
+    if (res < 0) return NULL;
+    break;
+  case PyCmp_NOT_IN:
+    res = PySequence_Contains(w, v);
+    if (res < 0) return NULL;
+    res = !res;
+    break;
+  case PyCmp_EXC_MATCH:
+    if (PyTuple_Check(w)) {
+      Py_ssize_t i, length;
+      length = PyTuple_Size(w);
+      for (i = 0; i < length; i += 1) {
+        PyObject *exc = PyTuple_GET_ITEM(w, i) ;
+        if (PyString_Check(exc)) {
+          int ret_val;
+          ret_val = PyErr_WarnEx(
+              PyExc_DeprecationWarning,
+              "catching of string "
+              "exceptions is deprecated", 1);
+          if (ret_val < 0)
+          return NULL;
         }
-        else {
-            if (PyString_Check(w)) {
-                int ret_val;
-                ret_val = PyErr_WarnEx(
-                                PyExc_DeprecationWarning,
-                                "catching of string "
-                                "exceptions is deprecated", 1);
-                if (ret_val < 0)
-                    return NULL;
-            }
-            else if (Py_Py3kWarningFlag  &&
-                     !PyTuple_Check(w) &&
-                     !Py3kExceptionClass_Check(w))
-            {
-                int ret_val;
-                ret_val = PyErr_WarnEx(
-                    PyExc_DeprecationWarning,
-                    CANNOT_CATCH_MSG, 1);
-                if (ret_val < 0)
-                    return NULL;
-            }
+        else if (Py_Py3kWarningFlag &&
+            !PyTuple_Check(exc) &&
+            !Py3kExceptionClass_Check(exc))
+        {
+          int ret_val;
+          ret_val = PyErr_WarnEx(
+              PyExc_DeprecationWarning,
+              CANNOT_CATCH_MSG, 1);
+          if (ret_val < 0)
+          return NULL;
         }
-        res = PyErr_GivenExceptionMatches(v, w);
-        break;
-    default:
-        return PyObject_RichCompare(v, w, op);
+      }
     }
-    v = res ? Py_True : Py_False;
-    Py_INCREF(v);
-    return v;
+    else {
+      if (PyString_Check(w)) {
+        int ret_val;
+        ret_val = PyErr_WarnEx(
+            PyExc_DeprecationWarning,
+            "catching of string "
+            "exceptions is deprecated", 1);
+        if (ret_val < 0)
+        return NULL;
+      }
+      else if (Py_Py3kWarningFlag &&
+          !PyTuple_Check(w) &&
+          !Py3kExceptionClass_Check(w))
+      {
+        int ret_val;
+        ret_val = PyErr_WarnEx(
+            PyExc_DeprecationWarning,
+            CANNOT_CATCH_MSG, 1);
+        if (ret_val < 0)
+        return NULL;
+      }
+    }
+    res = PyErr_GivenExceptionMatches(v, w);
+    break;
+    default:
+    return PyObject_RichCompare(v, w, op);
+  }
+  v = res ? Py_True : Py_False;
+  Py_INCREF(v);
+  return v;
 }
 
 struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
@@ -800,9 +784,9 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
     if (r1.get_type() == IntType && r2.get_type() == IntType) {
       r3 = IntegerOps::compare(r1.as_int(), r2.as_int(), op.arg);
     } /* else {
-      r3 = FloatOps::compare(r1.as_obj(), r2.as_obj(), op.arg);
-    }
-    */
+     r3 = FloatOps::compare(r1.as_obj(), r2.as_obj(), op.arg);
+     }
+     */
     if (r3 != NULL) {
       Py_INCREF(r3);
     } else {
@@ -817,7 +801,7 @@ struct CompareOp: public RegOpImpl<RegOp<3>, CompareOp> {
   }
 };
 
-struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
+struct DictContains: public RegOpImpl<RegOp<3>, DictContains> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     CHECK_VALID(dict);
@@ -838,7 +822,7 @@ struct DictContains : public RegOpImpl<RegOp<3>, DictContains> {
   }
 };
 
-struct DictGet : public RegOpImpl<RegOp<3>, DictGet> {
+struct DictGet: public RegOpImpl<RegOp<3>, DictGet> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     CHECK_VALID(dict);
@@ -855,7 +839,7 @@ struct DictGet : public RegOpImpl<RegOp<3>, DictGet> {
   }
 };
 
-struct DictGetDefault : public RegOpImpl<RegOp<4>, DictGetDefault> {
+struct DictGetDefault: public RegOpImpl<RegOp<4>, DictGetDefault> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<4>& op, Register* registers) {
     PyObject* dict = LOAD_OBJ(op.reg[0]);
     CHECK_VALID(dict);
@@ -989,8 +973,6 @@ struct StoreAttr: public RegOpImpl<RegOp<2>, StoreAttr> {
   }
 };
 
-
-
 struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* key = LOAD_OBJ(op.reg[0]);
@@ -1004,7 +986,6 @@ struct StoreSubscr: public RegOpImpl<RegOp<3>, StoreSubscr> {
     }
   }
 };
-
 
 struct StoreSubscrList: public RegOpImpl<RegOp<3>, StoreSubscrList> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
@@ -1022,7 +1003,7 @@ struct StoreSubscrList: public RegOpImpl<RegOp<3>, StoreSubscrList> {
     } else {
       Py_ssize_t idx = idx_reg.as_int();
       if (PyList_SetItem(list, idx, value) != 0) {
-          throw RException();
+        throw RException();
       }
     }
   }
@@ -1283,12 +1264,9 @@ struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
   }
 };
 
-template <bool HasVarArgs, bool HasKwDict>
+template<bool HasVarArgs, bool HasKwDict>
 struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > {
-  static f_inline void _eval(Evaluator* eval,
-                             RegisterFrame* frame,
-                             VarRegOp *op,
-                             Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame* frame, VarRegOp *op, Register* registers) {
     int na = op->arg & 0xff;
     int nk = (op->arg >> 8) & 0xff;
     int n = nk * 2 + na;
@@ -1339,7 +1317,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
       PyObject* kwdict = NULL;
       if (nk > 0) {
         kwdict = PyDict_New();
-        for (register int i = na; i < nk * 2 ; i += 2) {
+        for (register int i = na; i < nk * 2; i += 2) {
           // starting at +1 since the first register was the fn
           // so keyword args actually start at na+1
           PyObject* k = LOAD_OBJ(op->reg[i+1]);
@@ -1349,8 +1327,8 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
           char* kstr = PyString_AsString(k);
           PyDict_SetItemString(kwdict, kstr, v);
           //PyDict_SetItem(kwdict, k, v);
-        }
-      }
+            }
+          }
 
       PyObject* res = NULL;
       if (PyCFunction_Check(fn)) {
@@ -1370,7 +1348,7 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
       ObjVector args, kw;
       args.resize(na);
       for (register int i = 0; i < na; ++i) {
-        args[i].store(registers[op->reg[i+1]]);
+        args[i].store(registers[op->reg[i + 1]]);
       }
       RegisterFrame f(code, fn, args, kw);
       STORE_REG(dst, eval->eval(&f));
@@ -1378,10 +1356,10 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
   }
 };
 
-typedef CallFunction<false,false> CallFunctionSimple;
-typedef CallFunction<true,false> CallFunctionVar;
-typedef CallFunction<false,true> CallFunctionKw;
-typedef CallFunction<true,true> CallFunctionVarKw;
+typedef CallFunction<false, false> CallFunctionSimple;
+typedef CallFunction<true, false> CallFunctionVar;
+typedef CallFunction<false, true> CallFunctionKw;
+typedef CallFunction<true, true> CallFunctionVarKw;
 
 struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
   static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<2>& op, Register* registers) {
@@ -1391,12 +1369,13 @@ struct GetIter: public RegOpImpl<RegOp<2>, GetIter> {
 };
 
 struct ForIter: public BranchOpImpl<BranchOp<2>, ForIter> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<2>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<2>& op, const char **pc,
+                             Register* registers) {
     CHECK_VALID(LOAD_OBJ(op.reg[0]));
     PyObject* iter = PyIter_Next(LOAD_OBJ(op.reg[0]));
     if (iter) {
       STORE_REG(op.reg[1], iter);
-      *pc += sizeof(BranchOp<2>);
+      *pc += sizeof(BranchOp<2> );
     } else {
       *pc = frame->instructions() + op.label;
     }
@@ -1405,7 +1384,8 @@ struct ForIter: public BranchOpImpl<BranchOp<2>, ForIter> {
 };
 
 struct JumpIfFalseOrPop: public BranchOpImpl<BranchOp<1>, JumpIfFalseOrPop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc,
+                             Register* registers) {
     PyObject *r1 = LOAD_OBJ(op.reg[0]);
     if (r1 == Py_False || (PyObject_IsTrue(r1) == 0)) {
 //      EVAL_LOG("Jumping: %s -> %d", obj_to_str(r1), op.label);
@@ -1418,7 +1398,8 @@ struct JumpIfFalseOrPop: public BranchOpImpl<BranchOp<1>, JumpIfFalseOrPop> {
   };
 
 struct JumpIfTrueOrPop: public BranchOpImpl<BranchOp<1>, JumpIfTrueOrPop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<1>& op, const char **pc,
+                             Register* registers) {
     PyObject* r1 = LOAD_OBJ(op.reg[0]);
     if (r1 == Py_True || (PyObject_IsTrue(r1) == 1)) {
       *pc = frame->instructions() + op.label;
@@ -1430,14 +1411,16 @@ struct JumpIfTrueOrPop: public BranchOpImpl<BranchOp<1>, JumpIfTrueOrPop> {
 };
 
 struct JumpAbsolute: public BranchOpImpl<BranchOp<0>, JumpAbsolute> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc,
+                             Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
 };
 
 struct BreakLoop: public BranchOpImpl<BranchOp<0>, BreakLoop> {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc,
+                             Register* registers) {
     EVAL_LOG("Jumping to: %d", op.label);
     *pc = frame->instructions() + op.label;
   }
@@ -1571,12 +1554,8 @@ struct BuildClass: public RegOpImpl<RegOp<4>, BuildClass> {
       }
     };
 
-
-
 struct StoreMap: public RegOpImpl<RegOp<3>, StoreMap> {
-  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame,
-                             RegOp<3>& op,
-                             Register* registers) {
+  static f_inline void _eval(Evaluator *eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
     PyObject* key = LOAD_OBJ(op.reg[0]);
     PyObject* value = LOAD_OBJ(op.reg[1]);
     PyObject* dict = LOAD_OBJ(op.reg[2]);
@@ -1614,6 +1593,10 @@ struct PrintItem: public RegOpImpl<RegOp<2>, PrintItem> {
         }
 #endif
         else PyFile_SoftSpace(w, 1);
+      }
+
+      if (err != 0) {
+        throw RException();
       }
     }
   };
@@ -1698,13 +1681,13 @@ struct ImportName: public RegOpImpl<RegOp<3>, ImportName> {
     if (res == NULL) {
       PyErr_Print();
       throw RException(PyExc_ImportError, "Failed to import name %s",
-                       PyString_AsString(name));
+          PyString_AsString(name));
     }
     // band-aid to prevent segfaults, not sure why this incref makes things work
-    Py_IncRef(res);
-    STORE_REG(op.reg[2], res);
-  }
-};
+        Py_IncRef(res);
+        STORE_REG(op.reg[2], res);
+      }
+    };
 
 struct ImportStar: public RegOpImpl<RegOp<1>, ImportStar> {
   static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<1>& op, Register* registers) {
@@ -1758,23 +1741,24 @@ struct ImportFrom: public RegOpImpl<RegOp<2>, ImportFrom> {
   }
 };
 
-struct SetupExcept : public BranchOpImpl<BranchOp<0>, SetupExcept > {
-  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc, Register* registers) {
+struct SetupExcept: public BranchOpImpl<BranchOp<0>, SetupExcept> {
+  static f_inline void _eval(Evaluator* eval, RegisterFrame *frame, BranchOp<0>& op, const char **pc,
+                             Register* registers) {
     EVAL_LOG("Pushing handler: %d", op.label);
     frame->exc_handlers_.push_back(op.label);
-    *pc += sizeof(BranchOp<0>);
+    *pc += sizeof(BranchOp<0> );
   }
 };
 
 typedef SetupExcept SetupFinally;
 
-struct RaiseVarArgs : public RegOpImpl<RegOp<3>, RaiseVarArgs > {
+struct RaiseVarArgs: public RegOpImpl<RegOp<3>, RaiseVarArgs> {
   static void _eval(Evaluator* eval, RegisterFrame* frame, RegOp<3>& op, Register* registers) {
 //    Log_Info("Raising exception: %d %d %d", op.reg[0], op.reg[1], op.reg[2]);
     PyObject* type;
     PyObject* value;
     PyObject* tb;
-     // Jump to the nearest exception handler.
+    // Jump to the nearest exception handler.
     type = LOAD_OBJ(op.reg[0]);
     if (op.reg[1] != kInvalidRegister) {
       value = LOAD_OBJ(op.reg[1]);
@@ -1792,37 +1776,67 @@ struct RaiseVarArgs : public RegOpImpl<RegOp<3>, RaiseVarArgs > {
   }
 };
 
+#define DISPATCH_HEADER\
+  dispatch_header: try {
+
 #define CONCAT(...) __VA_ARGS__
 
-#define REGISTER_OP(opname)\
-    static int _force_register_ ## opname = LabelRegistry::add_label(opname, &&op_ ## opname);
+#if USE_THREADED_DISPATCH == 0
 
-#define JUMP_TO(opname)\
-    goto *labels[opname]
+#define JUMP_TO_NEXT goto dispatch_header;
+
+#define START_DISPATCH switch (((OpHeader*)pc)->code) {
+#define END_DISPATCH } JUMP_TO_NEXT
+
+#define FALLTHROUGH(opname) case opname:
+#define START_OP(opname) case opname: {
+#define END_OP(opname) break; }
+
+#else
+#define JUMP_TO_NEXT goto *labels[((OpHeader*)pc)->code]
+
+#define START_DISPATCH JUMP_TO_NEXT;
+#define END_DISPATCH
+
+#define _FALLTHROUGH(opname) op_ ## opname:
+#define FALLTHROUGH(opname) _FALLTHROUGH(opname)
+
+#define _START_OP(opname) op_##opname: {
+#define START_OP(opname) _START_OP(opname)
+#define END_OP(opname) JUMP_TO_NEXT; }
+
+#define _OFFSET(opname) &&op_##opname
+#define OFFSET(opname) _OFFSET(opname)
+
+#endif
 
 #define _DEFINE_OP(opname, impl)\
-      /*collectInfo(opname);\*/\
       pc = impl::eval(this, frame, pc, registers);\
-      JUMP_TO(frame->next_code(pc));
 
 #define DEFINE_OP(opname, impl)\
-    op_##opname:\
-      _DEFINE_OP(opname, impl)
+    START_OP(opname)\
+      _DEFINE_OP(opname, impl)\
+    END_OP(opname)
 
 #define BAD_OP(opname)\
-    op_##opname:\
-     BadOp<opname>::eval(this, frame, registers);
-
-#define FALLTHROUGH(opname) op_##opname:
+    START_OP(opname)\
+     BadOp<opname>::eval(this, frame, registers);\
+    END_OP(opname)
 
 #define BINARY_OP3(opname, objfn, intfn, can_overflow)\
-    op_##opname: _DEFINE_OP(opname, BinaryOpWithSpecialization<CONCAT(opname, objfn, intfn, can_overflow)>)
+    START_OP(opname)\
+    _DEFINE_OP(opname, BinaryOpWithSpecialization<CONCAT(opname, objfn, intfn, can_overflow)>)\
+    END_OP(opname)
 
 #define BINARY_OP2(opname, objfn)\
-    op_##opname: _DEFINE_OP(opname, BinaryOp<CONCAT(opname, objfn)>)
+    START_OP(opname)\
+    _DEFINE_OP(opname, BinaryOp<CONCAT(opname, objfn)>)\
+    END_OP(opname)
 
 #define UNARY_OP2(opname, objfn)\
-    op_##opname: _DEFINE_OP(opname, UnaryOp<CONCAT(opname, objfn)>)
+    START_OP(opname)\
+    _DEFINE_OP(opname, UnaryOp<CONCAT(opname, objfn)>)\
+    END_OP(opname)
 
 Register Evaluator::eval(RegisterFrame* f) {
   register RegisterFrame* frame = f;
@@ -1830,370 +1844,352 @@ Register Evaluator::eval(RegisterFrame* f) {
   register const char* pc asm("r14") = frame->instructions();
 
   Reg_Assert(frame != NULL, "NULL frame object.");
-  // Reg_Assert(PyTuple_GET_SIZE(frame->code->code()->co_cellvars) == 0, "Cell vars (closures) not supported.");
-
   Register* result;
 
-//  last_clock_ = rdtsc();
-
-// #define OFFSET(opname) ((int64_t)&&op_##opname) - ((int64_t)&&op_STOP_CODE)
-#define OFFSET(opname) &&op_##opname
-
   // The index of each offset MUST correspond to the opcode number!
-static const void* labels[] = {
-  OFFSET(STOP_CODE),
-  OFFSET(POP_TOP),
-  OFFSET(ROT_TWO),
-  OFFSET(ROT_THREE),
-  OFFSET(DUP_TOP),
-  OFFSET(ROT_FOUR),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(NOP),
-  OFFSET(UNARY_POSITIVE),
-  OFFSET(UNARY_NEGATIVE),
-  OFFSET(UNARY_NOT),
-  OFFSET(UNARY_CONVERT),
-  OFFSET(BADCODE),
-  OFFSET(UNARY_INVERT),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BINARY_POWER),
-  OFFSET(BINARY_MULTIPLY),
-  OFFSET(BINARY_DIVIDE),
-  OFFSET(BINARY_MODULO),
-  OFFSET(BINARY_ADD),
-  OFFSET(BINARY_SUBTRACT),
-  OFFSET(BINARY_SUBSCR),
-  OFFSET(BINARY_FLOOR_DIVIDE),
-  OFFSET(BINARY_TRUE_DIVIDE),
-  OFFSET(INPLACE_FLOOR_DIVIDE),
-  OFFSET(INPLACE_TRUE_DIVIDE),
-  OFFSET(SLICE),
-  OFFSET(SLICE),
-  OFFSET(SLICE),
-  OFFSET(SLICE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(STORE_SLICE),
-  OFFSET(STORE_SLICE),
-  OFFSET(STORE_SLICE),
-  OFFSET(STORE_SLICE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(DELETE_SLICE),
-  OFFSET(DELETE_SLICE),
-  OFFSET(DELETE_SLICE),
-  OFFSET(DELETE_SLICE),
-  OFFSET(STORE_MAP),
-  OFFSET(INPLACE_ADD),
-  OFFSET(INPLACE_SUBTRACT),
-  OFFSET(INPLACE_MULTIPLY),
-  OFFSET(INPLACE_DIVIDE),
-  OFFSET(INPLACE_MODULO),
-  OFFSET(STORE_SUBSCR),
-  OFFSET(DELETE_SUBSCR),
-  OFFSET(BINARY_LSHIFT),
-  OFFSET(BINARY_RSHIFT),
-  OFFSET(BINARY_AND),
-  OFFSET(BINARY_XOR),
-  OFFSET(BINARY_OR),
-  OFFSET(INPLACE_POWER),
-  OFFSET(GET_ITER),
-  OFFSET(BADCODE),
-  OFFSET(PRINT_EXPR),
-  OFFSET(PRINT_ITEM),
-  OFFSET(PRINT_NEWLINE),
-  OFFSET(PRINT_ITEM_TO),
-  OFFSET(PRINT_NEWLINE_TO),
-  OFFSET(INPLACE_LSHIFT),
-  OFFSET(INPLACE_RSHIFT),
-  OFFSET(INPLACE_AND),
-  OFFSET(INPLACE_XOR),
-  OFFSET(INPLACE_OR),
-  OFFSET(BREAK_LOOP),
-  OFFSET(WITH_CLEANUP),
-  OFFSET(LOAD_LOCALS),
-  OFFSET(RETURN_VALUE),
-  OFFSET(IMPORT_STAR),
-  OFFSET(EXEC_STMT),
-  OFFSET(YIELD_VALUE),
-  OFFSET(POP_BLOCK),
-  OFFSET(END_FINALLY),
-  OFFSET(BUILD_CLASS),
-  OFFSET(STORE_NAME),
-  OFFSET(DELETE_NAME),
-  OFFSET(UNPACK_SEQUENCE),
-  OFFSET(FOR_ITER),
-  OFFSET(LIST_APPEND),
-  OFFSET(STORE_ATTR),
-  OFFSET(DELETE_ATTR),
-  OFFSET(STORE_GLOBAL),
-  OFFSET(DELETE_GLOBAL),
-  OFFSET(DUP_TOPX),
-  OFFSET(LOAD_CONST),
-  OFFSET(LOAD_NAME),
-  OFFSET(BUILD_TUPLE),
-  OFFSET(BUILD_LIST),
-  OFFSET(BUILD_SET),
-  OFFSET(BUILD_MAP),
-  OFFSET(LOAD_ATTR),
-  OFFSET(COMPARE_OP),
-  OFFSET(IMPORT_NAME),
-  OFFSET(IMPORT_FROM),
-  OFFSET(JUMP_FORWARD),
-  OFFSET(JUMP_IF_FALSE_OR_POP),
-  OFFSET(JUMP_IF_TRUE_OR_POP),
-  OFFSET(JUMP_ABSOLUTE),
-  OFFSET(POP_JUMP_IF_FALSE),
-  OFFSET(POP_JUMP_IF_TRUE),
-  OFFSET(LOAD_GLOBAL),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(CONTINUE_LOOP),
-  OFFSET(SETUP_LOOP),
-  OFFSET(SETUP_EXCEPT),
-  OFFSET(SETUP_FINALLY),
-  OFFSET(BADCODE),
-  OFFSET(LOAD_FAST),
-  OFFSET(STORE_FAST),
-  OFFSET(DELETE_FAST),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(RAISE_VARARGS),
-  OFFSET(CALL_FUNCTION),
-  OFFSET(MAKE_FUNCTION),
-  OFFSET(BUILD_SLICE),
-  OFFSET(MAKE_CLOSURE),
-  OFFSET(LOAD_CLOSURE),
-  OFFSET(LOAD_DEREF),
-  OFFSET(STORE_DEREF),
-  OFFSET(BADCODE),
-  OFFSET(BADCODE),
-  OFFSET(CALL_FUNCTION_VAR),
-  OFFSET(CALL_FUNCTION_KW),
-  OFFSET(CALL_FUNCTION_VAR_KW),
-  OFFSET(SETUP_WITH),
-  OFFSET(BADCODE),
-  OFFSET(EXTENDED_ARG),
-  OFFSET(SET_ADD),
-  OFFSET(MAP_ADD),
-  OFFSET(INCREF),
-  OFFSET(DECREF),
-  OFFSET(CONST_INDEX),
-  OFFSET(BINARY_SUBSCR_LIST),
-  OFFSET(BINARY_SUBSCR_DICT),
-  OFFSET(STORE_SUBSCR_LIST),
-  OFFSET(STORE_SUBSCR_DICT),
-  OFFSET(DICT_CONTAINS),
-  OFFSET(DICT_GET),
-  OFFSET(DICT_GET_DEFAULT),
-}
-;
+#if USE_THREADED_DISPATCH == 1
+  static const void* labels[] = {
+    OFFSET(STOP_CODE),
+    OFFSET(POP_TOP),
+    OFFSET(ROT_TWO),
+    OFFSET(ROT_THREE),
+    OFFSET(DUP_TOP),
+    OFFSET(ROT_FOUR),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(NOP),
+    OFFSET(UNARY_POSITIVE),
+    OFFSET(UNARY_NEGATIVE),
+    OFFSET(UNARY_NOT),
+    OFFSET(UNARY_CONVERT),
+    OFFSET(STOP_CODE),
+    OFFSET(UNARY_INVERT),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(BINARY_POWER),
+    OFFSET(BINARY_MULTIPLY),
+    OFFSET(BINARY_DIVIDE),
+    OFFSET(BINARY_MODULO),
+    OFFSET(BINARY_ADD),
+    OFFSET(BINARY_SUBTRACT),
+    OFFSET(BINARY_SUBSCR),
+    OFFSET(BINARY_FLOOR_DIVIDE),
+    OFFSET(BINARY_TRUE_DIVIDE),
+    OFFSET(INPLACE_FLOOR_DIVIDE),
+    OFFSET(INPLACE_TRUE_DIVIDE),
+    OFFSET(SLICE),
+    OFFSET(SLICE),
+    OFFSET(SLICE),
+    OFFSET(SLICE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STORE_SLICE),
+    OFFSET(STORE_SLICE),
+    OFFSET(STORE_SLICE),
+    OFFSET(STORE_SLICE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(DELETE_SLICE),
+    OFFSET(DELETE_SLICE),
+    OFFSET(DELETE_SLICE),
+    OFFSET(DELETE_SLICE),
+    OFFSET(STORE_MAP),
+    OFFSET(INPLACE_ADD),
+    OFFSET(INPLACE_SUBTRACT),
+    OFFSET(INPLACE_MULTIPLY),
+    OFFSET(INPLACE_DIVIDE),
+    OFFSET(INPLACE_MODULO),
+    OFFSET(STORE_SUBSCR),
+    OFFSET(DELETE_SUBSCR),
+    OFFSET(BINARY_LSHIFT),
+    OFFSET(BINARY_RSHIFT),
+    OFFSET(BINARY_AND),
+    OFFSET(BINARY_XOR),
+    OFFSET(BINARY_OR),
+    OFFSET(INPLACE_POWER),
+    OFFSET(GET_ITER),
+    OFFSET(STOP_CODE),
+    OFFSET(PRINT_EXPR),
+    OFFSET(PRINT_ITEM),
+    OFFSET(PRINT_NEWLINE),
+    OFFSET(PRINT_ITEM_TO),
+    OFFSET(PRINT_NEWLINE_TO),
+    OFFSET(INPLACE_LSHIFT),
+    OFFSET(INPLACE_RSHIFT),
+    OFFSET(INPLACE_AND),
+    OFFSET(INPLACE_XOR),
+    OFFSET(INPLACE_OR),
+    OFFSET(BREAK_LOOP),
+    OFFSET(WITH_CLEANUP),
+    OFFSET(LOAD_LOCALS),
+    OFFSET(RETURN_VALUE),
+    OFFSET(IMPORT_STAR),
+    OFFSET(EXEC_STMT),
+    OFFSET(YIELD_VALUE),
+    OFFSET(POP_BLOCK),
+    OFFSET(END_FINALLY),
+    OFFSET(BUILD_CLASS),
+    OFFSET(STORE_NAME),
+    OFFSET(DELETE_NAME),
+    OFFSET(UNPACK_SEQUENCE),
+    OFFSET(FOR_ITER),
+    OFFSET(LIST_APPEND),
+    OFFSET(STORE_ATTR),
+    OFFSET(DELETE_ATTR),
+    OFFSET(STORE_GLOBAL),
+    OFFSET(DELETE_GLOBAL),
+    OFFSET(DUP_TOPX),
+    OFFSET(LOAD_CONST),
+    OFFSET(LOAD_NAME),
+    OFFSET(BUILD_TUPLE),
+    OFFSET(BUILD_LIST),
+    OFFSET(BUILD_SET),
+    OFFSET(BUILD_MAP),
+    OFFSET(LOAD_ATTR),
+    OFFSET(COMPARE_OP),
+    OFFSET(IMPORT_NAME),
+    OFFSET(IMPORT_FROM),
+    OFFSET(JUMP_FORWARD),
+    OFFSET(JUMP_IF_FALSE_OR_POP),
+    OFFSET(JUMP_IF_TRUE_OR_POP),
+    OFFSET(JUMP_ABSOLUTE),
+    OFFSET(POP_JUMP_IF_FALSE),
+    OFFSET(POP_JUMP_IF_TRUE),
+    OFFSET(LOAD_GLOBAL),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(CONTINUE_LOOP),
+    OFFSET(SETUP_LOOP),
+    OFFSET(SETUP_EXCEPT),
+    OFFSET(SETUP_FINALLY),
+    OFFSET(STOP_CODE),
+    OFFSET(LOAD_FAST),
+    OFFSET(STORE_FAST),
+    OFFSET(DELETE_FAST),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(RAISE_VARARGS),
+    OFFSET(CALL_FUNCTION),
+    OFFSET(MAKE_FUNCTION),
+    OFFSET(BUILD_SLICE),
+    OFFSET(MAKE_CLOSURE),
+    OFFSET(LOAD_CLOSURE),
+    OFFSET(LOAD_DEREF),
+    OFFSET(STORE_DEREF),
+    OFFSET(STOP_CODE),
+    OFFSET(STOP_CODE),
+    OFFSET(CALL_FUNCTION_VAR),
+    OFFSET(CALL_FUNCTION_KW),
+    OFFSET(CALL_FUNCTION_VAR_KW),
+    OFFSET(SETUP_WITH),
+    OFFSET(STOP_CODE),
+    OFFSET(EXTENDED_ARG),
+    OFFSET(SET_ADD),
+    OFFSET(MAP_ADD),
+    OFFSET(INCREF),
+    OFFSET(DECREF),
+    OFFSET(CONST_INDEX),
+    OFFSET(BINARY_SUBSCR_LIST),
+    OFFSET(BINARY_SUBSCR_DICT),
+    OFFSET(STORE_SUBSCR_LIST),
+    OFFSET(STORE_SUBSCR_DICT),
+    OFFSET(DICT_CONTAINS),
+    OFFSET(DICT_GET),
+    OFFSET(DICT_GET_DEFAULT),
+  };
+#endif
 
-//EVAL_LOG("Entering frame: %s", frame->str().c_str());
-try {
-    JUMP_TO(frame->next_code(pc));
+  DISPATCH_HEADER
+  START_DISPATCH
 
-op_RETURN_VALUE: {
+  START_OP(RETURN_VALUE)
   result = ReturnValue::eval(this, frame, pc, registers);
-  goto done;
-}
+  goto done;\
+END_OP(RETURN_VALUE)
 
-op_BADCODE: {
-  EVAL_LOG("Jump to invalid opcode!?");
-throw RException(PyExc_SystemError, "Invalid jump.");
-}
-BAD_OP(STOP_CODE);
+  START_OP(STOP_CODE)
+  EVAL_LOG("Jump to invalid opcode.");
+  throw RException(PyExc_SystemError, "Invalid jump.");
+  END_OP(STOP_CODE)
 
-BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul, true);
-BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div, true);
-BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add, true);
-BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub, true);
-BINARY_OP3(BINARY_OR, PyNumber_Or, IntegerOps::Or, false);
-BINARY_OP3(BINARY_XOR, PyNumber_Xor, IntegerOps::Xor, false);
-BINARY_OP3(BINARY_AND, PyNumber_And, IntegerOps::And, false);
-BINARY_OP3(BINARY_RSHIFT, PyNumber_Rshift, IntegerOps::Rshift, false);
-BINARY_OP3(BINARY_LSHIFT, PyNumber_Lshift, IntegerOps::Lshift, false);
-BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
-BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
+  BINARY_OP3(BINARY_MULTIPLY, PyNumber_Multiply, IntegerOps::mul, true);
+  BINARY_OP3(BINARY_DIVIDE, PyNumber_Divide, IntegerOps::div, true);
+  BINARY_OP3(BINARY_ADD, PyNumber_Add, IntegerOps::add, true);
+  BINARY_OP3(BINARY_SUBTRACT, PyNumber_Subtract, IntegerOps::sub, true);
+  BINARY_OP3(BINARY_OR, PyNumber_Or, IntegerOps::Or, false);
+  BINARY_OP3(BINARY_XOR, PyNumber_Xor, IntegerOps::Xor, false);
+  BINARY_OP3(BINARY_AND, PyNumber_And, IntegerOps::And, false);
+  BINARY_OP3(BINARY_RSHIFT, PyNumber_Rshift, IntegerOps::Rshift, false);
+  BINARY_OP3(BINARY_LSHIFT, PyNumber_Lshift, IntegerOps::Lshift, false);
+  BINARY_OP2(BINARY_TRUE_DIVIDE, PyNumber_TrueDivide);
+  BINARY_OP2(BINARY_FLOOR_DIVIDE, PyNumber_FloorDivide);
 
-DEFINE_OP(BINARY_POWER, BinaryPower);
-DEFINE_OP(BINARY_MODULO, BinaryModulo);
+  DEFINE_OP(BINARY_POWER, BinaryPower);
+  DEFINE_OP(BINARY_MODULO, BinaryModulo);
 
-DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
-DEFINE_OP(BINARY_SUBSCR_LIST, BinarySubscrList);
-DEFINE_OP(BINARY_SUBSCR_DICT, BinarySubscrDict);
-DEFINE_OP(CONST_INDEX, ConstIndex);
+  DEFINE_OP(BINARY_SUBSCR, BinarySubscr);
+  DEFINE_OP(BINARY_SUBSCR_LIST, BinarySubscrList);
+  DEFINE_OP(BINARY_SUBSCR_DICT, BinarySubscrDict);
+  DEFINE_OP(CONST_INDEX, ConstIndex);
 
+  BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul, true);
+  BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div, true);
+  BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add, true);
+  BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub, true);
+  BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod, true);
 
+  BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
+  BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
+  BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
+  BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
+  BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
+  BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
+  BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
+  DEFINE_OP(INPLACE_POWER, InplacePower);
 
+  UNARY_OP2(UNARY_INVERT, PyNumber_Invert);
+  UNARY_OP2(UNARY_CONVERT, PyObject_Repr);
+  UNARY_OP2(UNARY_NEGATIVE, PyNumber_Negative);
+  UNARY_OP2(UNARY_POSITIVE, PyNumber_Positive);
 
-BINARY_OP3(INPLACE_MULTIPLY, PyNumber_InPlaceMultiply, IntegerOps::mul, true);
-BINARY_OP3(INPLACE_DIVIDE, PyNumber_InPlaceDivide, IntegerOps::div, true);
-BINARY_OP3(INPLACE_ADD, PyNumber_InPlaceAdd, IntegerOps::add, true);
-BINARY_OP3(INPLACE_SUBTRACT, PyNumber_InPlaceSubtract, IntegerOps::sub, true);
-BINARY_OP3(INPLACE_MODULO, PyNumber_InPlaceRemainder, IntegerOps::mod, true);
+  DEFINE_OP(UNARY_NOT, UnaryNot);
 
-BINARY_OP2(INPLACE_OR, PyNumber_InPlaceOr);
-BINARY_OP2(INPLACE_XOR, PyNumber_InPlaceXor);
-BINARY_OP2(INPLACE_AND, PyNumber_InPlaceAnd);
-BINARY_OP2(INPLACE_RSHIFT, PyNumber_InPlaceRshift);
-BINARY_OP2(INPLACE_LSHIFT, PyNumber_InPlaceLshift);
-BINARY_OP2(INPLACE_TRUE_DIVIDE, PyNumber_InPlaceTrueDivide);
-BINARY_OP2(INPLACE_FLOOR_DIVIDE, PyNumber_InPlaceFloorDivide);
-DEFINE_OP(INPLACE_POWER, InplacePower);
+  DEFINE_OP(LOAD_FAST, LoadFast);
+  DEFINE_OP(LOAD_LOCALS, LoadLocals);
+  DEFINE_OP(LOAD_NAME, LoadName);
+  DEFINE_OP(LOAD_ATTR, LoadAttr);
 
-UNARY_OP2(UNARY_INVERT, PyNumber_Invert);
-UNARY_OP2(UNARY_CONVERT, PyObject_Repr);
-UNARY_OP2(UNARY_NEGATIVE, PyNumber_Negative);
-UNARY_OP2(UNARY_POSITIVE, PyNumber_Positive);
+  DEFINE_OP(STORE_NAME, StoreName);
+  DEFINE_OP(STORE_ATTR, StoreAttr);
 
-DEFINE_OP(UNARY_NOT, UnaryNot);
+  DEFINE_OP(STORE_SUBSCR, StoreSubscr);
+  DEFINE_OP(STORE_SUBSCR_LIST, StoreSubscrList);
+  DEFINE_OP(STORE_SUBSCR_DICT, StoreSubscrDict);
 
-DEFINE_OP(LOAD_FAST, LoadFast);
-DEFINE_OP(LOAD_LOCALS, LoadLocals);
-DEFINE_OP(LOAD_NAME, LoadName);
-DEFINE_OP(LOAD_ATTR, LoadAttr);
+  DEFINE_OP(STORE_FAST, StoreFast);
+  DEFINE_OP(STORE_SLICE, StoreSlice);
 
-DEFINE_OP(STORE_NAME, StoreName);
-DEFINE_OP(STORE_ATTR, StoreAttr);
+  DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
+  DEFINE_OP(STORE_GLOBAL, StoreGlobal);
+  DEFINE_OP(DELETE_GLOBAL, DeleteGlobal);
+  DEFINE_OP(DELETE_NAME, DeleteName);
 
-DEFINE_OP(STORE_SUBSCR, StoreSubscr);
-DEFINE_OP(STORE_SUBSCR_LIST, StoreSubscrList);
-DEFINE_OP(STORE_SUBSCR_DICT, StoreSubscrDict);
+  DEFINE_OP(LOAD_CLOSURE, LoadClosure);
+  DEFINE_OP(LOAD_DEREF, LoadDeref);
+  DEFINE_OP(STORE_DEREF, StoreDeref);
 
-DEFINE_OP(STORE_FAST, StoreFast);
-DEFINE_OP(STORE_SLICE, StoreSlice);
+  DEFINE_OP(GET_ITER, GetIter);
+  DEFINE_OP(FOR_ITER, ForIter);
+  DEFINE_OP(BREAK_LOOP, BreakLoop);
 
-DEFINE_OP(LOAD_GLOBAL, LoadGlobal);
-DEFINE_OP(STORE_GLOBAL, StoreGlobal);
-DEFINE_OP(DELETE_GLOBAL, DeleteGlobal);
-DEFINE_OP(DELETE_NAME, DeleteName);
+  DEFINE_OP(BUILD_TUPLE, BuildTuple);
+  DEFINE_OP(BUILD_LIST, BuildList);
+  DEFINE_OP(BUILD_MAP, BuildMap);
+  DEFINE_OP(BUILD_SLICE, BuildSlice);
 
-DEFINE_OP(LOAD_CLOSURE, LoadClosure);
-DEFINE_OP(LOAD_DEREF, LoadDeref);
-DEFINE_OP(STORE_DEREF, StoreDeref);
+  DEFINE_OP(STORE_MAP, StoreMap);
 
+  DEFINE_OP(PRINT_NEWLINE, PrintNewline);
+  DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
+  DEFINE_OP(PRINT_ITEM, PrintItem);
+  DEFINE_OP(PRINT_ITEM_TO, PrintItem);
 
-DEFINE_OP(GET_ITER, GetIter);
-DEFINE_OP(FOR_ITER, ForIter);
-DEFINE_OP(BREAK_LOOP, BreakLoop);
+  DEFINE_OP(CALL_FUNCTION, CallFunctionSimple);
+  DEFINE_OP(CALL_FUNCTION_VAR, CallFunctionVar);
+  DEFINE_OP(CALL_FUNCTION_KW, CallFunctionKw);
+  DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunctionVarKw);
 
-DEFINE_OP(BUILD_TUPLE, BuildTuple);
-DEFINE_OP(BUILD_LIST, BuildList);
-DEFINE_OP(BUILD_MAP, BuildMap);
-DEFINE_OP(BUILD_SLICE, BuildSlice);
+  FALLTHROUGH(POP_JUMP_IF_FALSE);
+  DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
 
-DEFINE_OP(STORE_MAP, StoreMap);
+  FALLTHROUGH(POP_JUMP_IF_TRUE);
+  DEFINE_OP(JUMP_IF_TRUE_OR_POP, JumpIfTrueOrPop);
 
-DEFINE_OP(PRINT_NEWLINE, PrintNewline);
-DEFINE_OP(PRINT_NEWLINE_TO, PrintNewline);
-DEFINE_OP(PRINT_ITEM, PrintItem);
-DEFINE_OP(PRINT_ITEM_TO, PrintItem);
+  DEFINE_OP(JUMP_ABSOLUTE, JumpAbsolute);
+  DEFINE_OP(COMPARE_OP, CompareOp);
+  DEFINE_OP(INCREF, IncRef);
+  DEFINE_OP(DECREF, DecRef);
 
-DEFINE_OP(CALL_FUNCTION, CallFunctionSimple);
-DEFINE_OP(CALL_FUNCTION_VAR, CallFunctionVar);
-DEFINE_OP(CALL_FUNCTION_KW, CallFunctionKw);
-DEFINE_OP(CALL_FUNCTION_VAR_KW, CallFunctionVarKw);
+  DEFINE_OP(LIST_APPEND, ListAppend);
 
-FALLTHROUGH(POP_JUMP_IF_FALSE);
-DEFINE_OP(JUMP_IF_FALSE_OR_POP, JumpIfFalseOrPop);
+  DEFINE_OP(DICT_CONTAINS, DictContains);
+  DEFINE_OP(DICT_GET, DictGet);
+  DEFINE_OP(DICT_GET_DEFAULT, DictGetDefault);
 
-FALLTHROUGH(POP_JUMP_IF_TRUE);
-DEFINE_OP(JUMP_IF_TRUE_OR_POP, JumpIfTrueOrPop);
+  DEFINE_OP(SLICE, Slice);
 
-DEFINE_OP(JUMP_ABSOLUTE, JumpAbsolute);
-DEFINE_OP(COMPARE_OP, CompareOp);
-DEFINE_OP(INCREF, IncRef);
-DEFINE_OP(DECREF, DecRef);
+  DEFINE_OP(IMPORT_STAR, ImportStar);
+  DEFINE_OP(IMPORT_FROM, ImportFrom);
+  DEFINE_OP(IMPORT_NAME, ImportName);
 
-DEFINE_OP(LIST_APPEND, ListAppend);
+  DEFINE_OP(MAKE_FUNCTION, MakeFunction);
+  DEFINE_OP(MAKE_CLOSURE, MakeClosure);
+  DEFINE_OP(BUILD_CLASS, BuildClass);
 
-DEFINE_OP(DICT_CONTAINS, DictContains);
-DEFINE_OP(DICT_GET, DictGet);
-DEFINE_OP(DICT_GET_DEFAULT, DictGetDefault);
+  DEFINE_OP(SETUP_EXCEPT, SetupExcept);
+  DEFINE_OP(SETUP_FINALLY, SetupFinally);
+  DEFINE_OP(RAISE_VARARGS, RaiseVarArgs);
 
+  BAD_OP(SETUP_LOOP);
+  BAD_OP(POP_BLOCK);
+  BAD_OP(LOAD_CONST);
+  BAD_OP(JUMP_FORWARD);
+  BAD_OP(MAP_ADD);
+  BAD_OP(SET_ADD);
+  BAD_OP(EXTENDED_ARG);
+  BAD_OP(SETUP_WITH);
+  BAD_OP(DELETE_FAST);
+  BAD_OP(CONTINUE_LOOP);
+  BAD_OP(BUILD_SET);
+  BAD_OP(DUP_TOPX);
+  BAD_OP(DELETE_ATTR);
+  BAD_OP(UNPACK_SEQUENCE);
+  BAD_OP(END_FINALLY);
+  BAD_OP(YIELD_VALUE);
+  BAD_OP(EXEC_STMT);
+  BAD_OP(WITH_CLEANUP);
+  BAD_OP(PRINT_EXPR);
+  BAD_OP(DELETE_SUBSCR);
+  BAD_OP(DELETE_SLICE);
+  BAD_OP(NOP);
+  BAD_OP(ROT_FOUR);
+  BAD_OP(DUP_TOP);
+  BAD_OP(ROT_THREE);
+  BAD_OP(ROT_TWO);
+  BAD_OP(POP_TOP);
 
-DEFINE_OP(SLICE, Slice);
-
-DEFINE_OP(IMPORT_STAR, ImportStar);
-DEFINE_OP(IMPORT_FROM, ImportFrom);
-DEFINE_OP(IMPORT_NAME, ImportName);
-
-DEFINE_OP(MAKE_FUNCTION, MakeFunction);
-DEFINE_OP(MAKE_CLOSURE, MakeClosure);
-DEFINE_OP(BUILD_CLASS, BuildClass);
-
-DEFINE_OP(SETUP_EXCEPT, SetupExcept);
-DEFINE_OP(SETUP_FINALLY, SetupFinally);
-DEFINE_OP(RAISE_VARARGS, RaiseVarArgs);
-
-BAD_OP(SETUP_LOOP);
-BAD_OP(POP_BLOCK);
-BAD_OP(LOAD_CONST);
-BAD_OP(JUMP_FORWARD);
-BAD_OP(MAP_ADD);
-BAD_OP(SET_ADD);
-BAD_OP(EXTENDED_ARG);
-BAD_OP(SETUP_WITH);
-BAD_OP(DELETE_FAST);
-BAD_OP(CONTINUE_LOOP);
-BAD_OP(BUILD_SET);
-BAD_OP(DUP_TOPX);
-BAD_OP(DELETE_ATTR);
-BAD_OP(UNPACK_SEQUENCE);
-BAD_OP(END_FINALLY);
-BAD_OP(YIELD_VALUE);
-BAD_OP(EXEC_STMT);
-BAD_OP(WITH_CLEANUP);
-BAD_OP(PRINT_EXPR);
-BAD_OP(DELETE_SUBSCR);
-BAD_OP(DELETE_SLICE);
-BAD_OP(NOP);
-BAD_OP(ROT_FOUR);
-BAD_OP(DUP_TOP);
-BAD_OP(ROT_THREE);
-BAD_OP(ROT_TWO);
-BAD_OP(POP_TOP);
+  END_DISPATCH
 
 } catch (RException &error) {
   if (!frame->exc_handlers_.empty()) {
     int handler_offset = frame->exc_handlers_.pop();
     EVAL_LOG("Jumping to handler: %d", handler_offset);
     pc = frame->instructions() + handler_offset;
-    JUMP_TO(frame->next_code(pc));
+    JUMP_TO_NEXT;
   }
   Log_Info("ERROR: Leaving frame: %s", frame->str().c_str());
-//  if (error.exception != NULL) {
-//    Log_Info("Setting py error... %s %s",
-//             obj_to_str(error.exception),
-//             obj_to_str(error.value));
-//    PyErr_SetObject(error.exception, error.value);
-//  }
-
   PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(),
-                                        frame->code->code(),
-                                        frame->globals(),
-                                        frame->locals());
+      frame->code->code(),
+      frame->globals(),
+      frame->locals());
   py_frame->f_lineno = 0;
   PyTraceBack_Here(py_frame);
   throw RException();
 }
-done: {
+  done: {
 //    EVAL_LOG("SUCCESS: Leaving frame: %s; result %s",
 //             frame->str().c_str(), obj_to_str(result->as_obj()));
-return *result;
-}
+    return *result;
+  }
 }

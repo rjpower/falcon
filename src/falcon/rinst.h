@@ -3,14 +3,13 @@
 
 #include "py_include.h"
 
-#include <string>
-
 #include "oputil.h"
 #include "util.h"
 #include "rexcept.h"
 #include "config.h"
 #include "register.h"
 
+#include <string>
 
 static const inline char* obj_to_str(PyObject* o) {
   if (o == NULL) {
