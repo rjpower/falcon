@@ -26,24 +26,6 @@ static const inline char* obj_to_str(PyObject* o) {
   return PyString_AsString(obj_repr);
 }
 
-
-// This file defines the format used by the register evalulator.
-//
-// Operation types:
-//
-// There are 3 basic operation types: branch, register and varargs.
-//
-// The register form is used by most operations and is templatized
-// on the number of registers used by the operation.
-//
-// Register layout:
-//
-// Each function call pushes a new set of registers for evaluation.
-//
-// The first portion of the register file is aliased to the function
-// locals and consts.  This is followed by general registers.
-// [0..#consts][0..#locals][general registers]
-
 struct RefHelper {
   PyObject* obj;
 
@@ -61,12 +43,25 @@ struct RefHelper {
   }
 };
 
+// This file defines the format used by the register evalulator.
+//
+// Operation types:
+//
+// There are 3 basic operation types: branch, register and varargs.
+//
+// The register form is used by most operations and is templatized
+// on the number of registers used by the operation.
+//
+// Register layout:
+//
+// Each function call pushes a new set of registers for evaluation.
+//
+// The first portion of the register file is aliased to the function
+// locals and consts.  This is followed by general registers.
+// [0..#consts][0..#locals][general registers]
 static const int kMaxRegisters = 256;
 typedef uint8_t RegisterOffset;
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
-
-
-
 
 typedef uint16_t JumpLoc;
 typedef void* JumpAddr;

@@ -192,13 +192,10 @@ private:
   int32_t total_count_;
   int64_t last_clock_;
 
-  Compiler *compiler_;
 public:
   Evaluator();
   ~Evaluator();
   void dump_status();
-
-  inline RegisterCode* compile(PyObject* f);
 
   Register eval(RegisterFrame* rf);
 
@@ -209,11 +206,9 @@ public:
   RegisterFrame* frame_from_pyframe(PyFrameObject*);
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
   RegisterFrame* frame_from_codeobj(PyObject* code);
-};
 
-RegisterCode* Evaluator::compile(PyObject* obj) {
-  return compiler_->compile(obj);
-}
+  Compiler *compiler;
+};
 
 //void StartTracing(Evaluator*);
 //int TraceFunction(PyObject *obj, PyFrameObject *frame, int what, PyObject *arg);

@@ -12,9 +12,9 @@ static void print_register(Writer& w, Register* registers, int reg_num) {
     w.printf("[%d],", reg_num);
   } else {
     if (objstr_enabled()) {
-      w.printf("[%d] %.20s ", reg_num, obj_to_str(registers[reg_num].as_obj()));
+      w.printf("[%d] %.20s,", reg_num, obj_to_str(registers[reg_num].as_obj()));
     } else {
-      w.printf("[%d] %p, ", reg_num, registers[reg_num]);
+      w.printf("[%d] %p,", reg_num, registers[reg_num]);
     }
   }
 }

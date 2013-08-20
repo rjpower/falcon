@@ -22,6 +22,7 @@ RException::RException(PyObject* exc, const char* fmt, ...) :
 }
 
 RException::RException() {
+  abort();
   Reg_Assert(PyErr_Occurred() != NULL, "No exception to propagate.");
 //  PyErr_Fetch(&exception, &value, &traceback);
 //  PyErr_Restore(exception, value, traceback);

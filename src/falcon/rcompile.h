@@ -16,10 +16,6 @@
 #include "register_stack.h"
 #include "compiler_state.h"
 
-// Only enable exception support in debug mode for now.
-
-
-
 
 struct Compiler {
 private:
@@ -39,29 +35,39 @@ RegisterCode* Compiler::compile(PyObject* func) {
   if (PyMethod_Check(func)) {
     func = PyMethod_GET_FUNCTION(func);
   }
-  Py_IncRef(func);
 
 
-//  Log_Info("Checking cache for %p...", func);
-  CodeCache::iterator i = cache_.find(func);
+  PyObject* key = NULL;
+  if (!PyCode_Check(func)) {
+    key = PyFunction_GET_CODE(func);
+  } else {
+    key = func;
+  }
+
+  if (key == NULL) {
+    Log_Info("No code for function %s", PyEval_GetFuncName(func));
+    return NULL;
+  }
+
+  Py_IncRef(key);
+
+//  Log_Info("Checking cache for %p", key);
+  CodeCache::iterator i = cache_.find(key);
   if (i != cache_.end()) {
 //    Log_Info("Hit.");
     return i->second;
   }
 //  Log_Info("Miss.");
 
-
   try {
     RegisterCode* code = compile_(func);
-    cache_[func] = code;
+    cache_[key] = code;
+    return code;
   } catch (RException& e) {
-    Py_DecRef(func);
     Log_Info("Failed to compile function %s", PyEval_GetFuncName(func));
-    cache_[func] = NULL;
-    throw e;
+    cache_[key] = NULL;
+    return NULL;
   }
-
-  return cache_[func];
 }
 
 #endif /* RCOMPILE_H_ */

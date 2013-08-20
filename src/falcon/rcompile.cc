@@ -540,8 +540,9 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
       int code = stack->pop_register();
       CompilerOp* op = bb->add_varargs_op(opcode, oparg, oparg + 2);
       op->regs[0] = code;
+      // Additional registers store default arguments for this function.
       for (int i = 0; i < oparg; ++i) {
-        op->regs[i + 1] = stack->pop_register();
+        op->regs[oparg - i] = stack->pop_register();
       }
       op->regs[oparg + 1] = stack->push_register(state->num_reg++);
       break;

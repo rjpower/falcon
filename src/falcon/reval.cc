@@ -30,7 +30,12 @@ static bool logging_enabled() {
     r__.decref();\
     r__.store(v__);
 
-#define LOAD_OBJ(regnum) registers[regnum].as_obj()
+static f_inline PyObject* load_obj(Register* registers, int regnum) {
+  PyObject* o = registers[regnum].as_obj();
+  return o;
+}
+
+#define LOAD_OBJ(regnum) load_obj(registers, regnum)
 #define LOAD_INT(regnum) registers[regnum].as_int()
 #define LOAD_FLOAT(regnum) registers[regnum].as_float()
 
@@ -183,16 +188,15 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
     }
 
     int default_start = needed_args - num_def_args;
-
-//    EVAL_LOG("Calling function with defaults: %s",
-//             PyString_AsString(PyObject_Repr(def_args)));
+    EVAL_LOG("Calling function with defaults: %s", obj_to_str(def_args));
     for (int i = 0; i < needed_args; ++i) {
       if (i < num_args) {
-//        EVAL_LOG("Assigning arguments: %d <- args[%d]", offset, i);
+        EVAL_LOG("Assigning arguments: %d <- args[%d] %s", offset, i, obj_to_str(args[i].as_obj()));
         registers[offset].store(args[i]);
       } else {
-//        EVAL_LOG("Assigning arguments: %d <- defaults[%d]", offset, i);
-        registers[offset].store(PyTuple_GET_ITEM(def_args, i - default_start) );
+        PyObject* default_arg = PyTuple_GET_ITEM(def_args, i - default_start);
+        EVAL_LOG("Assigning arguments: %d <- defaults[%d] %s", offset, i, obj_to_str(default_arg));
+        registers[offset].store(default_arg);
       }
       registers[offset].incref();
       ++offset;
@@ -229,7 +233,7 @@ Evaluator::Evaluator() {
   last_clock_ = 0;
   hint_hits_ = 0;
   hint_misses_ = 0;
-  compiler_ = new Compiler;
+  compiler = new Compiler;
   bzero(hints, sizeof(Hint) * kMaxHints);
 
   // We use a sentinel value for the invalid hint index.
@@ -240,7 +244,7 @@ Evaluator::Evaluator() {
 }
 
 Evaluator::~Evaluator() {
-  delete compiler_;
+  delete compiler;
 }
 
 void RegisterFrame::fill_locals(PyObject* ldict) {
@@ -291,33 +295,30 @@ PyObject* Evaluator::eval_frame_to_pyobj(RegisterFrame* frame) {
 }
 
 PyObject* Evaluator::eval_python_module(PyObject* code, PyObject* module_dict) {
-
-  RegisterFrame* frame;
-  try {
-    frame = frame_from_pyfunc(code, PyTuple_New(0), PyDict_New());
-  } catch (RException& r) {
-    Log_Error("Couldn't compile module, calling CPython: %s", PyString_AsString(r.value));
+  RegisterFrame* frame = frame_from_pyfunc(code, PyTuple_New(0), PyDict_New());
+  if (frame == NULL) {
+    Log_Error("Couldn't compile module, calling CPython.");
     return PyEval_EvalCode((PyCodeObject*) code, module_dict, module_dict);
+  } else {
+    return eval_frame_to_pyobj(frame);
   }
-  return eval_frame_to_pyobj(frame);
-
 }
 
 PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
-
-  RegisterFrame* frame;
-  try {
-    frame = frame_from_pyfunc(func, args, kw);
-  } catch (RException& r) {
-    EVAL_LOG("Couldn't compile function, calling CPython: %s",
-        PyString_AsString(r.value));
+  RegisterFrame* frame = frame_from_pyfunc(func, args, kw);
+  if (frame == NULL) {
+    EVAL_LOG("Couldn't compile function, calling CPython.");
     return PyObject_Call(func, args, kw);
+  } else {
+    return eval_frame_to_pyobj(frame);
   }
-  return eval_frame_to_pyobj(frame);
 }
 
 RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
-  RegisterCode* regcode = compile((PyObject*) frame->f_code);
+  RegisterCode* regcode = compiler->compile((PyObject*) frame->f_code);
+  if (regcode == NULL) {
+    return NULL;
+  }
 
   ObjVector v_args;
   ObjVector kw_args;
@@ -328,12 +329,14 @@ RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
 }
 
 RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObject* kw) {
-
   if (args == NULL || !PyTuple_Check(args)) {
     throw RException(PyExc_TypeError, "Expected function argument tuple, got: %s", obj_to_str(PyObject_Type(args)));
   }
 
-  RegisterCode* regcode = compile(obj);
+  RegisterCode* regcode = compiler->compile(obj);
+  if (regcode == NULL) {
+    return NULL;
+  }
 
   ObjVector v_args;
   v_args.resize(PyTuple_GET_SIZE(args) );
@@ -359,7 +362,7 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
 
 RegisterFrame* Evaluator::frame_from_codeobj(PyObject* code) {
   ObjVector args, kw;
-  RegisterCode *regcode = compile(code);
+  RegisterCode *regcode = compiler->compile(code);
   return new RegisterFrame(regcode, code, args, kw);
 }
 
@@ -386,11 +389,16 @@ void Evaluator::collect_info(int opcode) {
   }
 }
 
+template <class OpType>
+static f_inline void log_operation(RegisterFrame* frame, const OpType* op, Register* registers, const char* pc) {
+  EVAL_LOG("%5d %s %s", frame->offset(pc), frame->str().c_str(), op->str(registers).c_str());
+}
+
 template<class OpType, class SubType>
 struct RegOpImpl {
   static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     OpType& op = *((OpType*) pc);
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
+    log_operation(frame, &op, registers, pc);
     pc += op.size();
     SubType::_eval(eval, frame, op, registers);
     return pc;
@@ -401,7 +409,7 @@ template<class SubType>
 struct VarArgsOpImpl {
   static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     VarRegOp *op = (VarRegOp*) pc;
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op->str(registers).c_str());
+    log_operation(frame, op, registers, pc);
     pc += op->size();
     SubType::_eval(eval, frame, op, registers);
     return pc;
@@ -412,7 +420,7 @@ template<class OpType, class SubType>
 struct BranchOpImpl {
   static f_inline const char* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     OpType& op = *((OpType*) pc);
-    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
+    log_operation(frame, &op, registers, pc);
     SubType::_eval(eval, frame, op, &pc, registers);
     return pc;
   }
@@ -925,7 +933,6 @@ struct LoadName: public RegOpImpl<RegOp<1>, LoadName> {
       throw RException(PyExc_NameError, "Name %.200s not defined.", obj_to_str(r1));
     }
     Py_INCREF(r2);
-
     STORE_REG(op.reg[0], r2);
   }
 };
@@ -1257,7 +1264,9 @@ struct MakeClosure: public VarArgsOpImpl<MakeClosure> {
 
     PyObject* defaults = PyTuple_New(op->arg);
     for (int i = 0; i < op->arg; ++i) {
-      PyTuple_SetItem(defaults, i, LOAD_OBJ(op->reg[i + 2]));
+      PyObject* val = LOAD_OBJ(op->reg[i + 2]);
+      Py_INCREF(val);
+      PyTuple_SetItem(defaults, i, val);
     }
     PyFunction_SetDefaults(func, defaults);
     STORE_REG(op->reg[op->arg + 2], func);
@@ -1293,19 +1302,15 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
      *   by other Python C API code.
      */
 //    Log_Info("Calling...");
-    if (!PyCFunction_Check(fn) && !PyClass_Check(fn) && !PyType_Check(fn)) {
+    if (!PyCFunction_Check(fn) &&
+        !PyClass_Check(fn) &&
+        !PyType_Check(fn)) {
 //        Log_Info("Compiling...");
-      try {
-        code = eval->compile(fn);
-//        Log_Info("Compiled...");
-      } catch (RException& e) {
-        Log_Info("Failed to compile function, executing using ceval: %s", obj_to_str(e.value));
-        code = NULL;
-      }
+      code = eval->compiler->compile(fn);
     }
 
     if (code == NULL || nk > 0) {
-//      Log_Info("Going to Python.");
+//      Log_Info("Going to Python for function %s", PyEval_GetFuncName(fn));
       PyObject* args = PyTuple_New(na);
 
       for (register int i = 0; i < na; ++i) {
@@ -1432,7 +1437,7 @@ struct BreakLoop: public BranchOpImpl<BranchOp<0>, BreakLoop> {
 struct ReturnValue {
   static f_inline Register* eval(Evaluator* eval, RegisterFrame* frame, const char* pc, Register* registers) {
     RegOp<1>& op = *((RegOp<1>*) pc);
-//    EVAL_LOG("%s -- %5d: %s", frame->str().c_str(), frame->offset(pc), op.str(registers).c_str());
+    log_operation(frame, (RegOp<1>*)pc, registers, pc);
     Register& r = registers[op.reg[0]];
     r.incref();
     return &r;
