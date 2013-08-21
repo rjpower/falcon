@@ -5,6 +5,7 @@
 #include <string>
 #include <map>
 #include <vector>
+
 #include <google/dense_hash_map>
 
 #include "util.h"
@@ -23,6 +24,16 @@ private:
   CodeCache cache_;
   BasicBlock* registerize(CompilerState* state, RegisterStack *stack, int offset);
   RegisterCode* compile_(PyObject* function);
+
+
+  const char* fn_name(PyObject* func) {
+    if (PyFunction_Check(func)) {
+      return PyEval_GetFuncName(func);
+    } else {
+      return obj_to_str(func);
+    }
+  }
+
 public:
   Compiler() {
     cache_.set_empty_key(NULL);
@@ -31,43 +42,44 @@ public:
   inline RegisterCode* compile(PyObject* function);
 };
 
+
+
 RegisterCode* Compiler::compile(PyObject* func) {
+
   if (PyMethod_Check(func)) {
     func = PyMethod_GET_FUNCTION(func);
   }
 
+  PyObject* stack_code = NULL;
 
-  PyObject* key = NULL;
-  if (!PyCode_Check(func)) {
-    key = PyFunction_GET_CODE(func);
+  if (PyFunction_Check(func)) {
+    stack_code = PyFunction_GET_CODE(func);
   } else {
-    key = func;
+    Reg_Assert(PyCode_Check(func),
+               "Expected code or function, got %s", fn_name(func));
+
+    stack_code = func;
   }
 
-  if (key == NULL) {
-    Log_Info("No code for function %s", PyEval_GetFuncName(func));
+  if (stack_code == NULL) {
+    Log_Info("No code for function %s", fn_name(func));
     return NULL;
   }
 
-  Py_IncRef(key);
-
-//  Log_Info("Checking cache for %p", key);
-  CodeCache::iterator i = cache_.find(key);
+  CodeCache::iterator i = cache_.find(stack_code);
   if (i != cache_.end()) {
-//    Log_Info("Hit.");
     return i->second;
   }
-//  Log_Info("Miss.");
 
+
+  RegisterCode* register_code = NULL;
   try {
-    RegisterCode* code = compile_(func);
-    cache_[key] = code;
-    return code;
-  } catch (RException& e) {
-    Log_Info("Failed to compile function %s", PyEval_GetFuncName(func));
-    cache_[key] = NULL;
-    return NULL;
+     register_code = compile_(func);
+  } catch (const RException& e) {
+    Log_Info("Failed to compile function %s", fn_name(func));
   }
+  cache_[stack_code] = register_code;
+  return register_code;
 }
 
 #endif /* RCOMPILE_H_ */

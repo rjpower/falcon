@@ -33,4 +33,9 @@
 #define USE_THREADED_DISPATCH 1
 #endif
 
+#ifndef MAX_REGISTERS
+// will fail for sufficiently large functions without CompactRegisters opt
+#define MAX_REGISTERS 1024
+#endif
+
 #endif

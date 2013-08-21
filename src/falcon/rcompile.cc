@@ -866,7 +866,6 @@ RegisterCode* Compiler::compile_(PyObject* func) {
     throw RException(PyExc_SystemError, "No code in function object.");
   }
 
-
   COMPILE_LOG("Compiling... %s", PyEval_GetFuncName(func));
 
   CompilerState state(code);

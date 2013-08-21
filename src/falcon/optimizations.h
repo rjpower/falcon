@@ -260,6 +260,76 @@ public:
   }
 };
 
+
+class LivenessAnalysis {
+
+  std::map<CompilerOp*, std::set<int> > live_before_op;
+  std::map<CompilerOp*, std::set<int> > live_after_op;
+  std::map<BasicBlock*, std::set<int> > live_before_bb;
+  std::set<BasicBlock*> currently_visiting;
+
+
+
+  void visit_fn(CompilerState* fn) {
+    for (size_t i = 0; i < fn->bbs.size(); ++i) {
+      this->visit_bb(fn->bbs[i]);
+    }
+  }
+
+  std::set<int> set_union(
+      const std::set<int>& a,
+      const std::set<int>& b) {
+    std::set<int> result;
+    result.insert(a.begin(), a.end());
+    result.insert(b.begin(), b.end());
+    return result;
+  }
+
+
+  void visit_bb(BasicBlock* bb) {
+    auto iter = live_before_bb.find(bb);
+    if (iter != live_before_bb.end()) {
+      return;
+    }
+
+    bool prev_visited = currently_visiting.find(bb) != currently_visiting.end();
+    if (prev_visited) {
+      return;
+    } else {
+      currently_visiting.insert(bb);
+    }
+    for (auto next : bb->exits) {
+      if (currently_visiting.find(next) != currently_visiting.end()) {
+        this->visit_bb(next);
+      }
+    }
+
+    std::set<int> live_after;
+    for (auto next : bb->exits) {
+      if (currently_visiting.find(next) != currently_visiting.end()) {
+        iter = live_before_bb.find(next);
+        if (iter != live_before_bb.end()) {
+
+          const std::set<int>& next_set = iter->second;
+          live_after.insert(next_set.begin(), next_set.end());
+        }
+      }
+    }
+
+    size_t n_ops = bb->code.size();
+    for (size_t i = n_ops - 1; i >= 0; --i) {
+      CompilerOp * op = bb->code[i];
+      live_after_op[op] = live_after;
+      size_t n_inputs = op->num_inputs();
+      for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
+        live_after.insert(op->regs[reg_idx]);
+      }
+      live_before_op[op] = live_after;
+    }
+    live_before_bb[bb] = live_after;
+  }
+};
+
 class CompactRegisters: public SortedPass, UseCounts {
 private:
   // Mapping from old -> new register names
@@ -269,14 +339,22 @@ private:
   int max_register;
 
   std::set<int> bb_defs;
+
+
+
   bool defined_locally(int r) {
     return bb_defs.find(r) != bb_defs.end();
   }
+  /*
+  bool used_locally(int r) {
+    return bb_uses.find(r) != bb_uses.end();
+  }
+  */
 
 public:
 
   void visit_op(CompilerOp* op) {
-
+  /*
     size_t n_regs = op->regs.size();
     size_t n_input_regs;
     if (op->has_dest) {
@@ -288,19 +366,21 @@ public:
     int new_reg;
     for (size_t i = 0; i < n_input_regs; ++i) {
       old_reg = op->regs[i];
-      if (old_reg >= num_frozen) {
+      if (old_reg >= num_frozen && this->used_locally(old_reg)) {
         new_reg = register_map[old_reg];
         if (new_reg != 0) {
           op->regs[i] = new_reg;
-          this->decr_count(old_reg);
-          if (this->get_count(old_reg) == 0) {
-            if (!this->in_cycle || this->defined_locally(old_reg)) {
+          if (old_reg != new_reg) {
+            this->decr_count(old_reg);
+            if (this->get_count(old_reg) == 0) {
               this->free_registers.push(new_reg);
+
             }
           }
         }
       }
     }
+
     if (op->has_dest) {
       old_reg = op->regs[n_input_regs];
       if (old_reg >= 0) {
@@ -319,17 +399,16 @@ public:
         op->regs[n_input_regs] = new_reg;
       }
     }
+    */
   }
 
   void visit_bb(BasicBlock* bb) {
     this->bb_defs.clear();
     SortedPass::visit_bb(bb);
-
   }
   void visit_fn(CompilerState* fn) {
 
     this->count_uses(fn);
-
     // don't rename inputs, locals, or constants
     num_frozen = fn->num_locals + fn->num_consts;
     max_register = num_frozen;

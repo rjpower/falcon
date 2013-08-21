@@ -2176,7 +2176,7 @@ END_OP(RETURN_VALUE)
 
   END_DISPATCH
 
-} catch (RException &error) {
+} catch (const RException &error) {
   if (!frame->exc_handlers_.empty()) {
     int handler_offset = frame->exc_handlers_.pop();
     EVAL_LOG("Jumping to handler: %d", handler_offset);
@@ -2184,6 +2184,11 @@ END_OP(RETURN_VALUE)
     JUMP_TO_NEXT;
   }
   Log_Info("ERROR: Leaving frame: %s", frame->str().c_str());
+
+  if (error.exception != NULL && !PyErr_Occurred()) {
+    PyErr_SetObject(error.exception, error.value);
+  }
+
   PyFrameObject* py_frame = PyFrame_New(PyThreadState_GET(),
       frame->code->code(),
       frame->globals(),

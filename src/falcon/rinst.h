@@ -59,8 +59,16 @@ struct RefHelper {
 // The first portion of the register file is aliased to the function
 // locals and consts.  This is followed by general registers.
 // [0..#consts][0..#locals][general registers]
-static const int kMaxRegisters = 256;
-typedef uint8_t RegisterOffset;
+
+
+
+static const int kMaxRegisters = MAX_REGISTERS;
+#if MAX_REGISTERS <= 256
+  typedef uint8_t RegisterOffset;
+#else
+  typedef uint16_t RegisterOffset;
+#endif
+
 static const RegisterOffset kInvalidRegister = (RegisterOffset) -1;
 
 typedef uint16_t JumpLoc;
