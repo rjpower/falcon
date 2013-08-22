@@ -2,6 +2,7 @@
 #define FALCON_OPTIMIZATIONS_H
 
 #include <map>
+#include <iostream>
 
 #include "opcode.h"
 #include "util.h"
@@ -330,92 +331,159 @@ class LivenessAnalysis {
   }
 };
 
-class CompactRegisters: public SortedPass, UseCounts {
+class ReadWriteAnalysis  {
+  /* in which basic blocks is each register written to and read from */
+  std::map<int, std::set<BasicBlock*> > reads_;
+  std::map<int, std::set<BasicBlock*> > writes_;
+
+protected:
+
+  bool read_in_bb(int reg, BasicBlock* bb) {
+    auto read_iter = reads_.find(reg);
+    if (read_iter == reads_.end()) { return false; }
+    const std::set<BasicBlock*> read_set = read_iter->second;
+    return read_set.find(bb) != read_set.end();
+  }
+
+  bool read_only_in_bb(int reg, BasicBlock* bb) {
+    auto read_iter = reads_.find(reg);
+    if (read_iter == reads_.end()) { return false; }
+    const std::set<BasicBlock*>& read_set = read_iter->second;
+    return (read_set.find(bb) != read_set.end()) && (read_set.size() == 1);
+  }
+
+  bool write_in_bb(int reg, BasicBlock* bb) {
+    auto iter = writes_.find(reg);
+    if (iter == writes_.end()) { return false; }
+    const std::set<BasicBlock*>& write_set = iter->second;
+    return write_set.find(bb) != write_set.end();
+  }
+
+  bool write_only_in_bb(int reg, BasicBlock* bb) {
+    auto iter = writes_.find(reg);
+    if (iter == writes_.end()) { return false; }
+    const std::set<BasicBlock*> write_set = iter->second;
+    return (write_set.find(bb) != write_set.end()) && (write_set.size() == 1);
+  }
+
+  void analyze_bb(BasicBlock* bb) {
+
+    size_t n_ops = bb->code.size();
+    for (int i = n_ops - 1; i >= 0; --i) {
+      CompilerOp * op = bb->code[i];
+      size_t n_inputs = op->num_inputs();
+      for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
+        int reg = op->regs[reg_idx];
+        auto read_iter = reads_.find(reg);
+        if (read_iter != reads_.end()) {
+          std::set<BasicBlock*>& read_set = read_iter->second;
+          read_set.insert(bb);
+        } else {
+          std::set<BasicBlock*> read_set;
+          read_set.insert(bb);
+          reads_[reg] = read_set;
+        }
+      }
+      if (op->has_dest) {
+        int reg = op->regs[n_inputs];
+        auto write_iter = writes_.find(reg);
+        if (write_iter != writes_.end()) {
+          std::set<BasicBlock*>& write_set = write_iter->second;
+          write_set.insert(bb);
+        } else {
+          std::set<BasicBlock*> write_set;
+          write_set.insert(bb);
+          writes_[reg] = write_set;
+        }
+      }
+    }
+  }
+
+
+  void analyze_fn(CompilerState* fn) {
+    size_t n_bbs = fn->bbs.size();
+    for (size_t bb_idx = 0; bb_idx < n_bbs; ++bb_idx) {
+      this->analyze_bb(fn->bbs[bb_idx]);
+    }
+  }
+};
+
+class CompactRegisters: public CompilerPass, UseCounts, ReadWriteAnalysis {
 private:
   // Mapping from old -> new register names
   std::map<int, int> register_map;
-  std::stack<int> free_registers;
+  std::vector<int> free_registers;
   int num_frozen;
   int max_register;
 
-  std::set<int> bb_defs;
-
-
-
-  bool defined_locally(int r) {
-    return bb_defs.find(r) != bb_defs.end();
-  }
-  /*
-  bool used_locally(int r) {
-    return bb_uses.find(r) != bb_uses.end();
-  }
-  */
 
 public:
 
-  void visit_op(CompilerOp* op) {
-  /*
-    size_t n_regs = op->regs.size();
-    size_t n_input_regs;
-    if (op->has_dest) {
-      n_input_regs = n_regs - 1;
-    } else {
-      n_input_regs = n_regs;
-    }
-    int old_reg;
-    int new_reg;
-    for (size_t i = 0; i < n_input_regs; ++i) {
-      old_reg = op->regs[i];
-      if (old_reg >= num_frozen && this->used_locally(old_reg)) {
-        new_reg = register_map[old_reg];
-        if (new_reg != 0) {
-          op->regs[i] = new_reg;
-          if (old_reg != new_reg) {
-            this->decr_count(old_reg);
-            if (this->get_count(old_reg) == 0) {
-              this->free_registers.push(new_reg);
+  void visit_bb(BasicBlock* bb) {
+    //clear at start of each basic block since we don't
+    //actually track control flow
+    free_registers.clear();
 
+    size_t n_ops = bb->code.size();
+    for (int i = n_ops - 1; i >= 0; --i) {
+      CompilerOp * op = bb->code[i];
+      size_t n_regs = op->regs.size();
+      size_t n_input_regs;
+      if (op->has_dest) {
+        n_input_regs = n_regs - 1;
+      } else {
+        n_input_regs = n_regs;
+      }
+      int old_reg;
+      int new_reg;
+      for (size_t i = 0; i < n_input_regs; ++i) {
+        old_reg = op->regs[i];
+        if (old_reg >= num_frozen && this->write_only_in_bb(old_reg, bb)) {
+          new_reg = register_map[old_reg];
+          if (new_reg != 0) {
+            op->regs[i] = new_reg;
+            if (old_reg != new_reg) {
+              this->decr_count(old_reg);
+              if (this->get_count(old_reg) == 0) {
+                this->free_registers.push_back(new_reg);
+              }
             }
           }
         }
       }
-    }
 
-    if (op->has_dest) {
-      old_reg = op->regs[n_input_regs];
-      if (old_reg >= 0) {
-        bb_defs.insert(old_reg);
-        if (register_map.find(old_reg) != register_map.end()) {
-          new_reg = register_map[old_reg];
-        } else if (free_registers.size() > 0) {
-          new_reg = free_registers.top();
-          free_registers.pop();
-          register_map[old_reg] = new_reg;
-        } else {
-          new_reg = max_register;
-          register_map[old_reg] = new_reg;
-          max_register++;
+      if (op->has_dest) {
+        old_reg = op->regs[n_input_regs];
+        if (old_reg >= 0) {
+          if (register_map.find(old_reg) != register_map.end()) {
+            new_reg = register_map[old_reg];
+          } else if (free_registers.size() > 0) {
+            new_reg = free_registers.back();
+            free_registers.pop_back();
+            register_map[old_reg] = new_reg;
+          } else {
+            new_reg = max_register;
+            register_map[old_reg] = new_reg;
+            max_register++;
+          }
+          op->regs[n_input_regs] = new_reg;
         }
-        op->regs[n_input_regs] = new_reg;
       }
-    }
-    */
-  }
 
-  void visit_bb(BasicBlock* bb) {
-    this->bb_defs.clear();
-    SortedPass::visit_bb(bb);
+    }
+
   }
   void visit_fn(CompilerState* fn) {
-
     this->count_uses(fn);
+    this->analyze_fn(fn);
+
     // don't rename inputs, locals, or constants
     num_frozen = fn->num_locals + fn->num_consts;
     max_register = num_frozen;
     for (int i = 0; i < max_register; ++i) {
       register_map[i] = i;
     }
-    SortedPass::visit_fn(fn);
+    CompilerPass::visit_fn(fn);
   }
 };
 
