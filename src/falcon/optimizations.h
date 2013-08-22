@@ -261,7 +261,7 @@ public:
   }
 };
 
-
+/*
 class LivenessAnalysis {
 
   std::map<CompilerOp*, std::set<int> > live_before_op;
@@ -330,7 +330,7 @@ class LivenessAnalysis {
     live_before_bb[bb] = live_after;
   }
 };
-
+*/
 class ReadWriteAnalysis  {
   /* in which basic blocks is each register written to and read from */
   std::map<int, std::set<BasicBlock*> > reads_;
@@ -369,7 +369,7 @@ protected:
   void analyze_bb(BasicBlock* bb) {
 
     size_t n_ops = bb->code.size();
-    for (int i = n_ops - 1; i >= 0; --i) {
+    for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp * op = bb->code[i];
       size_t n_inputs = op->num_inputs();
       for (size_t reg_idx = 0; reg_idx < n_inputs; reg_idx++) {
@@ -411,8 +411,6 @@ protected:
 class CompactRegisters: public CompilerPass, UseCounts, ReadWriteAnalysis {
 private:
   // Mapping from old -> new register names
-  std::map<int, int> register_map;
-  std::vector<int> free_registers;
   int num_frozen;
   int max_register;
 
@@ -422,10 +420,11 @@ public:
   void visit_bb(BasicBlock* bb) {
     //clear at start of each basic block since we don't
     //actually track control flow
-    free_registers.clear();
+    std::map<int, int> register_map;
+    std::vector<int> free_registers;
 
     size_t n_ops = bb->code.size();
-    for (int i = n_ops - 1; i >= 0; --i) {
+    for (size_t i = 0; i < n_ops; ++i) {
       CompilerOp * op = bb->code[i];
       size_t n_regs = op->regs.size();
       size_t n_input_regs;
@@ -438,6 +437,7 @@ public:
       int new_reg;
       for (size_t i = 0; i < n_input_regs; ++i) {
         old_reg = op->regs[i];
+
         if (old_reg >= num_frozen && this->write_only_in_bb(old_reg, bb)) {
           new_reg = register_map[old_reg];
           if (new_reg != 0) {
@@ -445,7 +445,7 @@ public:
             if (old_reg != new_reg) {
               this->decr_count(old_reg);
               if (this->get_count(old_reg) == 0) {
-                this->free_registers.push_back(new_reg);
+                free_registers.push_back(new_reg);
               }
             }
           }
@@ -454,24 +454,26 @@ public:
 
       if (op->has_dest) {
         old_reg = op->regs[n_input_regs];
-        if (old_reg >= 0) {
-          if (register_map.find(old_reg) != register_map.end()) {
-            new_reg = register_map[old_reg];
+
+        if (old_reg >= num_frozen && read_only_in_bb(old_reg, bb)) {
+          new_reg = register_map[old_reg];
+          if (new_reg >= num_frozen && new_reg > 0) {
+
           } else if (free_registers.size() > 0) {
             new_reg = free_registers.back();
             free_registers.pop_back();
             register_map[old_reg] = new_reg;
+
           } else {
             new_reg = max_register;
             register_map[old_reg] = new_reg;
             max_register++;
+
           }
           op->regs[n_input_regs] = new_reg;
         }
       }
-
     }
-
   }
   void visit_fn(CompilerState* fn) {
     this->count_uses(fn);
@@ -480,9 +482,6 @@ public:
     // don't rename inputs, locals, or constants
     num_frozen = fn->num_locals + fn->num_consts;
     max_register = num_frozen;
-    for (int i = 0; i < max_register; ++i) {
-      register_map[i] = i;
-    }
     CompilerPass::visit_fn(fn);
   }
 };
