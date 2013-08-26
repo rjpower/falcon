@@ -1,9 +1,13 @@
 from testing_helpers import wrap 
 
-@wrap 
-def add(a, b):
+
+def add_(a, b):
   return a + b
 
+@wrap 
+def add(a,b):
+  return add_(a,b)
+ 
 def test_add():
   add(1,1)
   add(-1,1)
@@ -15,7 +19,7 @@ def test_add():
 
 @wrap 
 def add1(a):
-  return add(a, 1)
+  return add_(a, 1)
 
 def test_add1():
   add1(1)

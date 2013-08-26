@@ -349,11 +349,13 @@ BasicBlock* Compiler::registerize(CompilerState* state, RegisterStack *stack, in
     case SLICE + 2:
     case SLICE + 3: {
       int list, left, right;
+
       left = right = -1;
       if ((opcode - SLICE) & 2) right = stack->pop_register();
       if ((opcode - SLICE) & 1) left = stack->pop_register();
       list = stack->pop_register();
       int dst = stack->push_register(state->num_reg++);
+
       bb->add_dest_op(SLICE, 0, list, left, right, dst);
       break;
     }

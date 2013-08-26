@@ -332,11 +332,12 @@ class LivenessAnalysis {
 };
 */
 class ReadWriteAnalysis  {
+
+
+protected:
   /* in which basic blocks is each register written to and read from */
   std::map<int, std::set<BasicBlock*> > reads_;
   std::map<int, std::set<BasicBlock*> > writes_;
-
-protected:
 
   bool read_in_bb(int reg, BasicBlock* bb) {
     auto read_iter = reads_.find(reg);
@@ -414,7 +415,16 @@ private:
   int num_frozen;
   int max_register;
 
-
+  bool safe_to_rename(int r) {
+    if (r < num_frozen) { return false; }
+    const std::set<BasicBlock*>& write_set = this->writes_[r];
+    if (write_set.size() != 1) { return false; }
+    BasicBlock* write_bb = *(write_set.begin());
+    const std::set<BasicBlock*>& read_set = this->reads_[r];
+    if (read_set.size() != 1) { return false; }
+    BasicBlock* read_bb = *(read_set.begin());
+    return write_bb == read_bb;
+  }
 public:
 
   void visit_bb(BasicBlock* bb) {
@@ -433,49 +443,44 @@ public:
       } else {
         n_input_regs = n_regs;
       }
-      int old_reg;
-      int new_reg;
-      for (size_t i = 0; i < n_input_regs; ++i) {
-        old_reg = op->regs[i];
 
-        if (old_reg >= num_frozen && this->write_only_in_bb(old_reg, bb)) {
-          new_reg = register_map[old_reg];
-          if (new_reg != 0) {
-            op->regs[i] = new_reg;
-            if (old_reg != new_reg) {
-              this->decr_count(old_reg);
-              if (this->get_count(old_reg) == 0) {
-                free_registers.push_back(new_reg);
-              }
-            }
+      for (size_t i = 0; i < n_input_regs; ++i) {
+
+        int reg = op->regs[i];
+        if (reg >= num_frozen) {
+
+          auto iter = register_map.find(reg);
+          if (iter != register_map.end()) {
+            reg = iter->second;
+
+            op->regs[i] = reg;
+          }
+          this->decr_count(reg);
+          if (this->get_count(reg) == 0) {
+
+            free_registers.push_back(reg);
           }
         }
+
       }
 
       if (op->has_dest) {
-        old_reg = op->regs[n_input_regs];
+        int old_reg = op->regs[n_input_regs];
+        if (safe_to_rename(old_reg) && free_registers.size() > 0) {
 
-        if (old_reg >= num_frozen && read_only_in_bb(old_reg, bb)) {
-          new_reg = register_map[old_reg];
-          if (new_reg >= num_frozen && new_reg > 0) {
-
-          } else if (free_registers.size() > 0) {
-            new_reg = free_registers.back();
+            int new_reg = free_registers.back();
+            // printf("Renaming %d to %d\n", old_reg, new_reg);
             free_registers.pop_back();
             register_map[old_reg] = new_reg;
+            this->counts[new_reg] = this->counts[old_reg];
+            op->regs[n_input_regs] = new_reg;
 
-          } else {
-            new_reg = max_register;
-            register_map[old_reg] = new_reg;
-            max_register++;
-
-          }
-          op->regs[n_input_regs] = new_reg;
         }
       }
     }
   }
   void visit_fn(CompilerState* fn) {
+
     this->count_uses(fn);
     this->analyze_fn(fn);
 
@@ -773,9 +778,10 @@ public:
 };
 
 void optimize(CompilerState* fn) {
+
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
-
+  printf("BEFORE OPT %s\n", fn->str().c_str());
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);

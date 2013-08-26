@@ -46,31 +46,35 @@ public:
 
 RegisterCode* Compiler::compile(PyObject* func) {
 
+
   if (PyMethod_Check(func)) {
+
     func = PyMethod_GET_FUNCTION(func);
   }
 
   PyObject* stack_code = NULL;
 
   if (PyFunction_Check(func)) {
-    stack_code = PyFunction_GET_CODE(func);
-  } else {
-    Reg_Assert(PyCode_Check(func),
-               "Expected code or function, got %s", fn_name(func));
 
+    stack_code = PyFunction_GET_CODE(func);
+  } else if (PyCode_Check(func)) {
     stack_code = func;
   }
 
   if (stack_code == NULL) {
+    printf("NO STACK CODE\n");
+    if (PyObject_HasAttrString(func, "__call__")) {
+      printf("HASATTR\n");
+      PyObject* call_method = PyObject_GetAttrString(func, "__call__");
+      return compile(call_method);
+    }
+
     Log_Info("No code for function %s", fn_name(func));
     return NULL;
   }
 
-  CodeCache::iterator i = cache_.find(stack_code);
-  if (i != cache_.end()) {
-    return i->second;
-  }
-
+  auto iter = cache_.find(stack_code);
+  if (iter != cache_.end()) { return iter->second; }
 
   RegisterCode* register_code = NULL;
   try {
@@ -79,7 +83,9 @@ RegisterCode* Compiler::compile(PyObject* func) {
     Log_Info("Failed to compile function %s", fn_name(func));
   }
   cache_[stack_code] = register_code;
+
   return register_code;
+
 }
 
 #endif /* RCOMPILE_H_ */

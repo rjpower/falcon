@@ -11,11 +11,15 @@ def test_nested():
   nested(3.0)
   nested([1])
   
-@wrap   
-def nested_closure(x):
+
+def nested_closure_(x):
   def f(y):
     return x + y
   return f(x)
+
+@wrap
+def nested_closure(x):
+  return nested_closure_(x)
 
 def test_nested_closure():
   nested_closure(3)
@@ -26,7 +30,7 @@ def test_nested_closure():
 @wrap
 def nested_closure_repeat():
   for i in xrange(50):
-    temp = nested_closure(i)
+    temp = nested_closure_(i)
   return temp 
 
 def test_nested_closure_repeat():

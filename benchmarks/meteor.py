@@ -18,6 +18,7 @@ W, NW, NE = -E, -SE, -SW
 
 
 def rotate(ido, rd={E: NE, NE: NW, NW: W, W: SW, SW: SE, SE: E}):
+    print rd 
     return [rd[o] for o in ido]
 
 def flip(ido, fd={E: E, NE: SE, NW: SW, W: W, SW: NW, SE: NE}):

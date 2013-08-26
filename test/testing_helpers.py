@@ -13,3 +13,4 @@ class wrap(object):
     falcon_result = self.falcon_fn(*args, **kwargs)
     assert python_result == falcon_result, \
       "%s failed: expected %s but got  %s" % (self.name, python_result, falcon_result) 
+    return falcon_result
