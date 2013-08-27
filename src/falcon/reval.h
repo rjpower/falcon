@@ -205,7 +205,7 @@ public:
 
   RegisterFrame* frame_from_pyframe(PyFrameObject*);
   RegisterFrame* frame_from_pyfunc(PyObject* func, PyObject* args, PyObject* kw);
-  RegisterFrame* frame_from_codeobj(PyObject* code);
+  // RegisterFrame* frame_from_codeobj(PyObject* code);
 
   Compiler *compiler;
 };

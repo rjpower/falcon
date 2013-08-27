@@ -45,32 +45,27 @@ public:
 
 
 RegisterCode* Compiler::compile(PyObject* func) {
+  /*
+   * Expects func to either be a function or a code object.
+   * All other callables (methods, old-style classes, type objects, and user-defined callables)
+   * have to be disassembled into their underlying function before you call 'compile'.
+   */
 
 
-  if (PyMethod_Check(func)) {
+  /*if (PyMethod_Check(func)) {
 
     func = PyMethod_GET_FUNCTION(func);
   }
-
+  */
   PyObject* stack_code = NULL;
 
   if (PyFunction_Check(func)) {
-
     stack_code = PyFunction_GET_CODE(func);
-  } else if (PyCode_Check(func)) {
+  } else {
+    Reg_Assert(PyCode_Check(func),
+               "compile expects either function or code, got %s",
+               obj_to_str(func));
     stack_code = func;
-  }
-
-  if (stack_code == NULL) {
-    printf("NO STACK CODE\n");
-    if (PyObject_HasAttrString(func, "__call__")) {
-      printf("HASATTR\n");
-      PyObject* call_method = PyObject_GetAttrString(func, "__call__");
-      return compile(call_method);
-    }
-
-    Log_Info("No code for function %s", fn_name(func));
-    return NULL;
   }
 
   auto iter = cache_.find(stack_code);

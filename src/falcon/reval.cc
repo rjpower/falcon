@@ -315,37 +315,82 @@ PyObject* Evaluator::eval_python(PyObject* func, PyObject* args, PyObject* kw) {
 }
 
 RegisterFrame* Evaluator::frame_from_pyframe(PyFrameObject* frame) {
-  RegisterCode* regcode = compiler->compile((PyObject*) frame->f_code);
-  if (regcode == NULL) {
-    return NULL;
-  }
-
+  PyObject* py_code = (PyObject*) frame->f_code;
+  RegisterCode* regcode = compiler->compile(py_code);
+  if (regcode == NULL) { return NULL; }
   ObjVector v_args;
   ObjVector kw_args;
-  RegisterFrame* f = new RegisterFrame(regcode, (PyObject*) frame->f_code, v_args, kw_args);
+  RegisterFrame* f = new RegisterFrame(regcode, py_code, v_args, kw_args);
   PyFrame_FastToLocals(frame);
   f->fill_locals(frame->f_locals);
   return f;
 }
 
+void get_code_and_self(PyObject* obj, PyObject** fn, PyObject** self) {
+  // only handling old-style classes for now
+  if (PyClass_Check(obj)) {
+    *self = PyInstance_NewRaw(obj, (PyObject*) NULL);
+    Reg_Assert(PyObject_HasAttrString(obj, "__init__"), "Expected class to have __init__ method");
+    obj = PyObject_GetAttrString(obj, "__init__");
+
+  }
+  if (PyMethod_Check(obj)) {
+    PyObject* method_self =  PyMethod_GET_SELF(obj);
+    if (method_self != (PyObject*)  NULL) { *self = method_self;  }
+    obj = PyMethod_GET_FUNCTION(obj);
+  }
+  if (PyFunction_Check(obj) || PyCode_Check(obj)) {
+    *fn = obj;
+  } /* else if (PyCallable_Check(obj)) {
+
+    Reg_Assert(PyObject_HasAttrString(obj, "__call__"), "Expected callable to have __call__ method");
+
+    obj = PyObject_GetAttrString(obj, "__call__");
+    Reg_Assert(PyMethod_Check(obj), "Expect __call__ to be a method, instead got %s", obj_to_str(obj));
+    obj = PyMethod_GET_FUNCTION(obj);
+    PyObject* old_self = *self;
+    printf("Making recursive call for %s", obj_to_str(obj));
+    get_code_and_self(obj, fn, self);
+    Reg_Assert(old_self == *self || old_self == NULL, "Can't have two fixed 'self' arguments");
+  } */
+
+
+}
+
 RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObject* kw) {
   if (args == NULL || !PyTuple_Check(args)) {
-    throw RException(PyExc_TypeError, "Expected function argument tuple, got: %s", obj_to_str(PyObject_Type(args)));
+    throw RException(PyExc_TypeError,
+                     "Expected function argument tuple, got: %s",
+                     obj_to_str(PyObject_Type(args)));
   }
+  PyObject* py_fn  = NULL;
+  PyObject* py_self = NULL;
 
-  RegisterCode* regcode = compiler->compile(obj);
-  if (regcode == NULL) {
-    return NULL;
-  }
+  get_code_and_self(obj, &py_fn, &py_self);
+  if (py_fn == NULL) return NULL;
+
+
+
+  RegisterCode* regcode = compiler->compile(py_fn);
+  if (regcode == NULL) return NULL;
 
   ObjVector v_args;
-  v_args.resize(PyTuple_GET_SIZE(args) );
-  for (size_t i = 0; i < v_args.size(); ++i) {
-    v_args[i].store(PyTuple_GET_ITEM(args, i) );
+  size_t n_args = PyTuple_GET_SIZE(args);
+
+  if (py_self != NULL) {
+    v_args.resize(n_args+1);
+    v_args[0].store(py_self);
+    for (size_t i = 0; i < v_args.size(); ++i) {
+      v_args[i+1].store(PyTuple_GET_ITEM(args, i));
+    }
+  } else {
+    v_args.resize(n_args);
+    for (size_t i = 0; i < v_args.size(); ++i) {
+       v_args[i].store(PyTuple_GET_ITEM(args, i) );
+    }
   }
 
   ObjVector kw_args;
-
   size_t n_kwds = 0;
   if (kw != NULL && PyDict_Check(kw)) {
     n_kwds = PyDict_Size(kw);
@@ -360,11 +405,13 @@ RegisterFrame* Evaluator::frame_from_pyfunc(PyObject* obj, PyObject* args, PyObj
   return new RegisterFrame(regcode, obj, v_args, kw_args);
 }
 
+/*
 RegisterFrame* Evaluator::frame_from_codeobj(PyObject* code) {
   ObjVector args, kw;
   RegisterCode *regcode = compiler->compile(code);
   return new RegisterFrame(regcode, code, args, kw);
 }
+*/
 
 void Evaluator::dump_status() {
   Log_Info("Evaluator status:");
@@ -1285,11 +1332,11 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
 
     int dst = op->reg[n + 1];
 
-    PyObject* fn = LOAD_OBJ(op->reg[0]);
+    PyObject* callable_obj = LOAD_OBJ(op->reg[0]);
 
     Reg_AssertEq(n + 2, op->num_registers);
 
-    RegisterCode* code = NULL;
+
 
     /* TODO:
      *   Actually accelerate object construction in Falcon by
@@ -1301,16 +1348,21 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
      *   and only lazily construct PyObject representations when asked
      *   by other Python C API code.
      */
-//    Log_Info("Calling...");
-    if (!PyCFunction_Check(fn) &&
-        !PyClass_Check(fn) &&
-        !PyType_Check(fn)) {
-//        Log_Info("Compiling...");
-      code = eval->compiler->compile(fn);
+
+    RegisterCode* rcode = NULL;
+
+    PyObject* py_fn = NULL;
+    PyObject* py_self = NULL;
+
+    if (!PyCFunction_Check(callable_obj)) {
+      get_code_and_self(callable_obj, &py_fn, &py_self);
+
+      if (py_fn) {
+        rcode = eval->compiler->compile(py_fn);
+      }
     }
 
-    if (code == NULL || nk > 0) {
-//      Log_Info("Going to Python for function %s", PyEval_GetFuncName(fn));
+    if (rcode == NULL || nk > 0) {
       PyObject* args = PyTuple_New(na);
 
       for (register int i = 0; i < na; ++i) {
@@ -1331,31 +1383,40 @@ struct CallFunction: public VarArgsOpImpl<CallFunction<HasVarArgs, HasKwDict> > 
           Reg_Assert(PyString_Check(k), "Expected key to be string");
           char* kstr = PyString_AsString(k);
           PyDict_SetItemString(kwdict, kstr, v);
-          //PyDict_SetItem(kwdict, k, v);
-            }
-          }
+
+        }
+      }
+       { }
 
       PyObject* res = NULL;
-      if (PyCFunction_Check(fn)) {
-        res = PyCFunction_Call(fn, args, kwdict);
+      if (PyCFunction_Check(callable_obj)) {
+        res = PyCFunction_Call(callable_obj, args, kwdict);
       } else {
-        res = PyObject_Call(fn, args, kwdict);
+        res = PyObject_Call(callable_obj, args, kwdict);
       }
       Py_DECREF(args);
 
       if (res == NULL) {
         throw RException();
       }
-
       STORE_REG(dst, res);
-    } else {
-//      Log_Info("Native call");
+
+    } else {;
       ObjVector args, kw;
-      args.resize(na);
-      for (register int i = 0; i < na; ++i) {
-        args[i].store(registers[op->reg[i + 1]]);
+      if (py_self != NULL) {
+
+        args.resize(na+1);
+        args[0].store(py_self);
+        for (register int i = 0; i < na; ++i) {
+          args[i+1].store(registers[op->reg[i + 1]]);
+        }
+      } else {
+        args.resize(na);
+        for (register int i = 0; i < na; ++i) {
+          args[i].store(registers[op->reg[i + 1]]);
+        }
       }
-      RegisterFrame f(code, fn, args, kw);
+      RegisterFrame f(rcode, py_fn, args, kw);
       STORE_REG(dst, eval->eval(&f));
     }
   }
