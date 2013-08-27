@@ -92,6 +92,8 @@ struct PyObjHelper {
 
 RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector& args, const ObjVector& kw) :
     code(rcode) {
+
+
   instructions_ = code->instructions.data();
 
   if (rcode->function) {
@@ -180,6 +182,7 @@ RegisterFrame::RegisterFrame(RegisterCode* rcode, PyObject* obj, const ObjVector
 
   if (code->function) {
     PyObject* def_args = PyFunction_GET_DEFAULTS(code->function);
+
     int num_def_args = def_args == NULL ? 0 : PyTuple_GET_SIZE(def_args);
     int num_args = args.size();
     if (num_args + num_def_args < needed_args) {

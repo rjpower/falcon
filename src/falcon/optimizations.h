@@ -4,6 +4,7 @@
 #include <map>
 #include <iostream>
 
+#include "config.h"
 #include "opcode.h"
 #include "util.h"
 #include "compiler_pass.h"
@@ -456,8 +457,7 @@ public:
             op->regs[i] = reg;
           }
           this->decr_count(reg);
-          if (this->get_count(reg) == 0) {
-
+          if (this->get_count(reg) == 0 && reg >= num_frozen) {
             free_registers.push_back(reg);
           }
         }
@@ -781,7 +781,9 @@ void optimize(CompilerState* fn) {
 
   MarkEntries()(fn);
   FuseBasicBlocks()(fn);
-  printf("BEFORE OPT %s\n", fn->str().c_str());
+  COMPILE_LOG("BEFORE OPT");
+  COMPILE_LOG(fn->str().c_str());
+
   if (!getenv("DISABLE_OPT")) {
     if (!getenv("DISABLE_COPY")) CopyPropagation()(fn);
     if (!getenv("DISABLE_STORE")) StoreElim()(fn);
