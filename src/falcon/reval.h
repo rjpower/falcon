@@ -68,7 +68,13 @@ struct SmallVector {
   }
 
   T pop() {
-    return vals_[--count_];
+    if (count_ < kSVBuiltinSlots) {
+      return vals_[--count_];
+    } else {
+      T result = rest_[count_ - kSVBuiltinSlots - 1];
+      --count_;
+      return result;
+    }
   }
 
   size_t size() const {
