@@ -17,6 +17,8 @@ dbg:
 
 clean:
 	rm -rf build/
+	rm -rf src/falcon.egg-info/
+
 else
 TOPDIR := ../..
 SRCDIR := $(TOPDIR)/src
