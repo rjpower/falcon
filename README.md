@@ -3,7 +3,7 @@ Falcon
 
 CPython, made faster.
 
-Falcon is an extension module for Python which implements a optimized, register machine based interpreter,
+Falcon is an extension module for Python which implements an optimized, register machine based interpreter,
 inside of your interpreter.  You specify which functions you want Falcon to wrap (or your entire module), and
 Falcon takes over execution from there.  
 
@@ -44,7 +44,7 @@ The usual Python implementation (called CPython) compiles Python syntax to a sta
 Falcon translates CPython's stack-based representation to a 
 [register-based virtual machine](http://stackoverflow.com/questions/11120343/advantages-of-stack-based-bytecodes-or-infinite-register-machines). 
 Falcon then rewrites this bytecode by applying some rudimentary dataflow optimizations and executes it using [direct-threaded dispatch](https://blog.mozilla.org/dmandelin/2008/06/03/squirrelfish/).
-Falcon also stores integers directly in registers (without construct PyInt objects) using [bit tagging](http://mail.python.org/pipermail/python-dev/2004-July/046139.html), which 
+Falcon also stores integers directly in registers (without constructing PyInt objects) using [bit tagging](http://mail.python.org/pipermail/python-dev/2004-July/046139.html), which 
 can yield significant speed improvements on arithmetic-heavy code. 
 
 **How is Falcon different from PyPy?**
